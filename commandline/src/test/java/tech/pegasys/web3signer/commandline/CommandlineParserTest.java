@@ -453,6 +453,48 @@ class CommandlineParserTest {
   }
 
   @Test
+  void postgresKeystoreEnabledFailsToParseWithoutRequiredParameters() {
+    String cmdline = validBaseCommandOptions();
+    cmdline +=
+        String.format(
+            "eth2 --slashing-protection-enabled=false %s=true",
+            PicoCliPostgresKeystoreParameters.POSTGRES_KEYSTORE_ENABLED_OPTION);
+
+    parser.registerSubCommands(new MockEth2SubCommand());
+    final int result = parser.parseCommandLine(cmdline.split(" "));
+
+    assertThat(result).isNotZero();
+    assertThat(commandError.toString())
+        .contains(
+            String.format(
+                "Error parsing parameters: %s=true, but the following parameters were missing"
+                    + " [%s, %s, %s].",
+                PicoCliPostgresKeystoreParameters.POSTGRES_KEYSTORE_ENABLED_OPTION,
+                PicoCliPostgresKeystoreParameters.POSTGRES_KEYSTORE_DB_URL_OPTION,
+                PicoCliPostgresAwsKmsKekParameters.POSTGRES_KEYSTORE_AWS_KMS_ACCESS_KEY_ID_OPTION,
+                PicoCliPostgresAwsKmsKekParameters
+                    .POSTGRES_KEYSTORE_AWS_KMS_SECRET_ACCESS_KEY_OPTION));
+  }
+
+  @Test
+  void postgresKeystoreEnabledParsesSuccessfullyWithRequiredParameters() {
+    String cmdline = validBaseCommandOptions();
+    cmdline +=
+        String.format(
+            "eth2 --slashing-protection-enabled=false %s=true %s=jdbc:postgresql://localhost/keys"
+                + " %s=key %s=secret",
+            PicoCliPostgresKeystoreParameters.POSTGRES_KEYSTORE_ENABLED_OPTION,
+            PicoCliPostgresKeystoreParameters.POSTGRES_KEYSTORE_DB_URL_OPTION,
+            PicoCliPostgresAwsKmsKekParameters.POSTGRES_KEYSTORE_AWS_KMS_ACCESS_KEY_ID_OPTION,
+            PicoCliPostgresAwsKmsKekParameters.POSTGRES_KEYSTORE_AWS_KMS_SECRET_ACCESS_KEY_OPTION);
+
+    parser.registerSubCommands(new MockEth2SubCommand());
+    final int result = parser.parseCommandLine(cmdline.split(" "));
+
+    assertThat(result).isZero();
+  }
+
+  @Test
   void awsSpecifiedAuthModeFailsToParseWithoutRequiredParameters() {
     String cmdline = validBaseCommandOptions();
     cmdline +=

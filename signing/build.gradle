@@ -17,6 +17,7 @@ jar {
 dependencies {
   implementation project(":common")
   implementation project(':keystorage')
+  implementation project(':keys-postgres')
   implementation project(":bls-keystore")
   implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
   implementation 'com.github.arteam:simple-json-rpc-server'

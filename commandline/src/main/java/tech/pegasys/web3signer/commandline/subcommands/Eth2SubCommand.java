@@ -28,6 +28,8 @@ import tech.pegasys.teku.spec.networks.Eth2Network;
 import tech.pegasys.web3signer.commandline.PicoCliAwsSecretsManagerParameters;
 import tech.pegasys.web3signer.commandline.PicoCliAzureKeyVaultParameters;
 import tech.pegasys.web3signer.commandline.PicoCliGcpSecretManagerParameters;
+import tech.pegasys.web3signer.commandline.PicoCliPostgresAwsKmsKekParameters;
+import tech.pegasys.web3signer.commandline.PicoCliPostgresKeystoreParameters;
 import tech.pegasys.web3signer.commandline.PicoCliSlashingProtectionParameters;
 import tech.pegasys.web3signer.commandline.VersionProvider;
 import tech.pegasys.web3signer.commandline.config.KeyManagerApiParameters;
@@ -170,6 +172,8 @@ public class Eth2SubCommand extends ModeSubCommand {
   @Mixin private PicoKeystoresParameters keystoreParameters;
   @Mixin private PicoCliAwsSecretsManagerParameters awsSecretsManagerParameters;
   @Mixin private PicoCliGcpSecretManagerParameters gcpSecretManagerParameters;
+  @Mixin private PicoCliPostgresKeystoreParameters postgresKeystoreParameters;
+  @Mixin private PicoCliPostgresAwsKmsKekParameters postgresAwsKmsKekParameters;
   @Mixin private KeyManagerApiParameters keyManagerApiParameters;
   @Mixin private PicoCommitBoostApiParameters commitBoostApiParameters;
   private tech.pegasys.teku.spec.Spec eth2Spec;
@@ -189,6 +193,8 @@ public class Eth2SubCommand extends ModeSubCommand {
         keystoreParameters,
         awsSecretsManagerParameters,
         gcpSecretManagerParameters,
+        postgresKeystoreParameters,
+        postgresAwsKmsKekParameters,
         eth2Spec,
         keyManagerApiParameters,
         signingExtEnabled,
@@ -273,7 +279,43 @@ public class Eth2SubCommand extends ModeSubCommand {
     validateKeystoreParameters(keystoreParameters);
     validateAwsSecretsManageParameters();
     validateGcpSecretManagerParameters();
+    validatePostgresKeystoreParameters();
     commitBoostApiParameters.validateParameters();
+  }
+
+  private void validatePostgresKeystoreParameters() {
+    if (postgresKeystoreParameters.isEnabled()) {
+      final List<String> missingFields = missingPostgresKeystoreFields();
+      if (!missingFields.isEmpty()) {
+        final String errorMsg =
+            String.format(
+                "%s=true, but the following parameters were missing [%s].",
+                PicoCliPostgresKeystoreParameters.POSTGRES_KEYSTORE_ENABLED_OPTION,
+                String.join(", ", missingFields));
+        throw new ParameterException(commandSpec.commandLine(), errorMsg);
+      }
+      validatePositiveValue(
+          postgresKeystoreParameters.getDecryptionParallelism(),
+          "Postgres keystore decryption parallelism");
+    }
+  }
+
+  private List<String> missingPostgresKeystoreFields() {
+    final List<String> missingFields = Lists.newArrayList();
+    if (postgresKeystoreParameters.getDbUrl() == null) {
+      missingFields.add(PicoCliPostgresKeystoreParameters.POSTGRES_KEYSTORE_DB_URL_OPTION);
+    }
+    if (postgresAwsKmsKekParameters.getAuthenticationMode() == AwsAuthenticationMode.SPECIFIED) {
+      if (postgresAwsKmsKekParameters.getAccessKeyId() == null) {
+        missingFields.add(
+            PicoCliPostgresAwsKmsKekParameters.POSTGRES_KEYSTORE_AWS_KMS_ACCESS_KEY_ID_OPTION);
+      }
+      if (postgresAwsKmsKekParameters.getSecretAccessKey() == null) {
+        missingFields.add(
+            PicoCliPostgresAwsKmsKekParameters.POSTGRES_KEYSTORE_AWS_KMS_SECRET_ACCESS_KEY_OPTION);
+      }
+    }
+    return missingFields;
   }
 
   private void validateGcpSecretManagerParameters() {

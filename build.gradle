@@ -136,7 +136,8 @@ allprojects {
       importOrder 'tech.pegasys', 'java', ''
       trimTrailingWhitespace()
       endWithNewline()
-      licenseHeaderFile "${rootDir}/gradle/spotless.java.license"
+      licenseHeaderFile("${rootDir}/gradle/spotless.java.former.license").named("older.year").onlyIfContentMatches("^/\\*\\r?\\n.* Copyright \\d{4} ConsenSys AG\\.")
+      licenseHeaderFile("${rootDir}/gradle/spotless.java.license").named("current").onlyIfContentMatches("^(?!/\\*\\r?\\n \\*.*(ConsenSys AG)\\.)")
     }
   }
 
@@ -430,6 +431,7 @@ distributions {
         exclude "**/project-licenses-for-check-license-task.json"
       }
       from("./slashing-protection/src/main/resources/migrations") { into "./migrations" }
+      from("./keys-postgres/src/main/resources/migrations") { into "./migrations" }
     }
   }
 }

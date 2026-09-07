@@ -17,11 +17,13 @@ import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_AZ
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_CONFIG_FILE_LOADING;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_GCP_BULK_LOADING;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_KEYSTORE_BULK_LOADING;
+import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_POSTGRES_BULK_LOADING;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.SLASHING_PROTECTION_DB;
 
 import tech.pegasys.teku.bls.BLSKeyPair;
 import tech.pegasys.teku.bls.BLSSecretKey;
 import tech.pegasys.teku.spec.Spec;
+import tech.pegasys.web3signer.common.Web3SignerMetricCategory;
 import tech.pegasys.web3signer.core.config.BaseConfig;
 import tech.pegasys.web3signer.core.config.KeyManagerApiConfig;
 import tech.pegasys.web3signer.core.routes.PublicKeysListRoute;
@@ -44,12 +46,15 @@ import tech.pegasys.web3signer.signing.BlsArtifactSigner;
 import tech.pegasys.web3signer.signing.bulkloading.BlsAwsBulkLoader;
 import tech.pegasys.web3signer.signing.bulkloading.BlsGcpBulkLoader;
 import tech.pegasys.web3signer.signing.bulkloading.BlsKeystoreBulkLoader;
+import tech.pegasys.web3signer.signing.bulkloading.BlsPostgresBulkLoader;
 import tech.pegasys.web3signer.signing.config.AwsVaultParameters;
 import tech.pegasys.web3signer.signing.config.AzureKeyVaultFactory;
 import tech.pegasys.web3signer.signing.config.AzureKeyVaultParameters;
 import tech.pegasys.web3signer.signing.config.DefaultArtifactSignerProvider;
 import tech.pegasys.web3signer.signing.config.GcpSecretManagerParameters;
 import tech.pegasys.web3signer.signing.config.KeystoresParameters;
+import tech.pegasys.web3signer.signing.config.PostgresAwsKmsKekParameters;
+import tech.pegasys.web3signer.signing.config.PostgresKeystoreParameters;
 import tech.pegasys.web3signer.signing.config.SignerLoader;
 import tech.pegasys.web3signer.signing.config.metadata.AbstractArtifactSignerFactory;
 import tech.pegasys.web3signer.signing.config.metadata.BlsArtifactSignerFactory;
@@ -81,6 +86,9 @@ import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
+import org.hyperledger.besu.plugin.services.metrics.Counter;
+import org.hyperledger.besu.plugin.services.metrics.LabelledMetric;
+import org.hyperledger.besu.plugin.services.metrics.OperationTimer;
 
 public class Eth2Runner extends Runner {
   private static final Logger LOG = LogManager.getLogger();
@@ -89,6 +97,8 @@ public class Eth2Runner extends Runner {
   private final AzureKeyVaultParameters azureKeyVaultParameters;
   private final AwsVaultParameters awsVaultParameters;
   private final GcpSecretManagerParameters gcpSecretManagerParameters;
+  private final PostgresKeystoreParameters postgresKeystoreParameters;
+  private final PostgresAwsKmsKekParameters postgresAwsKmsKekParameters;
   private final SlashingProtectionParameters slashingProtectionParameters;
   private final boolean pruningEnabled;
   private final KeystoresParameters keystoresParameters;
@@ -104,6 +114,8 @@ public class Eth2Runner extends Runner {
       final KeystoresParameters keystoresParameters,
       final AwsVaultParameters awsVaultParameters,
       final GcpSecretManagerParameters gcpSecretManagerParameters,
+      final PostgresKeystoreParameters postgresKeystoreParameters,
+      final PostgresAwsKmsKekParameters postgresAwsKmsKekParameters,
       final Spec eth2Spec,
       final KeyManagerApiConfig keyManagerApiConfig,
       final boolean signingExtEnabled,
@@ -118,6 +130,8 @@ public class Eth2Runner extends Runner {
     this.keyManagerApiConfig = keyManagerApiConfig;
     this.awsVaultParameters = awsVaultParameters;
     this.gcpSecretManagerParameters = gcpSecretManagerParameters;
+    this.postgresKeystoreParameters = postgresKeystoreParameters;
+    this.postgresAwsKmsKekParameters = postgresAwsKmsKekParameters;
     this.signingExtEnabled = signingExtEnabled;
     this.commitBoostApiParameters = commitBoostApiParameters;
   }
@@ -164,23 +178,58 @@ public class Eth2Runner extends Runner {
     // Register for cleanup ONCE
     registerClose(signerLoader);
 
+    // create postgres bulk loader ONCE at startup, so its DEK cache persists across reloads
+    final Optional<BlsPostgresBulkLoader> blsPostgresBulkLoader = createPostgresBulkLoader();
+    blsPostgresBulkLoader.ifPresent(this::registerClose);
+
     return List.of(
         new DefaultArtifactSignerProvider(
-            createArtifactSignerSupplier(signerLoader, metricsSystem),
+            createArtifactSignerSupplier(signerLoader, blsPostgresBulkLoader, metricsSystem),
             slashingProtectionContext.<BiConsumer<Set<String>, Set<String>>>map(
                 PostLoadingValidatorsProcessor::new),
             Optional.of(commitBoostApiParameters)));
   }
 
+  private Optional<BlsPostgresBulkLoader> createPostgresBulkLoader() {
+    if (!postgresKeystoreParameters.isEnabled()) {
+      return Optional.empty();
+    }
+    try {
+      return Optional.of(
+          new BlsPostgresBulkLoader(postgresKeystoreParameters, postgresAwsKmsKekParameters));
+    } catch (final IllegalStateException e) {
+      throw new InitializationException(e.getMessage(), e);
+    }
+  }
+
   private Supplier<MappedResults<ArtifactSigner>> createArtifactSignerSupplier(
-      final SignerLoader signerLoader, final MetricsSystem metricsSystem) {
+      final SignerLoader signerLoader,
+      final Optional<BlsPostgresBulkLoader> blsPostgresBulkLoader,
+      final MetricsSystem metricsSystem) {
+    final LabelledMetric<OperationTimer> postgresBulkLoadTimer =
+        metricsSystem.createLabelledTimer(
+            Web3SignerMetricCategory.SIGNING,
+            "postgres_bulk_load_time",
+            "Time taken for a full Postgres keystore bulk key load",
+            "phase");
+    final Counter postgresKekVaultCallsCounter =
+        metricsSystem.createCounter(
+            Web3SignerMetricCategory.SIGNING,
+            "postgres_kek_vault_calls_total",
+            "Number of KEK vault calls made during Postgres keystore bulk key loads");
+
     return () -> {
       try (final AzureKeyVaultFactory azureKeyVaultFactory = new AzureKeyVaultFactory()) {
         // load keys from key config files
         MappedResults<ArtifactSigner> configFileResults =
             loadSignersFromKeyConfigFiles(signerLoader, azureKeyVaultFactory, metricsSystem);
         // bulkload keys
-        MappedResults<ArtifactSigner> bulkLoadResults = bulkLoadSigners(azureKeyVaultFactory);
+        MappedResults<ArtifactSigner> bulkLoadResults =
+            bulkLoadSigners(
+                azureKeyVaultFactory,
+                blsPostgresBulkLoader,
+                postgresBulkLoadTimer,
+                postgresKekVaultCallsCounter);
 
         return MappedResults.merge(configFileResults, bulkLoadResults);
       }
@@ -217,7 +266,10 @@ public class Eth2Runner extends Runner {
   }
 
   private MappedResults<ArtifactSigner> bulkLoadSigners(
-      final AzureKeyVaultFactory azureKeyVaultFactory) {
+      final AzureKeyVaultFactory azureKeyVaultFactory,
+      final Optional<BlsPostgresBulkLoader> blsPostgresBulkLoader,
+      final LabelledMetric<OperationTimer> postgresBulkLoadTimer,
+      final Counter postgresKekVaultCallsCounter) {
     MappedResults<ArtifactSigner> results = MappedResults.newSetInstance();
     if (azureKeyVaultParameters.isAzureKeyVaultEnabled()) {
       LOG.info("Bulk loading keys from Azure key vault ... ");
@@ -278,6 +330,21 @@ public class Eth2Runner extends Runner {
           gcpResult.getErrorCount());
       registerSignerLoadingHealthCheck(KEYS_CHECK_GCP_BULK_LOADING, gcpResult);
       results = MappedResults.merge(results, gcpResult);
+    }
+
+    if (blsPostgresBulkLoader.isPresent()) {
+      LOG.info("Bulk loading keys from PostgreSQL ... ");
+      final MappedResults<ArtifactSigner> postgresResult;
+      try (final var _ = postgresBulkLoadTimer.labels("full").startTimer()) {
+        postgresResult = blsPostgresBulkLoader.get().load();
+      }
+      postgresKekVaultCallsCounter.inc(blsPostgresBulkLoader.get().getLastVaultCallCount());
+      LOG.info(
+          "Keys loaded from PostgreSQL: [{}], with error count: [{}]",
+          postgresResult.getValues().size(),
+          postgresResult.getErrorCount());
+      registerSignerLoadingHealthCheck(KEYS_CHECK_POSTGRES_BULK_LOADING, postgresResult);
+      results = MappedResults.merge(results, postgresResult);
     }
 
     return results;
