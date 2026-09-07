@@ -16,8 +16,8 @@
 ---
 ## 26.7.0
 ### Features Added
-- Support for Hashicorp Vault Kubernetes authentication [PR 1195](https://github.com/Consensys/web3signer/pull/1195)
-- The eth1 signing endpoint (`POST /api/v1/eth1/sign/{identifier}`) accepts an optional `applyHash` field. It defaults to `true`, preserving the existing behaviour of applying Keccak-256 to `data` before signing. Setting it to `false` signs the caller-supplied `data` as a pre-computed digest, which must be exactly 32 bytes. Supported by file-based, AWS KMS and Azure Key Vault signers. [PR 1213](https://github.com/Consensys/web3signer/pull/1213)
+- Support for Hashicorp Vault Kubernetes authentication [PR 1195](https://github.com/Consensys-Incorporated/web3signer/pull/1195)
+- The eth1 signing endpoint (`POST /api/v1/eth1/sign/{identifier}`) accepts an optional `applyHash` field. It defaults to `true`, preserving the existing behaviour of applying Keccak-256 to `data` before signing. Setting it to `false` signs the caller-supplied `data` as a pre-computed digest, which must be exactly 32 bytes. Supported by file-based, AWS KMS and Azure Key Vault signers. [PR 1213](https://github.com/Consensys-Incorporated/web3signer/pull/1213)
 
 ### Bugs Fixed
 - Fix Key Manager API (`POST /eth/v1/keystores`) accepting a keystore whose JSON `pubkey` field does not match the decrypted private key. A mismatched import now returns `status: "error"` for that entry rather than poisoning the slashing-protection database under the claimed (unverified) pubkey.
@@ -43,8 +43,8 @@
 ### Bugs Fixed
 - Fix distroless image failing to load BLS native library under `docker run --read-only`. Issue [#1175][issue_1175], PR [#1176][PR_1176].
 
-[issue_1175]: https://github.com/Consensys/web3signer/issues/1175
-[PR_1176]: https://github.com/Consensys/web3signer/pull/1176
+[issue_1175]: https://github.com/Consensys-Incorporated/web3signer/issues/1175
+[PR_1176]: https://github.com/Consensys-Incorporated/web3signer/pull/1176
 
 ---
 ## 26.4.1
@@ -56,9 +56,9 @@
 - Fix memory leak in the reload endpoint: removed validators were not being offloaded from the slashing-protection in-memory cache, and every reload unnecessarily re-registered all validators, causing old-gen heap pressure. Reload now processes only the delta of added/removed keys. PR [#1167][PR_1167].
 - Fix jdbi parsed-SQL cache growth in `ValidatorsDao` by replacing inlined values and bindList expansions with parameterized array bindings. PR [#1170][PR_1170].
 
-[issue_1151]: https://github.com/Consensys/web3signer/issues/1151
-[PR_1167]: https://github.com/Consensys/web3signer/pull/1167
-[PR_1170]: https://github.com/Consensys/web3signer/pull/1170
+[issue_1151]: https://github.com/Consensys-Incorporated/web3signer/issues/1151
+[PR_1167]: https://github.com/Consensys-Incorporated/web3signer/pull/1167
+[PR_1170]: https://github.com/Consensys-Incorporated/web3signer/pull/1170
 
 ---
 ## 26.4.0
@@ -79,8 +79,8 @@
 ### Bugs Fixed
 - Fix unregistered validator IllegalStateException due to race condition in keymanager API
 
-[issue_1144]: https://github.com/Consensys/web3signer/issues/1144
-[PR_1146]: https://github.com/Consensys/web3signer/pull/1146
+[issue_1144]: https://github.com/Consensys-Incorporated/web3signer/issues/1144
+[PR_1146]: https://github.com/Consensys-Incorporated/web3signer/pull/1146
 
 ---
 ## 25.12.0
@@ -95,7 +95,7 @@
 
 #### Removed Swagger UI CLI Option
 - `--swagger-ui-enabled` option removed
-- Access OpenAPI specs at https://consensys.github.io/web3signer/
+- Access OpenAPI specs at https://consensys-incorporated.github.io/web3signer/
 
 ### Features Added
 - **Enhanced `/reload` endpoint with status monitoring:**
@@ -119,9 +119,9 @@
 - Fix memory leak during reload API endpoint. Issue [#1073][issue_1073] via PR [#1135][PR_1135].
 - Fix race condition in reload flag management when executor initialization fails synchronously
 
-[issue_1073]: https://github.com/Consensys/web3signer/issues/1073
-[PR_1135]: https://github.com/Consensys/web3signer/pull/1135
-[PR_1140]: https://github.com/Consensys/web3signer/pull/1140
+[issue_1073]: https://github.com/Consensys-Incorporated/web3signer/issues/1073
+[PR_1135]: https://github.com/Consensys-Incorporated/web3signer/pull/1135
+[PR_1140]: https://github.com/Consensys-Incorporated/web3signer/pull/1140
 
 ---
 ## 25.11.0
@@ -159,7 +159,7 @@ imported via the keymanager API to disk. This is *not* safe for operators who do
 ### Bug Fixes
 - Fixed EIP-712 `eth_signTypedData` JSON-RPC method. [#1012][issue_1012]
 
-[issue_1012]: https://github.com/Consensys/web3signer/issues/1012
+[issue_1012]: https://github.com/Consensys-Incorporated/web3signer/issues/1012
 
 ---
 ## 25.6.0
@@ -233,9 +233,9 @@ The above are replaced by:
 - AWS KMS tag filter behavior has been fixed. [#1055][pr_1055]
 - Upgrade Netty library to 4.1.118.Final to fix CVE-2025-24970.
 
-[issue_1018]: https://github.com/Consensys/web3signer/issues/1018
-[pr_1054]: https://github.com/Consensys/web3signer/pull/1054
-[pr_1055]: https://github.com/Consensys/web3signer/pull/1055
+[issue_1018]: https://github.com/Consensys-Incorporated/web3signer/issues/1018
+[pr_1054]: https://github.com/Consensys-Incorporated/web3signer/pull/1054
+[pr_1055]: https://github.com/Consensys-Incorporated/web3signer/pull/1055
 
 ---
 ## 24.12.0
@@ -245,14 +245,14 @@ The above are replaced by:
 - Filecoin mode has been removed.
 
 ### Features Added
-- Java 21 for build and runtime. [#995](https://github.com/Consensys/web3signer/pull/995)
-- Electra fork support. [#1020](https://github.com/Consensys/web3signer/pull/1020) and [#1023](https://github.com/Consensys/web3signer/pull/1023)
+- Java 21 for build and runtime. [#995](https://github.com/Consensys-Incorporated/web3signer/pull/995)
+- Electra fork support. [#1020](https://github.com/Consensys-Incorporated/web3signer/pull/1020) and [#1023](https://github.com/Consensys-Incorporated/web3signer/pull/1023)
 - Teku and Besu libraries updated to 24.10.3 and 24.10.0 respectively.
 - Commit Boost API - Get Public Keys [#1031][cb_pr1], Generate Proxy Keys [#1043][cb_pr2] and Request Signature [#1045][cb_pr3].
 
-[cb_pr1]: https://github.com/Consensys/web3signer/pull/1031
-[cb_pr2]: https://github.com/Consensys/web3signer/pull/1043
-[cb_pr3]: https://github.com/Consensys/web3signer/pull/1045
+[cb_pr1]: https://github.com/Consensys-Incorporated/web3signer/pull/1031
+[cb_pr2]: https://github.com/Consensys-Incorporated/web3signer/pull/1043
+[cb_pr3]: https://github.com/Consensys-Incorporated/web3signer/pull/1045
 
 ### Bugs fixed
 - Override protobuf-java to 3.25.5 which is a transitive dependency from google-cloud-secretmanager. It fixes CVE-2024-7254.
@@ -272,7 +272,7 @@ require Java 21 to be available on the host machine.
 
 ### Features Added
 - Added endpoint `/api/v1/eth2/ext/sign/:identifier` which is enabled using cli option `--Xsigning-ext-enabled=true`.
-This endpoint allows signing of additional data not covered by the remoting API specs. [#982](https://github.com/Consensys/web3signer/pull/982)
+This endpoint allows signing of additional data not covered by the remoting API specs. [#982](https://github.com/Consensys-Incorporated/web3signer/pull/982)
 
 ### Bugs fixed
 - Update transitive dependency threetenbp and google cloud secretmanager library to fix CVE-2024-23082, CVE-2024-23081
@@ -281,7 +281,7 @@ This endpoint allows signing of additional data not covered by the remoting API 
 - Update Vert.x to 4.5.7 (which include fixes for CVE-2024-1023)
 - Fix Host Allow List handler to handle empty host header
 - Update Postgresql JDBC driver to fix CVE-2024-1597
-- Fix cached gvr to be thread-safe during first boot. [#978](https://github.com/Consensys/web3signer/issues/978)
+- Fix cached gvr to be thread-safe during first boot. [#978](https://github.com/Consensys-Incorporated/web3signer/issues/978)
 
 ---
 ## 24.2.0
@@ -292,7 +292,7 @@ This is a required update for Mainnet users containing the configuration for the
 - `--Xworker-pool-size` cli option will be removed in a future release. This option has been replaced with `--vertx-worker-pool-size`
 
 ### Features Added
-- Add Deneb configuration for Mainnet [#971](https://github.com/Consensys/web3signer/pull/971)
+- Add Deneb configuration for Mainnet [#971](https://github.com/Consensys-Incorporated/web3signer/pull/971)
 - Improve Key Manager API import operation to use parallel processing instead of serial processing
 
 ### Bugs fixed
@@ -313,7 +313,7 @@ This is an optional release for mainnet Ethereum and it includes the updated net
 - Update reactor-netty-http to fix CVE-2023-34062
 
 ### Features Added
-- Add Deneb configuration for Goerli [#960](https://github.com/Consensys/web3signer/pull/960)
+- Add Deneb configuration for Goerli [#960](https://github.com/Consensys-Incorporated/web3signer/pull/960)
 
 ## 23.11.0
 ### Upcoming Breaking Changes
@@ -323,31 +323,31 @@ This is an optional release for mainnet Ethereum and it includes the updated net
 - Update netty to fix CVE-2023-44487
 
 ### Features Added
-- Google Cloud Secret Manager bulk loading support for BLS keys in eth2 mode via PR [#928](https://github.com/Consensys/web3signer/pull/928) contributed by [Sergey Kisel](https://github.com/skisel-bt).
+- Google Cloud Secret Manager bulk loading support for BLS keys in eth2 mode via PR [#928](https://github.com/Consensys-Incorporated/web3signer/pull/928) contributed by [Sergey Kisel](https://github.com/skisel-bt).
 - Removed hidden option `--Xtrusted-setup` as Web3Signer does not need KZG trusted setup file anymore.
-- Make Vert.x worker pool size configurable using cli option `--vertx-worker-pool-size` (replaces the now deprecated: `--Xworker-pool-size`). [#920](https://github.com/Consensys/web3signer/pull/920)
+- Make Vert.x worker pool size configurable using cli option `--vertx-worker-pool-size` (replaces the now deprecated: `--Xworker-pool-size`). [#920](https://github.com/Consensys-Incorporated/web3signer/pull/920)
 
 ## 23.9.1
 
 ### Breaking Changes
-- Remove --validator-ids option from watermark-repair subcommand [#909](https://github.com/Consensys/web3signer/pull/909)
+- Remove --validator-ids option from watermark-repair subcommand [#909](https://github.com/Consensys-Incorporated/web3signer/pull/909)
 
 ### Features Added
-- Aws bulk loading for secp256k1 keys in eth1 mode [#889](https://github.com/Consensys/web3signer/pull/889)
-- Add High Watermark functionality [#696](https://github.com/Consensys/web3signer/issues/696)
-  - Update `watermark-repair` subcommand with new options `--set-high-watermark`, `--remove-high-watermark` [#912](https://github.com/Consensys/web3signer/pull/912)
-  - Add GET `/highWatermark` to eth2 endpoints [#908](https://github.com/Consensys/web3signer/pull/908)
+- Aws bulk loading for secp256k1 keys in eth1 mode [#889](https://github.com/Consensys-Incorporated/web3signer/pull/889)
+- Add High Watermark functionality [#696](https://github.com/Consensys-Incorporated/web3signer/issues/696)
+  - Update `watermark-repair` subcommand with new options `--set-high-watermark`, `--remove-high-watermark` [#912](https://github.com/Consensys-Incorporated/web3signer/pull/912)
+  - Add GET `/highWatermark` to eth2 endpoints [#908](https://github.com/Consensys-Incorporated/web3signer/pull/908)
 - Add network configuration for revised Holesky testnet
 
 ## 23.9.0
 
 ### Features Added
 - Signing support for BlobSidecar and BlindedBlobSidecar in Deneb fork.
-- Add `--azure-response-timeout` to allow request response timeout to be configurable, the field `timeout` is also accepted in the Azure metadata file. [#888](https://github.com/Consensys/web3signer/pull/888)
+- Add `--azure-response-timeout` to allow request response timeout to be configurable, the field `timeout` is also accepted in the Azure metadata file. [#888](https://github.com/Consensys-Incorporated/web3signer/pull/888)
 - Bulk load Ethereum v3 wallet files in eth1 mode.
 - Eth2 Signing request body now supports both `signingRoot` and the `signing_root` property
 - Add network configuration for Holesky testnet
-- Add `eth_signTypedData` RPC method under the eth1 subcommand. [#893](https://github.com/Consensys/web3signer/pull/893)
+- Add `eth_signTypedData` RPC method under the eth1 subcommand. [#893](https://github.com/Consensys-Incorporated/web3signer/pull/893)
 
 ### Bugs fixed
 - Upcheck was using application/json accept headers instead text/plain accept headers
@@ -365,22 +365,22 @@ This is an optional release for mainnet Ethereum and it includes the updated net
 
 -
 ### Features Added
-- Add support for SECP256K1 remote signing using AWS Key Management Service. [#501](https://github.com/Consensys/web3signer/issues/501)
+- Add support for SECP256K1 remote signing using AWS Key Management Service. [#501](https://github.com/Consensys-Incorporated/web3signer/issues/501)
 - Azure bulk mode support for loading multiline (`\n` delimited, up to 200) keys per secret.
-- Hashicorp connection properties can now override http protocol to HTTP/1.1 from the default of HTTP/2. [#817](https://github.com/ConsenSys/web3signer/pull/817)
-- Add --key-config-path as preferred alias to --key-store-path [#826](https://github.com/Consensys/web3signer/pull/826)
-- Add eth_signTransaction RPC method under the eth1 subcommand [#822](https://github.com/ConsenSys/web3signer/pull/822)
-- Add eth_sendTransaction RPC method under the eth1 subcommand [#835](https://github.com/Consensys/web3signer/pull/835)
-- Add EIP-1559 support for eth1 public transactions for eth_sendTransaction and eth_signTransaction [#836](https://github.com/Consensys/web3signer/pull/836)
-- Add Azure bulk loading for secp256k1 keys in eth1 mode [#850](https://github.com/Consensys/web3signer/pull/850)
-- Added Gnosis configuration for the 🦉 CAPELLA 🦉 network fork due at epoch 648704, UTC Tue 01/08/2023, 11:34:20 [#865](https://github.com/Consensys/web3signer/pull/865)
-- Java 17 for build and runtime. [#870](https://github.com/Consensys/web3signer/pull/870)
-- Update internal teku library to 23.8.0 [#876](https://github.com/Consensys/web3signer/pull/876)
+- Hashicorp connection properties can now override http protocol to HTTP/1.1 from the default of HTTP/2. [#817](https://github.com/Consensys-Incorporated/web3signer/pull/817)
+- Add --key-config-path as preferred alias to --key-store-path [#826](https://github.com/Consensys-Incorporated/web3signer/pull/826)
+- Add eth_signTransaction RPC method under the eth1 subcommand [#822](https://github.com/Consensys-Incorporated/web3signer/pull/822)
+- Add eth_sendTransaction RPC method under the eth1 subcommand [#835](https://github.com/Consensys-Incorporated/web3signer/pull/835)
+- Add EIP-1559 support for eth1 public transactions for eth_sendTransaction and eth_signTransaction [#836](https://github.com/Consensys-Incorporated/web3signer/pull/836)
+- Add Azure bulk loading for secp256k1 keys in eth1 mode [#850](https://github.com/Consensys-Incorporated/web3signer/pull/850)
+- Added Gnosis configuration for the 🦉 CAPELLA 🦉 network fork due at epoch 648704, UTC Tue 01/08/2023, 11:34:20 [#865](https://github.com/Consensys-Incorporated/web3signer/pull/865)
+- Java 17 for build and runtime. [#870](https://github.com/Consensys-Incorporated/web3signer/pull/870)
+- Update internal teku library to 23.8.0 [#876](https://github.com/Consensys-Incorporated/web3signer/pull/876)
 - Add support for [Lukso network](https://lukso.network/) `--network=lukso`
 - Deprecate `signingRoot` while currently supporting both `signingRoot` and `signing_root` in Eth2 signing request body.
 
 ### Bugs fixed
-- Support long name aliases in environment variables and YAML configuration [#825](https://github.com/Consensys/web3signer/pull/825)
+- Support long name aliases in environment variables and YAML configuration [#825](https://github.com/Consensys-Incorporated/web3signer/pull/825)
 
 ---
 ## 23.6.0
@@ -395,26 +395,26 @@ Rest assured, we are not dropping existing EthSigner functionality. We are updat
 
 ### Features Added
 - Optional Azure bulk loading tags support using cli option `--azure-secrets-tags`.
-- Support Prometheus Push Gateway Metrics [#796](https://github.com/ConsenSys/web3signer/pull/796)
+- Support Prometheus Push Gateway Metrics [#796](https://github.com/Consensys-Incorporated/web3signer/pull/796)
 - Cache Genesis Validators Root (GVR) in-memory on first database lookup. This would eliminate further database lookups
-for GVR during sign operations and improve their performance. [#600](https://github.com/ConsenSys/web3signer/issues/600)
-- Add RPC proxy support to execution client under the eth1 subcommand [#775](https://github.com/ConsenSys/web3signer/pull/775)
-- Add eth_accounts RPC method under the eth1 subcommand [#784](https://github.com/ConsenSys/web3signer/pull/784)
+for GVR during sign operations and improve their performance. [#600](https://github.com/Consensys-Incorporated/web3signer/issues/600)
+- Add RPC proxy support to execution client under the eth1 subcommand [#775](https://github.com/Consensys-Incorporated/web3signer/pull/775)
+- Add eth_accounts RPC method under the eth1 subcommand [#784](https://github.com/Consensys-Incorporated/web3signer/pull/784)
 
 ### Bugs Fixed
 - Upgrade jackson and vertx to upgrade snakeyaml to 2.0 to fix CVE-2022-1471
 - Fixed handling of very large number (30,000+) of signing metadata files with Hashicorp connection by introducing
 experimental flag to disable parallel processing `--Xmetadata-files-parallel-processing-enabled`.
-[#794](https://github.com/ConsenSys/web3signer/pull/794)
-- Fixed startup error with web3signer where openAPI spec cannot be loaded [#772](https://github.com/ConsenSys/web3signer/issues/772)
-- Removed unmaintained and out-of-date helm chart [#802](https://github.com/ConsenSys/web3signer/pull/802)
+[#794](https://github.com/Consensys-Incorporated/web3signer/pull/794)
+- Fixed startup error with web3signer where openAPI spec cannot be loaded [#772](https://github.com/Consensys-Incorporated/web3signer/issues/772)
+- Removed unmaintained and out-of-date helm chart [#802](https://github.com/Consensys-Incorporated/web3signer/pull/802)
 
 ---
 ## 23.3.1
 ### Features Added
 - Add support for Capella milestone in Mainnet
-- Enhanced Healthcheck endpoint reporting status of loading of signers keys [#738](https://github.com/ConsenSys/web3signer/pull/738)
-- Optional AWS endpoint overriding for bulk loading `--aws-endpoint-override`. Useful for local testing against localstack. [#730](https://github.com/ConsenSys/web3signer/issues/730)
+- Enhanced Healthcheck endpoint reporting status of loading of signers keys [#738](https://github.com/Consensys-Incorporated/web3signer/pull/738)
+- Optional AWS endpoint overriding for bulk loading `--aws-endpoint-override`. Useful for local testing against localstack. [#730](https://github.com/Consensys-Incorporated/web3signer/issues/730)
 
 ### Bugs Fixed
 - Update of Azure libraries (transitive via signers library) and manual override to fix CVE-2023-1370
@@ -427,11 +427,11 @@ experimental flag to disable parallel processing `--Xmetadata-files-parallel-pro
 
 ### Features Added
 - Add support for Capella milestone in Goerli
-- Introduced cli option `--key-store-config-file-max-size` to change the default value of configuration file size. [#719](https://github.com/ConsenSys/web3signer/issues/719)
+- Introduced cli option `--key-store-config-file-max-size` to change the default value of configuration file size. [#719](https://github.com/Consensys-Incorporated/web3signer/issues/719)
 
 ### Bugs fixed
-- Fix issue with slashing protection database failing once reaching max integer index value [#705](https://github.com/ConsenSys/web3signer/issues/705)
-- Fix issue with Web3Signer startup when configuration file size is greater than 3 MB [#719](https://github.com/ConsenSys/web3signer/issues/719)
+- Fix issue with slashing protection database failing once reaching max integer index value [#705](https://github.com/Consensys-Incorporated/web3signer/issues/705)
+- Fix issue with Web3Signer startup when configuration file size is greater than 3 MB [#719](https://github.com/Consensys-Incorporated/web3signer/issues/719)
 
 ---
 ## 23.2.1
@@ -447,14 +447,14 @@ experimental flag to disable parallel processing `--Xmetadata-files-parallel-pro
 ## 23.2.0
 ### Features Added
 - AWS Secrets Manager bulkload mode can now load multiple keys from same secret where keys are separated by line terminating
-character (such as `\n`). [#706](https://github.com/ConsenSys/web3signer/issues/706)
+character (such as `\n`). [#706](https://github.com/Consensys-Incorporated/web3signer/issues/706)
 
 ---
 ## 23.1.0
 ### Features Added
 - Multiple Signing Key configurations can be specified in single YAML file using triple-dash `---` separator.
-[#689](https://github.com/ConsenSys/web3signer/issues/689)
-- Reloading of signing key configuration file (via `/reload` endpoint) will process new or modified configuration files. [#689](https://github.com/ConsenSys/web3signer/issues/689)
+[#689](https://github.com/Consensys-Incorporated/web3signer/issues/689)
+- Reloading of signing key configuration file (via `/reload` endpoint) will process new or modified configuration files. [#689](https://github.com/Consensys-Incorporated/web3signer/issues/689)
 - Updated Teku libraries version to 22.12.0
 
 ### Bugs Fixed
@@ -467,7 +467,7 @@ character (such as `\n`). [#706](https://github.com/ConsenSys/web3signer/issues/
 import if there is valid and invalid data.
 
 ### Features Added
-- Introduced cli option to specify Hikari configuration for pruning database connection [#661](https://github.com/ConsenSys/web3signer/issues/661)
+- Introduced cli option to specify Hikari configuration for pruning database connection [#661](https://github.com/Consensys-Incorporated/web3signer/issues/661)
 - Better database pruning default values: Pruning enabled by default with
 `slashing-protection-pruning-epochs-to-keep = 250`, `slashing-protection-pruning-at-boot-enabled = false` and
 `slashing-protection-pruning-interval = 12`.
@@ -475,7 +475,7 @@ import if there is valid and invalid data.
 - Introduced experimental cli option `--Xslashing-protection-db-connection-pool-enabled` to disable internal database
 connection pool (Hikari) to allow using external database connection pool such as pgBouncer.
 `--slashing-protection-db-pool-configuration-file` and `--slashing-protection-pruning-db-pool-configuration-file` can be
-reused to specify PG Datasource properties. [#662](https://github.com/ConsenSys/web3signer/issues/662)
+reused to specify PG Datasource properties. [#662](https://github.com/Consensys-Incorporated/web3signer/issues/662)
 - Added new subcommand watermark-repair to update low watermarks
 
 ---
@@ -483,7 +483,7 @@ reused to specify PG Datasource properties. [#662](https://github.com/ConsenSys/
 ## 22.10.0
 
 ### Features Added
-- Log eth2 network configuration on startup [#640](https://github.com/ConsenSys/web3signer/issues/640)
+- Log eth2 network configuration on startup [#640](https://github.com/Consensys-Incorporated/web3signer/issues/640)
 - Updated internal Teku libraries to 22.10.1
 - Updated HikariCP to 5.0.1
 
@@ -497,7 +497,7 @@ reused to specify PG Datasource properties. [#662](https://github.com/ConsenSys/
 
 ## 22.8.0
 ### Features Added
-- Added health check endpoint [#538](https://github.com/ConsenSys/web3signer/issues/538).
+- Added health check endpoint [#538](https://github.com/Consensys-Incorporated/web3signer/issues/538).
 - Introduced `--slashing-protection-db-health-check-timeout-milliseconds` to specify the timeout of the slashing db health check procedure.
 - Introduced `--slashing-protection-db-health-check-interval-milliseconds` to specify the interval between slashing db health check procedures.
 - Updated Teku libraries version (support for Prater/Görli merge).
@@ -507,15 +507,15 @@ reused to specify PG Datasource properties. [#662](https://github.com/ConsenSys/
 
 ## 22.7.0
 ### Features Added
-- Support register validator API endpoint [#577](https://github.com/ConsenSys/web3signer/issues/577)
-- Version information available in metrics through `process_release` [#480](https://github.com/ConsenSys/web3signer/issues/480)
+- Support register validator API endpoint [#577](https://github.com/Consensys-Incorporated/web3signer/issues/577)
+- Version information available in metrics through `process_release` [#480](https://github.com/Consensys-Incorporated/web3signer/issues/480)
 ---
 
 ## 22.6.0
 ### Features Added
 - Support for Sepolia network (updated Teku support libraries).
 - Added new metric `eth2_slashingprotection_database_duration` to track time spent performing database queries during either block or attestation signing operations
-- Private keys bulk loading from AWS Secrets Manager via cli options in eth2 mode [#499](https://github.com/ConsenSys/web3signer/issues/499)
+- Private keys bulk loading from AWS Secrets Manager via cli options in eth2 mode [#499](https://github.com/Consensys-Incorporated/web3signer/issues/499)
 
 ### Bugs Fixed
 - Fix issue where signing_signers_loaded_count metric didn't update after refresh endpoint was used to update loaded keys
@@ -530,15 +530,15 @@ reused to specify PG Datasource properties. [#662](https://github.com/ConsenSys/
 - Added support for ropsten testnet
 
 ### Bugs Fixed
-- Fixes issue when using key manager delete API failed when there was no slashing protection data [#537](https://github.com/ConsenSys/web3signer/issues/537)
+- Fixes issue when using key manager delete API failed when there was no slashing protection data [#537](https://github.com/Consensys-Incorporated/web3signer/issues/537)
 
 ---
 ## 22.5.0
 ### Breaking Changes
-- ETH2 Mode - block signing request (BLOCK_V2), starting from BELLATRIX fork, use block_header instead of block. [#547](https://github.com/ConsenSys/web3signer/pull/547)
+- ETH2 Mode - block signing request (BLOCK_V2), starting from BELLATRIX fork, use block_header instead of block. [#547](https://github.com/Consensys-Incorporated/web3signer/pull/547)
 
 ### Features Added
-- Added support for optimized block signing requests starting from Bellatrix fork. [#437](https://github.com/ConsenSys/web3signer/issues/437)
+- Added support for optimized block signing requests starting from Bellatrix fork. [#437](https://github.com/Consensys-Incorporated/web3signer/issues/437)
 - Early access: Support for Gnosis network in Eth2 mode. `--network gnosis`
 
 ### Bugs Fixed
@@ -557,16 +557,16 @@ reused to specify PG Datasource properties. [#662](https://github.com/ConsenSys/
 - Because the web3signer docker image uses the latest LTS tag (ubuntu:latest), the container host may require an update to the latest container runtime. See [Ubuntu bug](https://bugs.launchpad.net/ubuntu/+source/libseccomp/+bug/1916485) for more details.
 
 ### Features Added
-- Migrate from the deprecated `vertx-web-api-contract` module to `vertx-web-openapi` [#506](https://github.com/ConsenSys/web3signer/pull/506)
-- Migrate jackson `ObjectMapper` instances to `JsonMapper` and `YamlMapper` builders to resolve deprecation warnings [#507](https://github.com/ConsenSys/web3signer/pull/507)
-- Add `iputils-ping` and `net-tools` to docker image to support waiting for dependent services in tools such as docker-compose and Kubernetes [#525](https://github.com/ConsenSys/web3signer/pull/535)
+- Migrate from the deprecated `vertx-web-api-contract` module to `vertx-web-openapi` [#506](https://github.com/Consensys-Incorporated/web3signer/pull/506)
+- Migrate jackson `ObjectMapper` instances to `JsonMapper` and `YamlMapper` builders to resolve deprecation warnings [#507](https://github.com/Consensys-Incorporated/web3signer/pull/507)
+- Add `iputils-ping` and `net-tools` to docker image to support waiting for dependent services in tools such as docker-compose and Kubernetes [#525](https://github.com/Consensys-Incorporated/web3signer/pull/535)
 - Updated Teku libraries to provide support for `kiln` network
 - Support for BLS private keys in AWS Secrets Manager
 - Early access support for [eth2 Key Manager API](https://ethereum.github.io/keymanager-APIs/)
 
 ### Bugs Fixed
-- Upgrade Vertx to 4.x, signers to 2.0.0 and various other dependencies to latest versions [#503](https://github.com/ConsenSys/web3signer/pull/503)
-- DB scripts executed in numeric order (instead of alphanumeric) when using docker instead of flyway to execute [#526](https://github.com/ConsenSys/web3signer/pull/526)
+- Upgrade Vertx to 4.x, signers to 2.0.0 and various other dependencies to latest versions [#503](https://github.com/Consensys-Incorporated/web3signer/pull/503)
+- DB scripts executed in numeric order (instead of alphanumeric) when using docker instead of flyway to execute [#526](https://github.com/Consensys-Incorporated/web3signer/pull/526)
 
 ---
 ## 21.10.6
@@ -612,11 +612,11 @@ reused to specify PG Datasource properties. [#662](https://github.com/ConsenSys/
 ## 21.10.0
 
 ### Features Added
-- Upgrade to signers 1.0.19 allows empty password files to be read when creating a Signer [#432](https://github.com/ConsenSys/web3signer/pull/432)
-- Upgrade Teku libraries version to 21.9.2 to provide support for Altair fork in mainnet [#435](https://github.com/ConsenSys/web3signer/pull/435)
+- Upgrade to signers 1.0.19 allows empty password files to be read when creating a Signer [#432](https://github.com/Consensys-Incorporated/web3signer/pull/432)
+- Upgrade Teku libraries version to 21.9.2 to provide support for Altair fork in mainnet [#435](https://github.com/Consensys-Incorporated/web3signer/pull/435)
 
 ### Breaking Changes
-- Upgrade to signers 1.0.19 removes support for deprecated SECP256K1 curve in Azure remote signing [#432](https://github.com/ConsenSys/web3signer/pull/432)
+- Upgrade to signers 1.0.19 removes support for deprecated SECP256K1 curve in Azure remote signing [#432](https://github.com/Consensys-Incorporated/web3signer/pull/432)
 
 ## 21.8.1
 

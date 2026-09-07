@@ -421,8 +421,8 @@ jobs:
             echo "### Binaries"
             echo "|      Binary     |                       Checksum                      |"
             echo "|:-----------------:|:----------------------------------------------------------------:|"
-            echo "| [web3signer.tar.gz](https://github.com/Consensys/web3signer/releases/download/${TAG}/web3signer-${TAG}.tar.gz) | [Checksum](https://github.com/Consensys/web3signer/releases/download/${TAG}/web3signer-${TAG}.tar.gz.sha256)|"
-            echo "| [web3signer.zip](https://github.com/Consensys/web3signer/releases/download/${TAG}/web3signer-${TAG}.zip)    | [Checksum](https://github.com/Consensys/web3signer/releases/download/${TAG}/web3signer-${TAG}.zip.sha256) |"
+            echo "| [web3signer.tar.gz](https://github.com/Consensys-Incorporated/web3signer/releases/download/${TAG}/web3signer-${TAG}.tar.gz) | [Checksum](https://github.com/Consensys-Incorporated/web3signer/releases/download/${TAG}/web3signer-${TAG}.tar.gz.sha256)|"
+            echo "| [web3signer.zip](https://github.com/Consensys-Incorporated/web3signer/releases/download/${TAG}/web3signer-${TAG}.zip)    | [Checksum](https://github.com/Consensys-Incorporated/web3signer/releases/download/${TAG}/web3signer-${TAG}.zip.sha256) |"
             echo ""
             echo "### Docker"
             echo "Default image (Ubuntu + Eclipse Temurin JRE 25):"
@@ -432,7 +432,7 @@ jobs:
             echo "\`docker pull consensys/web3signer:${TAG}-distroless\`"
             echo ""
             echo "---"
-            echo "**Full Changelog**: https://github.com/Consensys/web3signer/compare/${PREV_TAG}...${TAG}"
+            echo "**Full Changelog**: https://github.com/Consensys-Incorporated/web3signer/compare/${PREV_TAG}...${TAG}"
             echo 'EOF'
           } >> $GITHUB_OUTPUT
 

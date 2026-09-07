@@ -48,7 +48,7 @@ issues and PRs assigned to them.
     - Filing or commenting on issues on GitHub
     - Contributing to community discussions (e.g. meetings, Slack, email
       discussion forums, Stack Overflow)
-- Joined [Web3Signer Discord]
+- Participated in [Web3Signer Discussions]
 - Have read the [contributor guide]
 - Signed ICLA, as described in [CLA.md]
 
@@ -204,4 +204,4 @@ This document is adapted from the following sources:
 [contributor guide]: /CONTRIBUTING.md
 [New contributors]: /CONTRIBUTING.md
 [two-factor authentication]: https://help.github.com/articles/about-two-factor-authentication
-[Web3Signer Discord]: /README.md#chat
+[Web3Signer Discussions]: /README.md#discussions
