@@ -14,7 +14,7 @@ package tech.pegasys.web3signer.keystore.hashicorp.dsl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import tech.pegasys.web3signer.keystore.hashicorp.dsl.certificates.SelfSignedCertificate;
+import tech.pegasys.web3signer.keystore.dsl.certificates.SelfSignedCertificate;
 
 import java.io.IOException;
 import java.nio.file.Files;

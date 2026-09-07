@@ -43,7 +43,6 @@ import tech.pegasys.web3signer.signing.config.metadata.parser.YamlMapperFactory;
 import tech.pegasys.web3signer.signing.config.metadata.parser.YamlSignerParser;
 import tech.pegasys.web3signer.signing.secp256k1.aws.AwsKmsSignerFactory;
 import tech.pegasys.web3signer.signing.secp256k1.aws.CachedAwsKmsClientFactory;
-import tech.pegasys.web3signer.signing.secp256k1.azure.AzureHttpClientFactory;
 import tech.pegasys.web3signer.signing.secp256k1.azure.AzureKeyVaultSignerFactory;
 
 import java.util.Collections;
@@ -89,20 +88,18 @@ public class Eth1Runner extends Runner {
       final Vertx vertx, final MetricsSystem metricsSystem) {
     // Create factories ONCE at startup
     final AzureKeyVaultFactory azureKeyVaultFactory = new AzureKeyVaultFactory();
-    final AzureHttpClientFactory azureHttpClientFactory = new AzureHttpClientFactory();
     final CachedAwsKmsClientFactory cachedAwsKmsClientFactory =
         new CachedAwsKmsClientFactory(eth1Config.getAwsKmsClientCacheSize());
     final SignerLoader signerLoader = new SignerLoader(baseConfig.getSignerLoaderConfig());
 
     // Register ALL for cleanup ONCE
     registerClose(azureKeyVaultFactory);
-    registerClose(azureHttpClientFactory);
     registerClose(cachedAwsKmsClientFactory);
     registerClose(signerLoader);
 
     // Create signer factories that use the shared instances
     final AzureKeyVaultSignerFactory azureSignerFactory =
-        new AzureKeyVaultSignerFactory(azureKeyVaultFactory, azureHttpClientFactory);
+        new AzureKeyVaultSignerFactory(azureKeyVaultFactory);
     final AwsKmsSignerFactory awsKmsSignerFactory =
         new AwsKmsSignerFactory(cachedAwsKmsClientFactory, true);
 
@@ -192,7 +189,8 @@ public class Eth1Runner extends Runner {
             azureKeyVaultConfig.getKeyVaultName(),
             azureKeyVaultConfig.getTenantId(),
             azureKeyVaultConfig.getAuthenticationMode(),
-            azureKeyVaultConfig.getTimeout());
+            azureKeyVaultConfig.getTimeout(),
+            azureKeyVaultConfig.getAzureOverrides());
     final SecpAzureBulkLoader secpAzureBulkLoader =
         new SecpAzureBulkLoader(azureKeyVault, azureSignerFactory);
     final MappedResults<ArtifactSigner> azureResult = secpAzureBulkLoader.load(azureKeyVaultConfig);

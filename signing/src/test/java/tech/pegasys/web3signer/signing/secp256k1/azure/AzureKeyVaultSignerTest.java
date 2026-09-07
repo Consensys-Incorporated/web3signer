@@ -14,96 +14,66 @@ package tech.pegasys.web3signer.signing.secp256k1.azure;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
-import static tech.pegasys.web3signer.keystorage.azure.AzureKeyVault.createUsingClientSecretCredentials;
+import static org.mockito.AdditionalMatchers.aryEq;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-import tech.pegasys.web3signer.keystorage.azure.AzureKeyVault;
-import tech.pegasys.web3signer.signing.config.AzureKeyVaultFactory;
-import tech.pegasys.web3signer.signing.secp256k1.EthPublicKeyUtils;
 import tech.pegasys.web3signer.signing.secp256k1.Signature;
-import tech.pegasys.web3signer.signing.secp256k1.Signer;
 
 import java.math.BigInteger;
 import java.security.SignatureException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
-import org.apache.commons.lang3.StringUtils;
-import org.junit.jupiter.api.BeforeAll;
+import com.azure.security.keyvault.keys.cryptography.CryptographyClient;
+import com.azure.security.keyvault.keys.cryptography.models.SignResult;
+import com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm;
+import org.apache.tuweni.bytes.Bytes;
 import org.junit.jupiter.api.Test;
+import org.web3j.crypto.ECKeyPair;
+import org.web3j.crypto.Hash;
 import org.web3j.crypto.Sign;
 import org.web3j.crypto.Sign.SignatureData;
 import org.web3j.utils.Numeric;
 
-/**
- * These tests require an Azure Key Vault to be setup with keys created beforehand. One Key without
- * any tags, the other with ENV=TEST tag.
- */
 public class AzureKeyVaultSignerTest {
-  private static final String AZURE_CLIENT_ID = System.getenv("AZURE_CLIENT_ID");
-  private static final String AZURE_CLIENT_SECRET = System.getenv("AZURE_CLIENT_SECRET");
-  private static final String AZURE_KEY_VAULT_NAME = System.getenv("AZURE_KEY_VAULT_NAME");
-  private static final String AZURE_TENANT_ID = System.getenv("AZURE_TENANT_ID");
-  private static final long AZURE_DEFAULT_TIMEOUT = 60;
-  private final ExecutorService azureExecutor = Executors.newCachedThreadPool();
-
-  @BeforeAll
-  static void preChecks() {
-    assumeTrue(
-        !StringUtils.isEmpty(AZURE_CLIENT_ID)
-            && !StringUtils.isEmpty(AZURE_CLIENT_SECRET)
-            && !StringUtils.isEmpty(AZURE_KEY_VAULT_NAME)
-            && !StringUtils.isEmpty(AZURE_TENANT_ID),
-        "Ensure Azure env variables are set");
-  }
-
-  private String getAzureKeyName() {
-    final AzureKeyVault azureKeyVault =
-        createUsingClientSecretCredentials(
-            AZURE_CLIENT_ID,
-            AZURE_CLIENT_SECRET,
-            AZURE_TENANT_ID,
-            AZURE_KEY_VAULT_NAME,
-            azureExecutor,
-            AZURE_DEFAULT_TIMEOUT);
-
-    // obtain list of secret names. Then validate mapping function works as expected.
-    return azureKeyVault.getAzureKeys().stream()
-        .findAny()
-        .map(AzureKeyVault.AzureKey::name)
-        .orElseThrow();
-  }
+  private static final ECKeyPair KEY_PAIR = ECKeyPair.create(BigInteger.ONE);
 
   @Test
-  void azureSignerCanSign() throws SignatureException {
-    final AzureConfig config =
-        new AzureConfig(
-            AZURE_KEY_VAULT_NAME,
-            getAzureKeyName(),
-            AZURE_CLIENT_ID,
-            AZURE_CLIENT_SECRET,
-            AZURE_TENANT_ID,
-            AZURE_DEFAULT_TIMEOUT);
+  void reusesCryptographyClientAcrossSignatures() throws SignatureException {
+    final CryptographyClient cryptoClient = mock(CryptographyClient.class);
+    final SignResult signResult = mock(SignResult.class);
+    final byte[] data = "Hello World".getBytes(UTF_8);
+    final byte[] digest = Hash.sha3(data);
+    final SignatureData remoteSignature = Sign.signMessage(digest, KEY_PAIR, false);
+    final byte[] p1363Signature =
+        Bytes.concatenate(Bytes.wrap(remoteSignature.getR()), Bytes.wrap(remoteSignature.getS()))
+            .toArray();
+    when(signResult.getSignature()).thenReturn(p1363Signature);
+    when(cryptoClient.sign(eq(SignatureAlgorithm.ES256K), aryEq(digest))).thenReturn(signResult);
+    final AzureKeyVaultSigner signer =
+        new AzureKeyVaultSigner(
+            Bytes.wrap(Numeric.toBytesPadded(KEY_PAIR.getPublicKey(), 64)),
+            true,
+            false,
+            cryptoClient);
 
-    final Signer azureNonHashedDataSigner =
-        new AzureKeyVaultSignerFactory(new AzureKeyVaultFactory(), new AzureHttpClientFactory())
-            .createSigner(config);
-    final BigInteger publicKey =
-        EthPublicKeyUtils.ecPublicKeyToWeb3JPublicKey(azureNonHashedDataSigner.getPublicKey());
+    final Signature firstSignature = signer.sign(data);
+    final Signature secondSignature = signer.sign(data);
 
-    final byte[] dataToSign = "Hello World".getBytes(UTF_8);
+    assertThat(recoverPublicKey(data, firstSignature)).isEqualTo(KEY_PAIR.getPublicKey());
+    assertThat(recoverPublicKey(data, secondSignature)).isEqualTo(KEY_PAIR.getPublicKey());
+    verify(cryptoClient, times(2)).sign(eq(SignatureAlgorithm.ES256K), aryEq(digest));
+  }
 
-    final Signature signature = azureNonHashedDataSigner.sign(dataToSign);
-
-    // Determine if Web3j thinks the signature comes from the public key used (really proves
-    // that the hashedData isn't hashed a second time).
-    final SignatureData sigData =
+  private static BigInteger recoverPublicKey(final byte[] data, final Signature signature)
+      throws SignatureException {
+    final SignatureData signatureData =
         new SignatureData(
             signature.getV().toByteArray(),
             Numeric.toBytesPadded(signature.getR(), 32),
             Numeric.toBytesPadded(signature.getS(), 32));
-
-    final BigInteger recoveredPublicKey = Sign.signedMessageToKey(dataToSign, sigData);
-    assertThat(recoveredPublicKey).isEqualTo(publicKey);
+    return Sign.signedMessageToKey(data, signatureData);
   }
 }

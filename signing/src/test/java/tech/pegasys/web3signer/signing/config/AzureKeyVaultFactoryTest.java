@@ -14,6 +14,9 @@ package tech.pegasys.web3signer.signing.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import tech.pegasys.web3signer.keystorage.azure.AzureKeyVault;
+import tech.pegasys.web3signer.keystorage.azure.AzureOverrides;
+
 import java.util.concurrent.ExecutorService;
 
 import org.junit.jupiter.api.AfterEach;
@@ -41,7 +44,8 @@ class AzureKeyVaultFactoryTest {
         "keyVaultName",
         "tenantId",
         AzureAuthenticationMode.CLIENT_SECRET,
-        DEFAULT_AZURE_TIMEOUT);
+        DEFAULT_AZURE_TIMEOUT,
+        AzureOverrides.NONE);
     assertThat(azureKeyVaultFactory.getExecutorServiceCache().get()).isNotNull();
   }
 
@@ -53,7 +57,8 @@ class AzureKeyVaultFactoryTest {
         "keyVaultName",
         "tenantId",
         AzureAuthenticationMode.CLIENT_SECRET,
-        DEFAULT_AZURE_TIMEOUT);
+        DEFAULT_AZURE_TIMEOUT,
+        AzureOverrides.NONE);
     final ExecutorService executorService = azureKeyVaultFactory.getExecutorServiceCache().get();
     assertThat(executorService).isNotNull();
 
@@ -63,7 +68,8 @@ class AzureKeyVaultFactoryTest {
         "keyVaultName",
         "tenantId",
         AzureAuthenticationMode.CLIENT_SECRET,
-        DEFAULT_AZURE_TIMEOUT);
+        DEFAULT_AZURE_TIMEOUT,
+        AzureOverrides.NONE);
     final ExecutorService executorService2 = azureKeyVaultFactory.getExecutorServiceCache().get();
     assertThat(executorService).isSameAs(executorService2);
   }
@@ -76,7 +82,8 @@ class AzureKeyVaultFactoryTest {
         "keyVaultName",
         "tenantId",
         AzureAuthenticationMode.USER_ASSIGNED_MANAGED_IDENTITY,
-        DEFAULT_AZURE_TIMEOUT);
+        DEFAULT_AZURE_TIMEOUT,
+        AzureOverrides.NONE);
     assertThat(azureKeyVaultFactory.getExecutorServiceCache().get()).isNull();
   }
 
@@ -88,7 +95,8 @@ class AzureKeyVaultFactoryTest {
         "keyVaultName",
         "tenantId",
         AzureAuthenticationMode.SYSTEM_ASSIGNED_MANAGED_IDENTITY,
-        DEFAULT_AZURE_TIMEOUT);
+        DEFAULT_AZURE_TIMEOUT,
+        AzureOverrides.NONE);
     assertThat(azureKeyVaultFactory.getExecutorServiceCache().get()).isNull();
   }
 
@@ -100,12 +108,149 @@ class AzureKeyVaultFactoryTest {
         "keyVaultName",
         "tenantId",
         AzureAuthenticationMode.CLIENT_SECRET,
-        DEFAULT_AZURE_TIMEOUT);
+        DEFAULT_AZURE_TIMEOUT,
+        AzureOverrides.NONE);
     final ExecutorService executorService = azureKeyVaultFactory.getExecutorServiceCache().get();
     assertThat(executorService).isNotNull();
 
     azureKeyVaultFactory.close();
     assertThat(executorService.isShutdown()).isTrue();
     assertThat(azureKeyVaultFactory.getExecutorServiceCache().get()).isNull();
+  }
+
+  @Test
+  void reusesVaultInstanceForIdenticalParameters() {
+    final AzureKeyVault vault1 =
+        azureKeyVaultFactory.createAzureKeyVault(
+            "clientId",
+            "clientSecret",
+            "keyVaultName",
+            "tenantId",
+            AzureAuthenticationMode.CLIENT_SECRET,
+            DEFAULT_AZURE_TIMEOUT,
+            AzureOverrides.NONE);
+    final AzureKeyVault vault2 =
+        azureKeyVaultFactory.createAzureKeyVault(
+            "clientId",
+            "clientSecret",
+            "keyVaultName",
+            "tenantId",
+            AzureAuthenticationMode.CLIENT_SECRET,
+            DEFAULT_AZURE_TIMEOUT,
+            AzureOverrides.NONE);
+
+    assertThat(vault1).isSameAs(vault2);
+    assertThat(azureKeyVaultFactory.getVaultCache().size()).isEqualTo(1);
+  }
+
+  @Test
+  void createsDistinctVaultInstancesWhenClientSecretDiffers() {
+    final AzureKeyVault vault1 =
+        azureKeyVaultFactory.createAzureKeyVault(
+            "clientId",
+            "clientSecret",
+            "keyVaultName",
+            "tenantId",
+            AzureAuthenticationMode.CLIENT_SECRET,
+            DEFAULT_AZURE_TIMEOUT,
+            AzureOverrides.NONE);
+    final AzureKeyVault vault2 =
+        azureKeyVaultFactory.createAzureKeyVault(
+            "clientId",
+            "rotatedClientSecret",
+            "keyVaultName",
+            "tenantId",
+            AzureAuthenticationMode.CLIENT_SECRET,
+            DEFAULT_AZURE_TIMEOUT,
+            AzureOverrides.NONE);
+
+    assertThat(vault1).isNotSameAs(vault2);
+    assertThat(azureKeyVaultFactory.getVaultCache().size()).isEqualTo(2);
+  }
+
+  @Test
+  void createsDistinctVaultInstancesWhenKeyVaultNameDiffers() {
+    final AzureKeyVault vault1 =
+        azureKeyVaultFactory.createAzureKeyVault(
+            "clientId",
+            "clientSecret",
+            "keyVaultName1",
+            "tenantId",
+            AzureAuthenticationMode.CLIENT_SECRET,
+            DEFAULT_AZURE_TIMEOUT,
+            AzureOverrides.NONE);
+    final AzureKeyVault vault2 =
+        azureKeyVaultFactory.createAzureKeyVault(
+            "clientId",
+            "clientSecret",
+            "keyVaultName2",
+            "tenantId",
+            AzureAuthenticationMode.CLIENT_SECRET,
+            DEFAULT_AZURE_TIMEOUT,
+            AzureOverrides.NONE);
+
+    assertThat(vault1).isNotSameAs(vault2);
+  }
+
+  @Test
+  void vaultCacheIsBoundedInSize() {
+    for (int i = 0; i < 50; i++) {
+      azureKeyVaultFactory.createAzureKeyVault(
+          "clientId" + i,
+          "clientSecret",
+          "keyVaultName",
+          "tenantId",
+          AzureAuthenticationMode.CLIENT_SECRET,
+          DEFAULT_AZURE_TIMEOUT,
+          AzureOverrides.NONE);
+    }
+
+    assertThat(azureKeyVaultFactory.getVaultCache().size()).isLessThanOrEqualTo(10);
+  }
+
+  @Test
+  void closeInvalidatesVaultCache() {
+    azureKeyVaultFactory.createAzureKeyVault(
+        "clientId",
+        "clientSecret",
+        "keyVaultName",
+        "tenantId",
+        AzureAuthenticationMode.CLIENT_SECRET,
+        DEFAULT_AZURE_TIMEOUT,
+        AzureOverrides.NONE);
+    assertThat(azureKeyVaultFactory.getVaultCache().size()).isEqualTo(1);
+
+    azureKeyVaultFactory.close();
+    assertThat(azureKeyVaultFactory.getVaultCache().size()).isEqualTo(0);
+  }
+
+  @Test
+  void azureKeyVaultKeyToStringMasksClientSecret() {
+    final AzureKeyVaultFactory.AzureKeyVaultKey keyWithSecret =
+        new AzureKeyVaultFactory.AzureKeyVaultKey(
+            "myClientId",
+            "superSecretValue",
+            "myVault",
+            "myTenantId",
+            AzureAuthenticationMode.CLIENT_SECRET,
+            DEFAULT_AZURE_TIMEOUT,
+            AzureOverrides.NONE);
+    assertThat(keyWithSecret.toString())
+        .contains("clientId=myClientId")
+        .contains("clientSecret=***")
+        .doesNotContain("superSecretValue")
+        .contains("keyVaultName=myVault")
+        .contains("tenantId=myTenantId");
+
+    final AzureKeyVaultFactory.AzureKeyVaultKey keyWithNullSecret =
+        new AzureKeyVaultFactory.AzureKeyVaultKey(
+            "myClientId",
+            null,
+            "myVault",
+            "myTenantId",
+            AzureAuthenticationMode.SYSTEM_ASSIGNED_MANAGED_IDENTITY,
+            DEFAULT_AZURE_TIMEOUT,
+            AzureOverrides.NONE);
+    assertThat(keyWithNullSecret.toString()).contains("clientSecret=null");
   }
 }

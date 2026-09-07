@@ -12,6 +12,7 @@
  */
 package tech.pegasys.web3signer.signing.config.metadata;
 
+import tech.pegasys.web3signer.keystorage.azure.AzureOverrides;
 import tech.pegasys.web3signer.signing.ArtifactSigner;
 import tech.pegasys.web3signer.signing.KeyType;
 import tech.pegasys.web3signer.signing.config.AzureAuthenticationMode;
@@ -32,6 +33,7 @@ public class AzureSecretSigningMetadata extends SigningMetadata implements Azure
   private final String secretName;
   private final AzureAuthenticationMode authenticationMode;
   private final long timeout;
+  private final AzureOverrides azureOverrides;
 
   public AzureSecretSigningMetadata(
       final String clientId,
@@ -41,7 +43,8 @@ public class AzureSecretSigningMetadata extends SigningMetadata implements Azure
       final String secretName,
       final AzureAuthenticationMode azureAuthenticationMode,
       final KeyType keyType,
-      final long timeout) {
+      final long timeout,
+      final AzureOverrides azureOverrides) {
     super(TYPE, keyType != null ? keyType : KeyType.BLS);
     this.clientId = clientId;
     this.clientSecret = clientSecret;
@@ -53,6 +56,7 @@ public class AzureSecretSigningMetadata extends SigningMetadata implements Azure
             ? AzureAuthenticationMode.CLIENT_SECRET
             : azureAuthenticationMode;
     this.timeout = timeout;
+    this.azureOverrides = azureOverrides;
   }
 
   @Override
@@ -104,5 +108,10 @@ public class AzureSecretSigningMetadata extends SigningMetadata implements Azure
   @Override
   public long getTimeout() {
     return timeout;
+  }
+
+  @Override
+  public AzureOverrides getAzureOverrides() {
+    return azureOverrides;
   }
 }

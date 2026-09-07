@@ -14,12 +14,16 @@ package tech.pegasys.web3signer.signing.config.metadata;
 
 import static tech.pegasys.web3signer.signing.config.AzureAuthenticationMode.USER_ASSIGNED_MANAGED_IDENTITY;
 
+import tech.pegasys.web3signer.keystorage.azure.AzureOverrides;
 import tech.pegasys.web3signer.signing.KeyType;
 import tech.pegasys.web3signer.signing.config.AzureAuthenticationMode;
 
 import java.io.IOException;
+import java.net.URI;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationContext;
@@ -37,6 +41,9 @@ public class AzureSecretSigningMetadataDeserializer
   private static final String AUTH_MODE = "authenticationMode";
   private static final String KEY_TYPE = "keyType";
   private static final String TIMEOUT = "timeout";
+  private static final String ENDPOINT_OVERRIDE = "endpointOverride";
+  private static final String AUTHORITY_HOST_OVERRIDE = "authorityHostOverride";
+  private static final String TRUST_CERTIFICATE_OVERRIDE = "trustCertificateOverride";
 
   @SuppressWarnings("Unused")
   public AzureSecretSigningMetadataDeserializer() {
@@ -57,6 +64,9 @@ public class AzureSecretSigningMetadataDeserializer
     String vaultName = null;
     String secretName = null;
     long timeout = 60;
+    Optional<URI> endpointOverride = Optional.empty();
+    Optional<URI> authorityHostOverride = Optional.empty();
+    Optional<Path> trustCertificateOverride = Optional.empty();
 
     AzureAuthenticationMode authenticationMode = null;
 
@@ -101,6 +111,17 @@ public class AzureSecretSigningMetadataDeserializer
       timeout = node.get(TIMEOUT).asLong();
     }
 
+    if (node.get(ENDPOINT_OVERRIDE) != null) {
+      endpointOverride = Optional.of(URI.create(node.get(ENDPOINT_OVERRIDE).asText()));
+    }
+    if (node.get(AUTHORITY_HOST_OVERRIDE) != null) {
+      authorityHostOverride = Optional.of(URI.create(node.get(AUTHORITY_HOST_OVERRIDE).asText()));
+    }
+    if (node.get(TRUST_CERTIFICATE_OVERRIDE) != null) {
+      trustCertificateOverride =
+          Optional.of(Path.of(node.get(TRUST_CERTIFICATE_OVERRIDE).asText()));
+    }
+
     final AzureSecretSigningMetadata azureSecretSigningMetadata =
         new AzureSecretSigningMetadata(
             clientId,
@@ -110,7 +131,8 @@ public class AzureSecretSigningMetadataDeserializer
             secretName,
             authenticationMode,
             keyType,
-            timeout);
+            timeout,
+            new AzureOverrides(endpointOverride, authorityHostOverride, trustCertificateOverride));
 
     validate(parser, azureSecretSigningMetadata);
 

@@ -26,6 +26,9 @@ import static tech.pegasys.web3signer.commandline.PicoCliAwsSecretsManagerParame
 import static tech.pegasys.web3signer.commandline.PicoCliAwsSecretsManagerParameters.AWS_SECRETS_REGION_OPTION;
 import static tech.pegasys.web3signer.commandline.PicoCliAwsSecretsManagerParameters.AWS_SECRETS_SECRET_ACCESS_KEY_OPTION;
 import static tech.pegasys.web3signer.commandline.PicoCliAwsSecretsManagerParameters.AWS_SECRETS_TAG_OPTION;
+import static tech.pegasys.web3signer.commandline.PicoCliAzureKeyVaultParameters.AZURE_AUTHORITY_HOST_OVERRIDE_OPTION;
+import static tech.pegasys.web3signer.commandline.PicoCliAzureKeyVaultParameters.AZURE_ENDPOINT_OVERRIDE_OPTION;
+import static tech.pegasys.web3signer.commandline.PicoCliAzureKeyVaultParameters.AZURE_TRUST_CERTIFICATE_OVERRIDE_OPTION;
 import static tech.pegasys.web3signer.commandline.PicoCliGcpSecretManagerParameters.GCP_PROJECT_ID_OPTION;
 import static tech.pegasys.web3signer.commandline.PicoCliGcpSecretManagerParameters.GCP_SECRETS_ENABLED_OPTION;
 import static tech.pegasys.web3signer.commandline.PicoCliGcpSecretManagerParameters.GCP_SECRETS_FILTER_OPTION;
@@ -238,6 +241,30 @@ public class CmdLineParamsConfigFileImpl implements CmdLineParamsBuilder {
     if (!azureParams.getTags().isEmpty()) {
       yamlConfigMap.put(mode + ".azure-tags", mapToStringConcatenated(azureParams.getTags()));
     }
+    azureParams
+        .getAzureOverrides()
+        .endpointOverride()
+        .ifPresent(
+            uri ->
+                yamlConfigMap.put(
+                    mode + "." + PrefixUtil.stripPrefix(AZURE_ENDPOINT_OVERRIDE_OPTION),
+                    uri.toString()));
+    azureParams
+        .getAzureOverrides()
+        .authorityHostOverride()
+        .ifPresent(
+            uri ->
+                yamlConfigMap.put(
+                    mode + "." + PrefixUtil.stripPrefix(AZURE_AUTHORITY_HOST_OVERRIDE_OPTION),
+                    uri.toString()));
+    azureParams
+        .getAzureOverrides()
+        .trustCertificateOverride()
+        .ifPresent(
+            path ->
+                yamlConfigMap.put(
+                    mode + "." + PrefixUtil.stripPrefix(AZURE_TRUST_CERTIFICATE_OVERRIDE_OPTION),
+                    path.toString()));
     return yamlConfigMap;
   }
 

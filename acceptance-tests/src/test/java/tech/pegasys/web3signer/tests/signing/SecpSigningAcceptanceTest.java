@@ -16,14 +16,19 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.singletonMap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.web3j.crypto.Sign.signedMessageToKey;
-import static tech.pegasys.web3signer.tests.bulkloading.AzureKeyVaultAcceptanceTest.getSECPKeysFromAzureVault;
 
 import tech.pegasys.web3signer.AwsKmsUtil;
+import tech.pegasys.web3signer.core.service.jsonrpc.handlers.signing.ConfigurationChainId;
 import tech.pegasys.web3signer.dsl.HashicorpSigningParams;
+import tech.pegasys.web3signer.dsl.azure.AzureKeyVaultEmulator;
+import tech.pegasys.web3signer.dsl.azure.MockAzureAuthorityExtension;
+import tech.pegasys.web3signer.dsl.signer.SignerConfigurationBuilder;
 import tech.pegasys.web3signer.dsl.utils.MetadataFileHelpers;
+import tech.pegasys.web3signer.keystorage.azure.AzureOverrides;
 import tech.pegasys.web3signer.keystore.hashicorp.dsl.HashicorpNode;
 import tech.pegasys.web3signer.signing.KeyType;
 import tech.pegasys.web3signer.signing.secp256k1.EthPublicKeyUtils;
+import tech.pegasys.web3signer.tests.bulkloading.AzureKeyVaultAcceptanceTest;
 
 import java.io.File;
 import java.math.BigInteger;
@@ -44,16 +49,12 @@ import org.apache.tuweni.bytes.Bytes;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariables;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.web3j.crypto.Hash;
 import org.web3j.crypto.Sign;
 import org.web3j.crypto.Sign.SignatureData;
 
 public class SecpSigningAcceptanceTest extends SigningAcceptanceTestBase {
-
-  private static final String CLIENT_ID = System.getenv("AZURE_CLIENT_ID");
-  private static final String CLIENT_SECRET = System.getenv("AZURE_CLIENT_SECRET");
-  private static final String KEY_VAULT_NAME = System.getenv("AZURE_KEY_VAULT_NAME");
-  private static final String TENANT_ID = System.getenv("AZURE_TENANT_ID");
 
   private static final Bytes DATA = Bytes.wrap("42".getBytes(UTF_8));
   private static final String PRIVATE_KEY =
@@ -62,6 +63,9 @@ public class SecpSigningAcceptanceTest extends SigningAcceptanceTestBase {
       "09b02f8a5fddd222ade4ea4528faefc399623af3f736be3c44f03e2df22fb792f3931a4d9573d333ca74343305762a753388c3422a86d98b713fc91c1ea04842";
 
   private static final MetadataFileHelpers METADATA_FILE_HELPERS = new MetadataFileHelpers();
+
+  @RegisterExtension
+  static final MockAzureAuthorityExtension MOCK_AUTHORITY = new MockAzureAuthorityExtension();
 
   @Test
   public void signDataWithFileBasedKey() throws URISyntaxException {
@@ -143,24 +147,43 @@ public class SecpSigningAcceptanceTest extends SigningAcceptanceTestBase {
   }
 
   @Test
-  @EnabledIfEnvironmentVariables({
-    @EnabledIfEnvironmentVariable(named = "AZURE_CLIENT_ID", matches = ".+"),
-    @EnabledIfEnvironmentVariable(named = "AZURE_CLIENT_SECRET", matches = ".+"),
-    @EnabledIfEnvironmentVariable(named = "AZURE_KEY_VAULT_NAME", matches = ".+"),
-    @EnabledIfEnvironmentVariable(named = "AZURE_TENANT_ID", matches = ".+")
-  })
   public void signDataWithKeyInAzure() {
-    final var azureKey = getSECPKeysFromAzureVault().stream().findAny().orElseThrow();
+    final AzureKeyVaultEmulator emulator = AzureKeyVaultEmulator.getInstance();
+    final AzureOverrides azureOverrides =
+        new AzureOverrides(
+            Optional.of(URI.create(emulator.getVaultUrl())),
+            Optional.of(URI.create(MOCK_AUTHORITY.getAuthorityHostUrl())),
+            Optional.of(emulator.getTrustCertificatePath()));
+    final var azureKey =
+        AzureKeyVaultAcceptanceTest.getSECPKeysFromEmulator(azureOverrides).stream()
+            .findAny()
+            .orElseThrow();
 
     METADATA_FILE_HELPERS.createAzureKeyYamlFileAt(
         testDirectory.resolve("azure_key.yaml"),
-        CLIENT_ID,
-        CLIENT_SECRET,
-        KEY_VAULT_NAME,
-        TENANT_ID,
-        azureKey.name());
+        "unused",
+        "unused",
+        "unused",
+        AzureKeyVaultEmulator.TENANT_ID,
+        azureKey.name(),
+        azureOverrides);
 
-    signAndVerifySignature(azureKey.publicKeyHex());
+    final SignerConfigurationBuilder builder =
+        new SignerConfigurationBuilder()
+            .withKeyStoreDirectory(testDirectory)
+            .withMode("eth1")
+            .withChainIdProvider(new ConfigurationChainId(DEFAULT_CHAIN_ID))
+            .withOverriddenCA(emulator.getTlsCertificateDefinition());
+    startSigner(builder.build());
+
+    final Response response = signer.eth1Sign(azureKey.publicKeyHex(), DATA);
+    final Bytes signature = verifyAndGetSignatureResponse(response);
+    verifySignature(signature, azureKey.publicKeyHex());
+
+    final Bytes digest = Bytes.wrap(Hash.sha3(DATA.toArray()));
+    final Response digestResponse = signer.eth1Sign(azureKey.publicKeyHex(), digest, false);
+    verifyDigestSignature(
+        verifyAndGetSignatureResponse(digestResponse), digest, azureKey.publicKeyHex());
   }
 
   @Test

@@ -13,6 +13,7 @@
 package tech.pegasys.web3signer.signing.config;
 
 import tech.pegasys.web3signer.keystorage.azure.AzureKeyVault;
+import tech.pegasys.web3signer.keystorage.azure.AzureOverrides;
 
 import java.io.Closeable;
 import java.util.Objects;
@@ -22,9 +23,32 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 
+/**
+ * Builds {@link AzureKeyVault} instances, caching one per distinct credentials/vault/behaviour
+ * combination. Building one is expensive (AAD login + new HTTP connection pool), and this is called
+ * once per loaded key/secret, so identical calls reuse the cached instance instead.
+ *
+ * <p>Cached instances hold no closeable resources, so eviction/{@link #close()} just drop
+ * references.
+ */
 public class AzureKeyVaultFactory implements Closeable {
+  private static final int CLIENT_CACHE_SIZE = 10;
+
   private final AtomicReference<ExecutorService> executorServiceCache = new AtomicReference<>();
+  private final LoadingCache<AzureKeyVaultKey, AzureKeyVault> vaultCache =
+      CacheBuilder.newBuilder()
+          .maximumSize(CLIENT_CACHE_SIZE)
+          .build(
+              new CacheLoader<>() {
+                @Override
+                public AzureKeyVault load(final AzureKeyVaultKey key) {
+                  return buildAzureKeyVault(key);
+                }
+              });
 
   public AzureKeyVault createAzureKeyVault(final AzureKeyVaultParameters azureKeyVaultParameters) {
     return createAzureKeyVault(
@@ -33,7 +57,8 @@ public class AzureKeyVaultFactory implements Closeable {
         azureKeyVaultParameters.getKeyVaultName(),
         azureKeyVaultParameters.getTenantId(),
         azureKeyVaultParameters.getAuthenticationMode(),
-        azureKeyVaultParameters.getTimeout());
+        azureKeyVaultParameters.getTimeout(),
+        azureKeyVaultParameters.getAzureOverrides());
   }
 
   public AzureKeyVault createAzureKeyVault(
@@ -42,22 +67,41 @@ public class AzureKeyVaultFactory implements Closeable {
       final String keyVaultName,
       final String tenantId,
       final AzureAuthenticationMode mode,
-      final long httpClientTimeout) {
-    return switch (mode) {
+      final long httpClientTimeout,
+      final AzureOverrides azureOverrides) {
+    final AzureKeyVaultKey key =
+        new AzureKeyVaultKey(
+            clientId,
+            clientSecret,
+            keyVaultName,
+            tenantId,
+            mode,
+            httpClientTimeout,
+            azureOverrides);
+    // Safe: the loader only throws unchecked exceptions.
+    return vaultCache.getUnchecked(key);
+  }
+
+  private AzureKeyVault buildAzureKeyVault(final AzureKeyVaultKey key) {
+    return switch (key.mode()) {
       case USER_ASSIGNED_MANAGED_IDENTITY ->
           AzureKeyVault.createUsingManagedIdentity(
-              Optional.of(clientId), keyVaultName, httpClientTimeout);
+              Optional.of(key.clientId()),
+              key.keyVaultName(),
+              key.httpClientTimeout(),
+              key.azureOverrides());
       case SYSTEM_ASSIGNED_MANAGED_IDENTITY ->
           AzureKeyVault.createUsingManagedIdentity(
-              Optional.empty(), keyVaultName, httpClientTimeout);
+              Optional.empty(), key.keyVaultName(), key.httpClientTimeout(), key.azureOverrides());
       case CLIENT_SECRET ->
           AzureKeyVault.createUsingClientSecretCredentials(
-              clientId,
-              clientSecret,
-              tenantId,
-              keyVaultName,
+              key.clientId(),
+              key.clientSecret(),
+              key.tenantId(),
+              key.keyVaultName(),
               getOrCreateExecutor(),
-              httpClientTimeout);
+              key.httpClientTimeout(),
+              key.azureOverrides());
     };
   }
 
@@ -70,6 +114,8 @@ public class AzureKeyVaultFactory implements Closeable {
 
   @Override
   public void close() {
+    vaultCache.invalidateAll();
+
     final ExecutorService executorService = executorServiceCache.get();
     if (executorService != null) {
       executorService.shutdownNow();
@@ -80,5 +126,42 @@ public class AzureKeyVaultFactory implements Closeable {
   @VisibleForTesting
   protected AtomicReference<ExecutorService> getExecutorServiceCache() {
     return executorServiceCache;
+  }
+
+  @VisibleForTesting
+  protected LoadingCache<AzureKeyVaultKey, AzureKeyVault> getVaultCache() {
+    return vaultCache;
+  }
+
+  /** Identifies a cached {@link AzureKeyVault} by every input that affects how it is built. */
+  @VisibleForTesting
+  record AzureKeyVaultKey(
+      String clientId,
+      String clientSecret,
+      String keyVaultName,
+      String tenantId,
+      AzureAuthenticationMode mode,
+      long httpClientTimeout,
+      AzureOverrides azureOverrides) {
+
+    @Override
+    public String toString() {
+      return "AzureKeyVaultKey["
+          + "clientId="
+          + clientId
+          + ", clientSecret="
+          + (clientSecret != null ? "***" : "null")
+          + ", keyVaultName="
+          + keyVaultName
+          + ", tenantId="
+          + tenantId
+          + ", mode="
+          + mode
+          + ", httpClientTimeout="
+          + httpClientTimeout
+          + ", azureOverrides="
+          + azureOverrides
+          + ']';
+    }
   }
 }

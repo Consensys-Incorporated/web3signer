@@ -16,6 +16,7 @@ dependencies {
 
   implementation project(":common")
   implementation project(":core")
+  implementation project(":keystorage")
   implementation project(":slashing-protection")
   implementation project(":signing")
   implementation 'info.picocli:picocli'
@@ -48,7 +49,6 @@ dependencies {
   testImplementation 'org.assertj:assertj-core'
   testImplementation 'org.mockito:mockito-junit-jupiter'
   testImplementation 'io.vertx:vertx-web'
-  testImplementation project(':keystorage')
 }
 
 artifacts {

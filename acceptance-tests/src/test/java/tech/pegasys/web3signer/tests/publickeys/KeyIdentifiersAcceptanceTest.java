@@ -26,27 +26,35 @@ import static tech.pegasys.web3signer.dsl.utils.HealthCheckResultUtil.getHealthc
 import static tech.pegasys.web3signer.dsl.utils.HealthCheckResultUtil.getHealthcheckStatusValue;
 import static tech.pegasys.web3signer.signing.KeyType.BLS;
 import static tech.pegasys.web3signer.signing.KeyType.SECP256K1;
-import static tech.pegasys.web3signer.tests.bulkloading.AzureKeyVaultAcceptanceTest.getSECPKeysFromAzureVault;
 
 import tech.pegasys.teku.bls.BLSKeyPair;
 import tech.pegasys.teku.bls.BLSPublicKey;
 import tech.pegasys.teku.bls.BLSSecretKey;
+import tech.pegasys.web3signer.dsl.azure.AzureKeyVaultEmulator;
+import tech.pegasys.web3signer.dsl.azure.MockAzureAuthorityExtension;
+import tech.pegasys.web3signer.dsl.signer.SignerConfigurationBuilder;
+import tech.pegasys.web3signer.keystorage.azure.AzureOverrides;
 import tech.pegasys.web3signer.signing.KeyType;
+import tech.pegasys.web3signer.tests.bulkloading.AzureKeyVaultAcceptanceTest;
 
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 import io.restassured.response.Response;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.tuweni.bytes.Bytes32;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariables;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 public class KeyIdentifiersAcceptanceTest extends KeyIdentifiersAcceptanceTestBase {
+
+  @RegisterExtension
+  static final MockAzureAuthorityExtension MOCK_AUTHORITY = new MockAzureAuthorityExtension();
 
   @ParameterizedTest
   @EnumSource(value = KeyType.class)
@@ -205,29 +213,36 @@ public class KeyIdentifiersAcceptanceTest extends KeyIdentifiersAcceptanceTestBa
   }
 
   @Test
-  @EnabledIfEnvironmentVariables({
-    @EnabledIfEnvironmentVariable(named = "AZURE_CLIENT_ID", matches = ".+"),
-    @EnabledIfEnvironmentVariable(named = "AZURE_CLIENT_SECRET", matches = ".+"),
-    @EnabledIfEnvironmentVariable(named = "AZURE_KEY_VAULT_NAME", matches = ".+"),
-    @EnabledIfEnvironmentVariable(named = "AZURE_TENANT_ID", matches = ".+")
-  })
   public void azureKeysReturnAppropriatePublicKey() {
-    final String clientId = System.getenv("AZURE_CLIENT_ID");
-    final String clientSecret = System.getenv("AZURE_CLIENT_SECRET");
-    final String keyVaultName = System.getenv("AZURE_KEY_VAULT_NAME");
-    final String tenantId = System.getenv("AZURE_TENANT_ID");
+    final AzureKeyVaultEmulator emulator = AzureKeyVaultEmulator.getInstance();
+    final AzureOverrides azureOverrides =
+        new AzureOverrides(
+            Optional.of(URI.create(emulator.getVaultUrl())),
+            Optional.of(URI.create(MOCK_AUTHORITY.getAuthorityHostUrl())),
+            Optional.of(emulator.getTrustCertificatePath()));
 
-    final var azureKey = getSECPKeysFromAzureVault().stream().findAny().orElseThrow();
+    final var azureKey =
+        AzureKeyVaultAcceptanceTest.getSECPKeysFromEmulator(azureOverrides).stream()
+            .findAny()
+            .orElseThrow();
 
     // single key loading via metadata file
     METADATA_FILE_HELPERS.createAzureKeyYamlFileAt(
         testDirectory.resolve("azure_key.yaml"),
-        clientId,
-        clientSecret,
-        keyVaultName,
-        tenantId,
-        azureKey.name());
-    initAndStartSigner("eth1");
+        "unused",
+        "unused",
+        "unused",
+        AzureKeyVaultEmulator.TENANT_ID,
+        azureKey.name(),
+        azureOverrides);
+
+    final SignerConfigurationBuilder builder =
+        new SignerConfigurationBuilder()
+            .withKeyStoreDirectory(testDirectory)
+            .withMode("eth1")
+            .withOverriddenCA(emulator.getTlsCertificateDefinition());
+    startSigner(builder.build());
+
     final Response response = callApiPublicKeysWithoutOpenApiClientSideFilter(SECP256K1);
     validateApiResponse(response, contains(azureKey.publicKeyHex()));
   }

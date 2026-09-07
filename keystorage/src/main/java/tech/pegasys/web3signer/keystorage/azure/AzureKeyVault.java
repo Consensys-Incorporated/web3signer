@@ -15,8 +15,13 @@ package tech.pegasys.web3signer.keystorage.azure;
 import tech.pegasys.web3signer.keystorage.common.MappedResults;
 import tech.pegasys.web3signer.keystorage.common.SecretValueMapperUtil;
 
+import java.io.InputStream;
 import java.net.URI;
-import java.net.http.HttpRequest;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.KeyStore;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -30,22 +35,20 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import javax.net.ssl.TrustManagerFactory;
 
-import com.azure.core.credential.AccessToken;
 import com.azure.core.credential.TokenCredential;
-import com.azure.core.credential.TokenRequestContext;
 import com.azure.core.exception.ResourceNotFoundException;
 import com.azure.core.http.HttpClient;
+import com.azure.core.http.netty.NettyAsyncHttpClientBuilder;
 import com.azure.core.http.rest.PagedIterable;
 import com.azure.core.util.HttpClientOptions;
 import com.azure.identity.ClientSecretCredentialBuilder;
 import com.azure.identity.ManagedIdentityCredentialBuilder;
 import com.azure.security.keyvault.keys.KeyClient;
 import com.azure.security.keyvault.keys.KeyClientBuilder;
-import com.azure.security.keyvault.keys.KeyServiceVersion;
 import com.azure.security.keyvault.keys.cryptography.CryptographyClient;
 import com.azure.security.keyvault.keys.cryptography.CryptographyClientBuilder;
-import com.azure.security.keyvault.keys.cryptography.models.SignatureAlgorithm;
 import com.azure.security.keyvault.keys.models.KeyProperties;
 import com.azure.security.keyvault.keys.models.KeyVaultKey;
 import com.azure.security.keyvault.secrets.SecretClient;
@@ -53,7 +56,8 @@ import com.azure.security.keyvault.secrets.SecretClientBuilder;
 import com.azure.security.keyvault.secrets.models.KeyVaultSecret;
 import com.azure.security.keyvault.secrets.models.SecretProperties;
 import com.google.common.annotations.VisibleForTesting;
-import io.vertx.core.json.JsonObject;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
@@ -64,11 +68,8 @@ public class AzureKeyVault {
   private final TokenCredential tokenCredential;
   private final SecretClient secretClient;
   private final KeyClient keyClient;
-  private static final List<String> SCOPE = List.of("https://vault.azure.net/.default");
-  private final TokenRequestContext tokenRequestContext =
-      new TokenRequestContext().setScopes(SCOPE);
-
-  private Optional<AccessToken> maybeToken = Optional.empty();
+  private final HttpClient httpClient;
+  private final boolean endpointOverridden;
 
   public static AzureKeyVault createUsingClientSecretCredentials(
       final String clientId,
@@ -76,47 +77,125 @@ public class AzureKeyVault {
       final String tenantId,
       final String vaultName,
       final ExecutorService executorService,
-      final long timeout) {
-    final TokenCredential tokenCredential =
+      final long timeout,
+      final AzureOverrides azureOverrides) {
+    final String vaultUrl = resolveVaultUrl(vaultName, azureOverrides);
+    // Shared by the credential (MSAL token requests) and the vault clients below: Azure Identity
+    // otherwise builds its own separate default HTTP client (its own connection pool/event
+    // loop) for the token request if none is supplied, independent of the one used for the
+    // vault calls.
+    final HttpClient httpClient =
+        buildHttpClient(timeout, azureOverrides.trustCertificateOverride());
+    final ClientSecretCredentialBuilder credentialBuilder =
         new ClientSecretCredentialBuilder()
             .clientId(clientId)
             .clientSecret(clientSecret)
             .tenantId(tenantId)
             .executorService(executorService)
-            .build();
-    return new AzureKeyVault(tokenCredential, vaultName, timeout);
+            .httpClient(httpClient);
+    azureOverrides
+        .authorityHostOverride()
+        .ifPresent(
+            uri -> {
+              credentialBuilder.authorityHost(uri.toString());
+              credentialBuilder.disableInstanceDiscovery();
+            });
+    return new AzureKeyVault(
+        credentialBuilder.build(),
+        vaultUrl,
+        httpClient,
+        azureOverrides.endpointOverride().isPresent());
   }
 
   public static AzureKeyVault createUsingManagedIdentity(
-      final Optional<String> clientId, final String vaultName, final long timeout) {
+      final Optional<String> clientId,
+      final String vaultName,
+      final long timeout,
+      final AzureOverrides azureOverrides) {
     final ManagedIdentityCredentialBuilder managedIdentityCredentialBuilder =
         new ManagedIdentityCredentialBuilder();
     clientId.ifPresent(managedIdentityCredentialBuilder::clientId);
-    return new AzureKeyVault(managedIdentityCredentialBuilder.build(), vaultName, timeout);
+    return new AzureKeyVault(
+        managedIdentityCredentialBuilder.build(),
+        resolveVaultUrl(vaultName, azureOverrides),
+        buildHttpClient(timeout, azureOverrides.trustCertificateOverride()),
+        azureOverrides.endpointOverride().isPresent());
+  }
+
+  private static String resolveVaultUrl(
+      final String vaultName, final AzureOverrides azureOverrides) {
+    return azureOverrides
+        .endpointOverride()
+        .map(URI::toString)
+        .orElseGet(() -> constructAzureKeyVaultUrl(vaultName));
+  }
+
+  /**
+   * The platform default trust store is used unless a trust certificate override is configured.
+   * Building the client via a raw {@code SslContextBuilder} (rather than relying on ambient {@code
+   * javax.net.ssl.trustStore} JVM properties) is required because the Netty transport used here
+   * prefers its own BoringSSL (netty-tcnative) engine when available, which does not consult those
+   * properties.
+   */
+  private static HttpClient buildHttpClient(
+      final long timeoutSeconds, final Optional<Path> trustCertificateOverride) {
+    if (trustCertificateOverride.isEmpty()) {
+      return HttpClient.createDefault(
+          new HttpClientOptions().setResponseTimeout(Duration.ofSeconds(timeoutSeconds)));
+    }
+
+    final Path certificatePath = trustCertificateOverride.get();
+    try {
+      final X509Certificate certificate;
+      try (InputStream in = Files.newInputStream(certificatePath)) {
+        certificate =
+            (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(in);
+      }
+      final KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+      trustStore.load(null, null);
+      trustStore.setCertificateEntry("azure-trust-override", certificate);
+      final TrustManagerFactory trustManagerFactory =
+          TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+      trustManagerFactory.init(trustStore);
+
+      final SslContext sslContext =
+          SslContextBuilder.forClient().trustManager(trustManagerFactory).build();
+      final reactor.netty.http.client.HttpClient reactorHttpClient =
+          reactor.netty.http.client.HttpClient.create()
+              .secure(spec -> spec.sslContext(sslContext))
+              .responseTimeout(Duration.ofSeconds(timeoutSeconds));
+      return new NettyAsyncHttpClientBuilder(reactorHttpClient).build();
+    } catch (final Exception e) {
+      throw new IllegalStateException(
+          "Unable to build Azure HTTP client trusting " + certificatePath, e);
+    }
   }
 
   private AzureKeyVault(
-      final TokenCredential tokenCredential, final String vaultName, final long timeout) {
+      final TokenCredential tokenCredential,
+      final String vaultUrl,
+      final HttpClient httpClient,
+      final boolean endpointOverridden) {
     this.tokenCredential = tokenCredential;
-    final String vaultUrl = constructAzureKeyVaultUrl(vaultName);
+    this.httpClient = httpClient;
+    this.endpointOverridden = endpointOverridden;
 
-    final HttpClient customisedHttpClient =
-        HttpClient.createDefault(
-            new HttpClientOptions().setResponseTimeout(Duration.ofSeconds(timeout)));
-
-    secretClient =
+    final SecretClientBuilder secretClientBuilder =
         new SecretClientBuilder()
-            .httpClient(customisedHttpClient)
+            .httpClient(httpClient)
             .vaultUrl(vaultUrl)
-            .credential(tokenCredential)
-            .buildClient();
-
-    keyClient =
+            .credential(tokenCredential);
+    final KeyClientBuilder keyClientBuilder =
         new KeyClientBuilder()
-            .httpClient(customisedHttpClient)
+            .httpClient(httpClient)
             .vaultUrl(vaultUrl)
-            .credential(tokenCredential)
-            .buildClient();
+            .credential(tokenCredential);
+    if (endpointOverridden) {
+      secretClientBuilder.disableChallengeResourceVerification();
+      keyClientBuilder.disableChallengeResourceVerification();
+    }
+    secretClient = secretClientBuilder.buildClient();
+    keyClient = keyClientBuilder.buildClient();
   }
 
   public Optional<String> fetchSecret(final String secretName) {
@@ -131,46 +210,15 @@ public class AzureKeyVault {
     final KeyVaultKey key = keyClient.getKey(keyName, keyVersion);
     final String keyId = key.getId();
 
-    return new CryptographyClientBuilder()
-        .credential(tokenCredential)
-        .keyIdentifier(keyId)
-        .buildClient();
-  }
-
-  public HttpRequest getRemoteSigningHttpRequest(
-      final byte[] data,
-      final SignatureAlgorithm signingAlgo,
-      final String vaultName,
-      final String azureKeyName,
-      final String azureKeyVersion) {
-
-    final String apiVersion = KeyServiceVersion.getLatest().getVersion();
-
-    final JsonObject jsonBody = new JsonObject();
-    jsonBody.put("alg", signingAlgo);
-    jsonBody.put("value", Bytes.of(data).toBase64String());
-
-    final String uriString =
-        constructAzureSignApiUri(vaultName, azureKeyName, azureKeyVersion, apiVersion);
-
-    final HttpRequest httpRequest =
-        HttpRequest.newBuilder(URI.create(uriString))
-            .header("Content-Type", "application/json")
-            .header("Authorization", "Bearer " + getOrRequestNewToken())
-            .POST(HttpRequest.BodyPublishers.ofString(jsonBody.toString()))
-            .build();
-
-    return httpRequest;
-  }
-
-  private String constructAzureSignApiUri(
-      final String keyVaultName,
-      final String keyName,
-      final String keyVersion,
-      final String apiVersion) {
-    return String.format(
-        "https://%s.vault.azure.net/keys/%s/%s/sign?api-version=%s",
-        keyVaultName, keyName, keyVersion, apiVersion);
+    final CryptographyClientBuilder cryptographyClientBuilder =
+        new CryptographyClientBuilder()
+            .httpClient(httpClient)
+            .credential(tokenCredential)
+            .keyIdentifier(keyId);
+    if (endpointOverridden) {
+      cryptographyClientBuilder.disableChallengeResourceVerification();
+    }
+    return cryptographyClientBuilder.buildClient();
   }
 
   public static String constructAzureKeyVaultUrl(final String keyVaultName) {
@@ -347,14 +395,6 @@ public class AzureKeyVault {
 
     return keyProperties.getTags() != null // return false if remote secret doesn't have any tags
         && keyProperties.getTags().entrySet().containsAll(tags.entrySet());
-  }
-
-  private String getOrRequestNewToken() {
-    if (maybeToken.isEmpty() || maybeToken.get().isExpired()) {
-      maybeToken = Optional.of(tokenCredential.getTokenSync(tokenRequestContext));
-    }
-
-    return maybeToken.get().getToken();
   }
 
   @VisibleForTesting

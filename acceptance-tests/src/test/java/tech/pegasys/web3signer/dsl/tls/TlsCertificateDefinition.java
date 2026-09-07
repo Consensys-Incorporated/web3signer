@@ -24,7 +24,7 @@ import java.security.PrivateKey;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
-import java.util.Enumeration;
+import java.util.Collections;
 import java.util.List;
 
 import com.google.common.collect.Lists;
@@ -60,20 +60,17 @@ public class TlsCertificateDefinition {
     return password;
   }
 
-  @SuppressWarnings("JdkObsolete")
   public List<X509Certificate> certificates()
       throws KeyStoreException, NoSuchAlgorithmException, CertificateException {
     final List<X509Certificate> results = Lists.newArrayList();
 
     final KeyStore p12 = loadP12KeyStore(pkcs12File, password);
-    final Enumeration<String> aliases = p12.aliases();
-    while (aliases.hasMoreElements()) {
-      results.add((X509Certificate) p12.getCertificate(aliases.nextElement()));
+    for (final String alias : Collections.list(p12.aliases())) {
+      results.add((X509Certificate) p12.getCertificate(alias));
     }
     return results;
   }
 
-  @SuppressWarnings("JdkObsolete")
   public List<PrivateKey> keys()
       throws KeyStoreException,
           NoSuchAlgorithmException,
@@ -82,10 +79,8 @@ public class TlsCertificateDefinition {
     final List<PrivateKey> results = Lists.newArrayList();
 
     final KeyStore p12 = loadP12KeyStore(pkcs12File, password);
-    final Enumeration<String> aliases = p12.aliases();
-
-    while (aliases.hasMoreElements()) {
-      results.add((PrivateKey) p12.getKey(aliases.nextElement(), password.toCharArray()));
+    for (final String alias : Collections.list(p12.aliases())) {
+      results.add((PrivateKey) p12.getKey(alias, password.toCharArray()));
     }
     return results;
   }

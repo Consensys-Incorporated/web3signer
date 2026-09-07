@@ -1,0 +1,47 @@
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reaching out to the Web3Signer community!
+        
+        ⚠️ **Security Reminder:** Never post private keys, seed phrases, keystore passwords, cloud credentials (AWS/Azure/Vault tokens), or secrets.
+  - type: input
+    id: version
+    attributes:
+      label: Web3Signer Version
+      description: What version of Web3Signer are you using?
+      placeholder: e.g., 26.7.0 or develop
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Key Storage Backend
+      options:
+        - Azure Key Vault
+        - HashiCorp Vault
+        - AWS KMS
+        - Keystores / Local File
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Validator / Signing Client (if applicable)
+      placeholder: e.g., Teku, Lighthouse, Vouch, custom script
+  - type: textarea
+    id: description
+    attributes:
+      label: What is your question or what are you trying to accomplish?
+      placeholder: Describe the setup, the expected outcome, and the specific question you have.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or Error Messages (Redacted)
+      description: Paste any relevant, non-sensitive log output or error traces.
+      render: shell

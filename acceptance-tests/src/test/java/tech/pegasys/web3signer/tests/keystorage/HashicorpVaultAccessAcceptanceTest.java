@@ -20,8 +20,8 @@ import tech.pegasys.web3signer.keystorage.hashicorp.TrustStoreType;
 import tech.pegasys.web3signer.keystorage.hashicorp.config.ConnectionParameters;
 import tech.pegasys.web3signer.keystorage.hashicorp.config.KeyDefinition;
 import tech.pegasys.web3signer.keystorage.hashicorp.config.TlsOptions;
+import tech.pegasys.web3signer.keystore.dsl.certificates.CertificateHelpers;
 import tech.pegasys.web3signer.keystore.hashicorp.dsl.HashicorpNode;
-import tech.pegasys.web3signer.keystore.hashicorp.dsl.certificates.CertificateHelpers;
 
 import java.io.IOException;
 import java.nio.file.Path;

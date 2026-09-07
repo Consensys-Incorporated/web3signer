@@ -30,6 +30,7 @@ import static tech.pegasys.web3signer.signing.config.KeystoresParameters.KEYSTOR
 import static tech.pegasys.web3signer.signing.config.KeystoresParameters.KEYSTORES_PASSWORD_FILE;
 import static tech.pegasys.web3signer.signing.config.KeystoresParameters.KEYSTORES_PATH;
 
+import tech.pegasys.web3signer.commandline.PicoCliAzureKeyVaultParameters;
 import tech.pegasys.web3signer.commandline.PicoCliGcpSecretManagerParameters;
 import tech.pegasys.web3signer.core.config.ClientAuthConstraints;
 import tech.pegasys.web3signer.core.config.TlsOptions;
@@ -471,6 +472,31 @@ public class CmdLineParamsDefaultImpl implements CmdLineParamsBuilder {
             (tagName, tagValue) -> {
               params.add("--azure-tags");
               params.add(tagName + "=" + tagValue);
+            });
+
+    azureParams
+        .getAzureOverrides()
+        .endpointOverride()
+        .ifPresent(
+            uri -> {
+              params.add(PicoCliAzureKeyVaultParameters.AZURE_ENDPOINT_OVERRIDE_OPTION);
+              params.add(uri.toString());
+            });
+    azureParams
+        .getAzureOverrides()
+        .authorityHostOverride()
+        .ifPresent(
+            uri -> {
+              params.add(PicoCliAzureKeyVaultParameters.AZURE_AUTHORITY_HOST_OVERRIDE_OPTION);
+              params.add(uri.toString());
+            });
+    azureParams
+        .getAzureOverrides()
+        .trustCertificateOverride()
+        .ifPresent(
+            path -> {
+              params.add(PicoCliAzureKeyVaultParameters.AZURE_TRUST_CERTIFICATE_OVERRIDE_OPTION);
+              params.add(path.toString());
             });
   }
 

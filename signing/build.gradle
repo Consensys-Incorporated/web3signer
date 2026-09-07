@@ -72,4 +72,5 @@ dependencies {
   testFixturesImplementation 'com.google.cloud:google-cloud-secretmanager'
   testFixturesImplementation project(":common")
   testFixturesImplementation project(":bls-keystore")
+  testFixturesImplementation project(":keystorage")
 }

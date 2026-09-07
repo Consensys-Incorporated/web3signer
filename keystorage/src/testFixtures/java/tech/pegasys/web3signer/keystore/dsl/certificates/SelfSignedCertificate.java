@@ -10,7 +10,7 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-package tech.pegasys.web3signer.keystore.hashicorp.dsl.certificates;
+package tech.pegasys.web3signer.keystore.dsl.certificates;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -66,9 +66,14 @@ public class SelfSignedCertificate {
   }
 
   public static SelfSignedCertificate generate() {
+    return generate(List.of());
+  }
+
+  public static SelfSignedCertificate generate(final List<String> additionalSanHostNames) {
     try {
       final KeyPair keyPair = generateKeyPair();
-      return new SelfSignedCertificate(keyPair, generateSelfSignedCertificate(keyPair));
+      return new SelfSignedCertificate(
+          keyPair, generateSelfSignedCertificate(keyPair, additionalSanHostNames));
     } catch (final Exception e) {
       throw new RuntimeException(e);
     }
@@ -80,7 +85,8 @@ public class SelfSignedCertificate {
     return keyPairGenerator.generateKeyPair();
   }
 
-  private static X509Certificate generateSelfSignedCertificate(final KeyPair keyPair)
+  private static X509Certificate generateSelfSignedCertificate(
+      final KeyPair keyPair, final List<String> additionalSanHostNames)
       throws CertIOException, GeneralSecurityException, OperatorCreationException {
     final X500Name issuer = new X500Name(distinguishedName);
     final X500Name subject = new X500Name(distinguishedName);
@@ -98,7 +104,9 @@ public class SelfSignedCertificate {
     v3CertificateBuilder.addExtension(
         Extension.basicConstraints, true, new BasicConstraints(IS_CA));
     v3CertificateBuilder.addExtension(
-        Extension.subjectAlternativeName, false, getSubjectAlternativeNames());
+        Extension.subjectAlternativeName,
+        false,
+        getSubjectAlternativeNames(additionalSanHostNames));
 
     final ContentSigner contentSigner =
         new JcaContentSignerBuilder("SHA256WithRSAEncryption").build(keyPair.getPrivate());
@@ -108,9 +116,11 @@ public class SelfSignedCertificate {
         .getCertificate(v3CertificateBuilder.build(contentSigner));
   }
 
-  private static GeneralNames getSubjectAlternativeNames() {
+  private static GeneralNames getSubjectAlternativeNames(
+      final List<String> additionalSanHostNames) {
     final List<GeneralName> hostGeneralNames =
-        sanHostNames.stream()
+        Stream.concat(sanHostNames.stream(), additionalSanHostNames.stream())
+            .distinct()
             .map(hostName -> new GeneralName(GeneralName.dNSName, hostName))
             .collect(Collectors.toList());
     final List<GeneralName> ipGeneralNames =

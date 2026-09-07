@@ -12,6 +12,8 @@
  */
 package tech.pegasys.web3signer.signing.config;
 
+import tech.pegasys.web3signer.keystorage.azure.AzureOverrides;
+
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -29,6 +31,7 @@ public class DefaultAzureKeyVaultParameters implements AzureKeyVaultParameters {
   private final Map<String, String> tags = new HashMap<>();
   private final long timeout;
   private final boolean enabled;
+  private final AzureOverrides azureOverrides;
 
   public DefaultAzureKeyVaultParameters(
       final String keyVaultName,
@@ -42,7 +45,8 @@ public class DefaultAzureKeyVaultParameters implements AzureKeyVaultParameters {
         clientSecret,
         Collections.emptyMap(),
         AZURE_DEFAULT_TIMEOUT,
-        AZURE_DEFAULT_ENABLED);
+        AZURE_DEFAULT_ENABLED,
+        AzureOverrides.NONE);
   }
 
   public DefaultAzureKeyVaultParameters(
@@ -58,7 +62,8 @@ public class DefaultAzureKeyVaultParameters implements AzureKeyVaultParameters {
         clientSecret,
         tags,
         AZURE_DEFAULT_TIMEOUT,
-        AZURE_DEFAULT_ENABLED);
+        AZURE_DEFAULT_ENABLED,
+        AzureOverrides.NONE);
   }
 
   public DefaultAzureKeyVaultParameters(
@@ -69,6 +74,26 @@ public class DefaultAzureKeyVaultParameters implements AzureKeyVaultParameters {
       final Map<String, String> tags,
       final long timeout,
       final boolean enabled) {
+    this(
+        keyVaultName,
+        clientId,
+        tenantId,
+        clientSecret,
+        tags,
+        timeout,
+        enabled,
+        AzureOverrides.NONE);
+  }
+
+  public DefaultAzureKeyVaultParameters(
+      final String keyVaultName,
+      final String clientId,
+      final String tenantId,
+      final String clientSecret,
+      final Map<String, String> tags,
+      final long timeout,
+      final boolean enabled,
+      final AzureOverrides azureOverrides) {
     this.keyVaultName = keyVaultName;
     this.clientId = clientId;
     this.tenantId = tenantId;
@@ -77,6 +102,7 @@ public class DefaultAzureKeyVaultParameters implements AzureKeyVaultParameters {
     this.tags.putAll(tags);
     this.timeout = timeout;
     this.enabled = enabled;
+    this.azureOverrides = azureOverrides;
   }
 
   @Override
@@ -117,5 +143,10 @@ public class DefaultAzureKeyVaultParameters implements AzureKeyVaultParameters {
   @Override
   public long getTimeout() {
     return timeout;
+  }
+
+  @Override
+  public AzureOverrides getAzureOverrides() {
+    return azureOverrides;
   }
 }

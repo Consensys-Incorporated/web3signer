@@ -104,7 +104,7 @@ Verify a signature:
 
 ```sh
 cosign verify consensys/web3signer:<tag> \
-  --certificate-identity-regexp '^https://github\.com/Consensys/web3signer/\.github/workflows/ci_main\.yml@refs/' \
+  --certificate-identity-regexp '^https://github\.com/Consensys-Incorporated/web3signer/\.github/workflows/ci_main\.yml@refs/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
