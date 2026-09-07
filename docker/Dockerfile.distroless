@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 
 # Stage 1: Validate and extract the distribution tar.gz
 FROM alpine@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS app-extract
@@ -20,7 +20,7 @@ RUN gzip -t /tmp/web3signer.tar.gz || (echo "ERROR: TAR_FILE is not a valid gzip
 # The other shaded natives in the classpath (Netty transports, netty-tcnative,
 # jffi, conscrypt) are not exercised at runtime because Vert.x uses its NIO
 # transport by default.
-FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb AS prep
+FROM ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b AS prep
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends unzip zip && rm -rf /var/lib/apt/lists/*
 COPY --from=app-extract /opt/web3signer /opt/web3signer
@@ -36,7 +36,7 @@ RUN set -eu; \
     zip -d "$JBLST_JAR" "supranational/blst/Linux/${BLST_ARCH}/libblst.so"
 
 # Stage 3: Runtime on Google Distroless (nonroot by default, no shell, no package manager).
-FROM gcr.io/distroless/java25-debian13:nonroot@sha256:9ccf2b8bce700d9f450523e2055afabe4d4ee795e6d69a0647a2dcd6e180e411
+FROM gcr.io/distroless/java25-debian13:nonroot@sha256:fce4a1d66284e8866c46113d9bdc286c46fb8c3c3f0a098f877034349e88debe
 
 ARG BUILD_DATE
 ARG VCS_REF
