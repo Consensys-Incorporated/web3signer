@@ -12,6 +12,7 @@
  */
 package tech.pegasys.web3signer.signing.config.metadata.parser;
 
+import tech.pegasys.teku.bls.BLSPublicKey;
 import tech.pegasys.teku.infrastructure.bytes.Bytes20;
 import tech.pegasys.teku.infrastructure.bytes.Bytes4;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
@@ -168,6 +169,21 @@ public class SigningMetadataModule extends SimpleModule {
     @Override
     public UInt64 deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
       return UInt64.valueOf(p.getValueAsString());
+    }
+  }
+
+  public static class BLSPublicKeySerializer extends JsonSerializer<BLSPublicKey> {
+    @Override
+    public void serialize(BLSPublicKey value, JsonGenerator gen, SerializerProvider serializers)
+        throws IOException {
+      gen.writeString(value.toString());
+    }
+  }
+
+  public static class BLSPublicKeyDeserializer extends JsonDeserializer<BLSPublicKey> {
+    @Override
+    public BLSPublicKey deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+      return BLSPublicKey.fromHexString(p.getValueAsString());
     }
   }
 }

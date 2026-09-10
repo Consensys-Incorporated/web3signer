@@ -23,10 +23,16 @@ import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.RandaoRev
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.SyncAggregatorSelectionData;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.SyncCommitteeMessage;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.ValidatorRegistration;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.VersionedRequest;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.AttestationData;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.BeaconBlock;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.VoluntaryExit;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.altair.ContributionAndProof;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.BuilderRequestAuth;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ExecutionPayloadBid;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.PayloadAttestationData;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ProposerPreferences;
 
 import org.apache.tuweni.bytes.Bytes;
 
@@ -46,6 +52,11 @@ public final class Eth2SigningRequestBodyBuilder {
   private SyncAggregatorSelectionData syncAggregatorSelectionData;
   private ContributionAndProof contributionAndProof;
   private ValidatorRegistration validatorRegistration;
+  private VersionedRequest<ExecutionPayloadBid> executionPayloadBid;
+  private VersionedRequest<ExecutionPayloadEnvelope> executionPayloadEnvelope;
+  private VersionedRequest<PayloadAttestationData> payloadAttestationMessage;
+  private VersionedRequest<ProposerPreferences> proposerPreferences;
+  private VersionedRequest<BuilderRequestAuth> builderRequestAuth;
 
   private Eth2SigningRequestBodyBuilder() {}
 
@@ -133,6 +144,36 @@ public final class Eth2SigningRequestBodyBuilder {
     return this;
   }
 
+  public Eth2SigningRequestBodyBuilder withExecutionPayloadBid(
+      VersionedRequest<ExecutionPayloadBid> executionPayloadBid) {
+    this.executionPayloadBid = executionPayloadBid;
+    return this;
+  }
+
+  public Eth2SigningRequestBodyBuilder withExecutionPayloadEnvelope(
+      VersionedRequest<ExecutionPayloadEnvelope> executionPayloadEnvelope) {
+    this.executionPayloadEnvelope = executionPayloadEnvelope;
+    return this;
+  }
+
+  public Eth2SigningRequestBodyBuilder withPayloadAttestationMessage(
+      VersionedRequest<PayloadAttestationData> payloadAttestationMessage) {
+    this.payloadAttestationMessage = payloadAttestationMessage;
+    return this;
+  }
+
+  public Eth2SigningRequestBodyBuilder withProposerPreferences(
+      VersionedRequest<ProposerPreferences> proposerPreferences) {
+    this.proposerPreferences = proposerPreferences;
+    return this;
+  }
+
+  public Eth2SigningRequestBodyBuilder withBuilderRequestAuth(
+      VersionedRequest<BuilderRequestAuth> builderRequestAuth) {
+    this.builderRequestAuth = builderRequestAuth;
+    return this;
+  }
+
   public Eth2SigningRequestBody build() {
     return new Eth2SigningRequestBody(
         type,
@@ -149,6 +190,11 @@ public final class Eth2SigningRequestBodyBuilder {
         syncCommitteeMessage,
         syncAggregatorSelectionData,
         contributionAndProof,
-        validatorRegistration);
+        validatorRegistration,
+        executionPayloadBid,
+        executionPayloadEnvelope,
+        payloadAttestationMessage,
+        proposerPreferences,
+        builderRequestAuth);
   }
 }

@@ -31,6 +31,11 @@ post:
             - $ref: '../schemas.yaml#/components/schemas/SyncCommitteeSelectionProofSigning'
             - $ref: '../schemas.yaml#/components/schemas/SyncCommitteeContributionAndProofSigning'
             - $ref: '../schemas.yaml#/components/schemas/ValidatorRegistrationSigning'
+            - $ref: '../schemas.yaml#/components/schemas/ExecutionPayloadBidSigning'
+            - $ref: '../schemas.yaml#/components/schemas/ExecutionPayloadEnvelopeSigning'
+            - $ref: '../schemas.yaml#/components/schemas/PayloadAttestationMessageSigning'
+            - $ref: '../schemas.yaml#/components/schemas/ProposerPreferencesSigning'
+            - $ref: '../schemas.yaml#/components/schemas/BuilderRequestAuthSigning'
           discriminator:
             propertyName: type
             mapping:
@@ -47,7 +52,30 @@ post:
               SYNC_COMMITTEE_SELECTION_PROOF: '../schemas.yaml#/components/schemas/SyncCommitteeSelectionProofSigning'
               SYNC_COMMITTEE_CONTRIBUTION_AND_PROOF: '../schemas.yaml#/components/schemas/SyncCommitteeContributionAndProofSigning'
               VALIDATOR_REGISTRATION: '../schemas.yaml#/components/schemas/ValidatorRegistrationSigning'
+              EXECUTION_PAYLOAD_BID: '../schemas.yaml#/components/schemas/ExecutionPayloadBidSigning'
+              EXECUTION_PAYLOAD_ENVELOPE: '../schemas.yaml#/components/schemas/ExecutionPayloadEnvelopeSigning'
+              PAYLOAD_ATTESTATION_MESSAGE: '../schemas.yaml#/components/schemas/PayloadAttestationMessageSigning'
+              PROPOSER_PREFERENCES: '../schemas.yaml#/components/schemas/ProposerPreferencesSigning'
+              BUILDER_REQUEST_AUTH: '../schemas.yaml#/components/schemas/BuilderRequestAuthSigning'
         examples:
+          BLOCK_V2 (GLOAS):
+            value:
+              type: "BLOCK_V2"
+              signingRoot: "0xaa2e0c465c1a45d7b6637fcce4ad6ceb71fc12064b548078d619a411f0de8adc"
+              fork_info:
+                fork:
+                  previous_version: "0x00000001"
+                  current_version: "0x00000001"
+                  epoch: "1"
+                genesis_validators_root: "0x04700007fabc8282644aed6d1c7c9e21d38a03a0c4ba193f3afe428824b3a673"
+              beacon_block:
+                version: "GLOAS"
+                block_header:
+                  slot: "0"
+                  proposer_index: "4666673844721362956"
+                  parent_root: "0x367cbd40ac7318427aadb97345a91fa2e965daf3158d7f1846f1306305f41bef"
+                  state_root: "0xfd18cf40cc907a739be483f1ca0ee23ad65cdd3df23205eabc6d660a75d1f54e"
+                  body_root: "0xa759d8029a69d4fdd8b3996086e9722983977e4efc1f12f4098ea3d93e868a6b"
           BLOCK_V2 (FULU):
             value:
               type: "BLOCK_V2"
@@ -513,6 +541,35 @@ post:
                 genesis_validators_root: '0x04700007fabc8282644aed6d1c7c9e21d38a03a0c4ba193f3afe428824b3a673'
               aggregation_slot:
                 slot: "119"
+          AGGREGATE_AND_PROOF_V2 (GLOAS):
+            value:
+              type: "AGGREGATE_AND_PROOF_V2"
+              signingRoot: "0x247535806f76143fe4798427b2a79b85340c1a029a9e08581995b60e4e45c9e0"
+              fork_info:
+                fork:
+                  previous_version: "0x00000001"
+                  current_version: "0x00000001"
+                  epoch: "1"
+                genesis_validators_root: "0x04700007fabc8282644aed6d1c7c9e21d38a03a0c4ba193f3afe428824b3a673"
+              aggregate_and_proof:
+                version: "GLOAS"
+                data:
+                  aggregator_index: "1"
+                  aggregate:
+                    aggregation_bits: "0x0000000000000000000000000000000000000000000101"
+                    data:
+                      slot: "0"
+                      index: "0"
+                      beacon_block_root: "0x100814c335d0ced5014cfa9d2e375e6d9b4e197381f8ce8af0473200fdc917fd"
+                      source:
+                        epoch: "0"
+                        root: "0x0000000000000000000000000000000000000000000000000000000000000000"
+                      target:
+                        epoch: "0"
+                        root: "0x100814c335d0ced5014cfa9d2e375e6d9b4e197381f8ce8af0473200fdc917fd"
+                    signature: "0xa627242e4a5853708f4ebf923960fb8192f93f2233cd347e05239d86dd9fb66b721ceec1baeae6647f498c9126074f1101a87854d674b6eebc220fd8c3d8405bdfd8e286b707975d9e00a56ec6cbbf762f23607d490f0bbb16c3e0e483d51875"
+                    committee_bits: "0x0000000000000001"
+                  selection_proof: "0xa63f73a03f1f42b1fd0a988b614d511eb346d0a91c809694ef76df5ae021f0f144d64e612d735bc8820950cf6f7f84cd0ae194bfe3d4242fe79688f83462e3f69d9d33de71aab0721b7dab9d6960875e5fdfd26b171a75fb51af822043820c47"
           AGGREGATE_AND_PROOF_V2 (FULU):
             value:
               type: "AGGREGATE_AND_PROOF_V2"
@@ -832,6 +889,117 @@ post:
                 withdrawal_credentials: "0x39722cbbf8b91a4b9045c5e6175f1001eac32f7fcd5eccda5c6e62fc4e638508"
                 amount: "32"
                 genesis_fork_version: "0x00000001"
+
+          EXECUTION_PAYLOAD_BID (GLOAS):
+            value:
+              type: "EXECUTION_PAYLOAD_BID"
+              fork_info:
+                fork:
+                  previous_version: "0x00000001"
+                  current_version: "0x00000001"
+                  epoch: "1"
+                genesis_validators_root: "0x04700007fabc8282644aed6d1c7c9e21d38a03a0c4ba193f3afe428824b3a673"
+              execution_payload_bid:
+                version: "GLOAS"
+                data:
+                  parent_block_hash: "0x367cbd40ac7318427aadb97345a91fa2e965daf3158d7f1846f1306305f41bef"
+                  parent_block_root: "0xfd18cf40cc907a739be483f1ca0ee23ad65cdd3df23205eabc6d660a75d1f54e"
+                  block_hash: "0xa759d8029a69d4fdd8b3996086e9722983977e4efc1f12f4098ea3d93e868a6b"
+                  prev_randao: "0x100814c335d0ced5014cfa9d2e375e6d9b4e197381f8ce8af0473200fdc917fd"
+                  fee_recipient: "0x6fdfab408c56b6105a76eff5c0435d09fc6ed7a9"
+                  gas_limit: "30000000"
+                  builder_index: "1"
+                  slot: "1"
+                  value: "1000000000"
+                  execution_payment: "0"
+                  blob_kzg_commitments: []
+                  execution_requests_root: "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+          EXECUTION_PAYLOAD_ENVELOPE (GLOAS):
+            value:
+              type: "EXECUTION_PAYLOAD_ENVELOPE"
+              fork_info:
+                fork:
+                  previous_version: "0x00000001"
+                  current_version: "0x00000001"
+                  epoch: "1"
+                genesis_validators_root: "0x04700007fabc8282644aed6d1c7c9e21d38a03a0c4ba193f3afe428824b3a673"
+              execution_payload_envelope:
+                version: "GLOAS"
+                data:
+                  payload:
+                    parent_hash: "0x367cbd40ac7318427aadb97345a91fa2e965daf3158d7f1846f1306305f41bef"
+                    fee_recipient: "0x6fdfab408c56b6105a76eff5c0435d09fc6ed7a9"
+                    state_root: "0xfd18cf40cc907a739be483f1ca0ee23ad65cdd3df23205eabc6d660a75d1f54e"
+                    receipts_root: "0x0000000000000000000000000000000000000000000000000000000000000000"
+                    logs_bloom: "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+                    prev_randao: "0x100814c335d0ced5014cfa9d2e375e6d9b4e197381f8ce8af0473200fdc917fd"
+                    block_number: "1"
+                    gas_limit: "30000000"
+                    gas_used: "0"
+                    timestamp: "1"
+                    extra_data: "0x"
+                    base_fee_per_gas: "1"
+                    block_hash: "0xa759d8029a69d4fdd8b3996086e9722983977e4efc1f12f4098ea3d93e868a6b"
+                    transactions: []
+                    withdrawals: []
+                    blob_gas_used: "0"
+                    excess_blob_gas: "0"
+                    block_access_list: "0x"
+                    slot_number: "1"
+                  execution_requests:
+                    deposits: []
+                    withdrawals: []
+                    consolidations: []
+                    builder_deposits: []
+                    builder_exits: []
+                  builder_index: "1"
+                  beacon_block_root: "0x235bc3400c2839fd856a524871200bd5e362db615fc4565e1870ed9a2a936464"
+                  parent_beacon_block_root: "0x367cbd40ac7318427aadb97345a91fa2e965daf3158d7f1846f1306305f41bef"
+
+          PAYLOAD_ATTESTATION_MESSAGE (GLOAS):
+            value:
+              type: "PAYLOAD_ATTESTATION_MESSAGE"
+              fork_info:
+                fork:
+                  previous_version: "0x00000001"
+                  current_version: "0x00000001"
+                  epoch: "1"
+                genesis_validators_root: "0x04700007fabc8282644aed6d1c7c9e21d38a03a0c4ba193f3afe428824b3a673"
+              payload_attestation_message:
+                version: "GLOAS"
+                data:
+                  beacon_block_root: "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2"
+                  slot: "1"
+                  payload_present: true
+                  blob_data_available: true
+
+          PROPOSER_PREFERENCES (GLOAS):
+            value:
+              type: "PROPOSER_PREFERENCES"
+              fork_info:
+                fork:
+                  previous_version: "0x00000001"
+                  current_version: "0x00000001"
+                  epoch: "1"
+                genesis_validators_root: "0x04700007fabc8282644aed6d1c7c9e21d38a03a0c4ba193f3afe428824b3a673"
+              proposer_preferences:
+                version: "GLOAS"
+                data:
+                  dependent_root: "0x367cbd40ac7318427aadb97345a91fa2e965daf3158d7f1846f1306305f41bef"
+                  proposal_slot: "32"
+                  validator_index: "1"
+                  fee_recipient: "0x6fdfab408c56b6105a76eff5c0435d09fc6ed7a9"
+                  target_gas_limit: "60000000"
+
+          BUILDER_REQUEST_AUTH (GLOAS):
+            value:
+              type: "BUILDER_REQUEST_AUTH"
+              builder_request_auth:
+                version: "GLOAS"
+                data:
+                  data: "0x68747470733a2f2f6275696c6465722e6578616d706c652e6f7267"
+                  slot: "32"
 
   responses:
     '200':

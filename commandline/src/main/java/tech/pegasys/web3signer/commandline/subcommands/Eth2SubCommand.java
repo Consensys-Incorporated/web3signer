@@ -149,6 +149,15 @@ public class Eth2SubCommand extends ModeSubCommand {
   private UInt64 fuluForkEpoch;
 
   @CommandLine.Option(
+      names = {"--Xnetwork-gloas-fork-epoch"},
+      hidden = true,
+      paramLabel = "<epoch>",
+      description = "Override the Gloas fork activation epoch.",
+      arity = "1",
+      converter = UInt64Converter.class)
+  private UInt64 gloasForkEpoch;
+
+  @CommandLine.Option(
       names = {"--Xtrusted-setup"},
       hidden = true,
       paramLabel = "<STRING>",
@@ -238,6 +247,9 @@ public class Eth2SubCommand extends ModeSubCommand {
     }
     if (fuluForkEpoch != null) {
       builder.fuluForkEpoch(fuluForkEpoch);
+    }
+    if (gloasForkEpoch != null) {
+      builder.gloasForkEpoch(gloasForkEpoch);
     }
     if (trustedSetup != null) {
       builder.trustedSetup(trustedSetup);

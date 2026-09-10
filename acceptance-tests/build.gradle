@@ -47,6 +47,7 @@ dependencies {
   testImplementation 'tech.pegasys.teku.internal:serializer'
   testImplementation 'tech.pegasys.teku.internal:unsigned'
   testImplementation 'tech.pegasys.teku.internal:async'
+  testImplementation 'tech.pegasys.teku.internal:execution-types'
   testImplementation 'io.rest-assured:rest-assured'
   testImplementation 'org.web3j:core'
   testImplementation 'org.web3j:crypto'

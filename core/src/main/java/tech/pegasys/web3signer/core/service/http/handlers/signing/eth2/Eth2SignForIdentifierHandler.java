@@ -20,6 +20,7 @@ import static tech.pegasys.web3signer.core.util.DepositSigningRootUtil.computeDo
 import static tech.pegasys.web3signer.signing.util.IdentifierUtils.normaliseIdentifier;
 
 import tech.pegasys.teku.spec.Spec;
+import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.constants.Domain;
 import tech.pegasys.teku.spec.datastructures.operations.versions.altair.SyncAggregatorSelectionDataSchema;
 import tech.pegasys.teku.spec.logic.common.util.SyncCommitteeUtil;
@@ -30,6 +31,11 @@ import tech.pegasys.web3signer.core.service.http.handlers.signing.SignerForIdent
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.AttestationData;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.altair.ContributionAndProof;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.altair.SyncCommitteeContribution;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.BuilderRequestAuth;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ExecutionPayloadBid;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.PayloadAttestationData;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ProposerPreferences;
 import tech.pegasys.web3signer.core.service.http.metrics.HttpApiMetrics;
 import tech.pegasys.web3signer.core.util.DepositSigningRootUtil;
 import tech.pegasys.web3signer.slashingprotection.SlashingProtection;
@@ -319,9 +325,60 @@ public class Eth2SignForIdentifierHandler implements Handler<RoutingContext> {
         return signingRootUtil.signingRootForValidatorRegistration(
             validatorRegistration.asInternalValidatorRegistration());
       }
+      case EXECUTION_PAYLOAD_BID -> {
+        final VersionedRequest<ExecutionPayloadBid> request = body.executionPayloadBid();
+        final SpecVersion specVersion = specVersionFor(request, "execution_payload_bid");
+        return signingRootUtil.signingRootForSignExecutionPayloadBid(
+            request.data().asInternalExecutionPayloadBid(specVersion),
+            body.forkInfo().asInternalForkInfo());
+      }
+      case EXECUTION_PAYLOAD_ENVELOPE -> {
+        final VersionedRequest<ExecutionPayloadEnvelope> request = body.executionPayloadEnvelope();
+        final SpecVersion specVersion = specVersionFor(request, "execution_payload_envelope");
+        return signingRootUtil.signingRootForSignExecutionPayloadEnvelope(
+            request.data().asInternalExecutionPayloadEnvelope(specVersion),
+            body.forkInfo().asInternalForkInfo());
+      }
+      case PAYLOAD_ATTESTATION_MESSAGE -> {
+        final VersionedRequest<PayloadAttestationData> request = body.payloadAttestationMessage();
+        final SpecVersion specVersion = specVersionFor(request, "payload_attestation_message");
+        return signingRootUtil.signingRootForSignPayloadAttestationData(
+            request.data().asInternalPayloadAttestationData(specVersion),
+            body.forkInfo().asInternalForkInfo());
+      }
+      case PROPOSER_PREFERENCES -> {
+        final VersionedRequest<ProposerPreferences> request = body.proposerPreferences();
+        final SpecVersion specVersion = specVersionFor(request, "proposer_preferences");
+        return signingRootUtil.signingRootForSignProposerPreferences(
+            request.data().asInternalProposerPreferences(specVersion),
+            body.forkInfo().asInternalForkInfo());
+      }
+      case BUILDER_REQUEST_AUTH -> {
+        final VersionedRequest<BuilderRequestAuth> request = body.builderRequestAuth();
+        specVersionFor(request, "builder_request_auth");
+        return signingRootUtil.signingRootForSignBuilderRequestAuth(
+            request.data().asInternalBuilderRequestAuth());
+      }
       default ->
           throw new IllegalStateException("Signing root unimplemented for type " + body.type());
     }
+  }
+
+  /**
+   * Validates a fork-versioned payload and resolves the {@link SpecVersion} for its declared
+   * milestone. Rejects requests whose milestone is not scheduled on the configured network.
+   */
+  private SpecVersion specVersionFor(final VersionedRequest<?> request, final String field) {
+    checkArgument(request != null, "%s is required", field);
+    checkArgument(request.version() != null, "%s.version is required", field);
+    checkArgument(request.data() != null, "%s.data is required", field);
+    final SpecVersion specVersion = eth2Spec.forMilestone(request.version());
+    checkArgument(
+        specVersion != null,
+        "%s.version %s is not scheduled on the configured network",
+        field,
+        request.version());
+    return specVersion;
   }
 
   private tech.pegasys.teku.spec.datastructures.operations.versions.altair

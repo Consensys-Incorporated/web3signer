@@ -303,9 +303,18 @@ subprojects {
     from sourceSets.testSupport.output
   }
 
+  // TODO: Remove once Teku publishes its next release and the version is pinned in gradle/versions.gradle.
+  // Treat 'develop' versions of Teku as changing modules and bypass the 24h cache so Gradle always resolves the latest develop build.
   dependencies {
     testImplementation sourceSets.testSupport.output
     integrationTestImplementation sourceSets.testSupport.output
+    components {
+      all { ComponentMetadataDetails details ->
+        if (details.id.group.startsWith('tech.pegasys.teku') && details.id.version == 'develop') {
+          details.changing = true
+        }
+      }
+    }
   }
 
   configurations.configureEach {
@@ -314,8 +323,9 @@ subprojects {
     exclude group: 'io.tmio', module: 'tuweni-crypto'
     exclude group: 'io.tmio', module: 'tuweni-rlp'
     exclude group: 'io.tmio', module: 'tuweni-units'
-  }
 
+    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+  }
 
   tasks.register('integrationTest', Test) {
     dependsOn "compileTestJava"
