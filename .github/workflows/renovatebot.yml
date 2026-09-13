@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Run renovatebot
-        uses: Consensys-Incorporated/github-actions/renovatebot@28327992dc4f4eeeee937abbaebf63f00f4f6068 # main
+        uses: Consensys-Incorporated/github-actions/renovatebot@9d01fe2ba189d3a03c9376c290b6e5f905dd790e # main
         with:
           GH_APP_ID: ${{ secrets.GH_APP_ID }}
           GH_PRIVATE_KEY: ${{ secrets.GH_PRIVATE_KEY }}
