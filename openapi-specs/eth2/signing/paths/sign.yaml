@@ -544,7 +544,7 @@ post:
           AGGREGATE_AND_PROOF_V2 (GLOAS):
             value:
               type: "AGGREGATE_AND_PROOF_V2"
-              signingRoot: "0x247535806f76143fe4798427b2a79b85340c1a029a9e08581995b60e4e45c9e0"
+              signingRoot: "0xcbc14a290b4a07a5c9302b2d7467fe7694a5dc2c93167f6a1e5662dd06b8501a"
               fork_info:
                 fork:
                   previous_version: "0x00000001"

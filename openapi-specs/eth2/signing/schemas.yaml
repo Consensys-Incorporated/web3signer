@@ -843,7 +843,7 @@ components:
       type: object
       description: >-
         SSZ container signed by a builder using DOMAIN_BEACON_BUILDER (0x0B000000)
-        in Glamsterdam (ePBS) for proposing an execution payload bid.
+        in Gloas for proposing an execution payload bid.
       properties:
         parent_block_hash:
           type: string
@@ -886,8 +886,9 @@ components:
     ExecutionPayloadEnvelopeGloas:
       type: object
       description: >-
-        SSZ container signed by a builder using DOMAIN_BEACON_BUILDER (0x0B000000)
-        in Glamsterdam (ePBS) when revealing the actual execution payload.
+        SSZ container signed by a builder, or by a proposer for self-builds, using
+        DOMAIN_BEACON_BUILDER (0x0B000000) in Gloas when revealing the actual execution
+        payload.
       properties:
         payload:
           $ref: '#/components/schemas/ExecutionPayloadGloas'
@@ -905,9 +906,8 @@ components:
     ExecutionPayloadGloas:
       type: object
       description: >-
-        Glamsterdam execution payload. Extends the Deneb execution payload with
-        block_access_list and slot_number fields (slot moved from envelope into
-        the payload in ePBS).
+        Gloas execution payload. Extends the Deneb execution payload with
+        block_access_list and slot_number fields.
       properties:
         parent_hash:
           type: string
@@ -986,9 +986,9 @@ components:
     ExecutionRequestsGloas:
       type: object
       description: >-
-        Glamsterdam execution requests. Extends the Electra execution requests
+        Gloas execution requests. Extends the Electra execution requests
         (deposits, withdrawals, consolidations) with builder_deposits and
-        builder_exits (EIP-8282).
+        builder_exits.
       properties:
         deposits:
           type: array
