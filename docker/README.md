@@ -56,7 +56,7 @@ If you add your own tooling or dependencies that do touch `/tmp`, add `--tmpfs /
 
 ### Using the Key Manager API under `--read-only`
 
-Importing a keystore via the Key Manager API normally writes a `.json` file into the configured key-config-path, which fails on a read-only rootfs. Pass the experimental hidden flag `--Xkey-manager-skip-keystore-storage=true` on the `eth2` subcommand to keep imported keys in memory only:
+Importing a keystore via the Key Manager API normally writes a `.json` file into the configured key-config-path, which fails on a read-only rootfs. Pass the early access hidden flag `--Xkey-manager-skip-keystore-storage=true` on the `eth2` subcommand to keep imported keys in memory only:
 
 ```sh
 docker run --read-only -p 9000:9000 \

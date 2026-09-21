@@ -35,7 +35,7 @@ public interface AzureKeyVaultParameters {
   long getTimeout();
 
   /**
-   * Experimental Azure client overrides (endpoint, authority host, trust certificate); see {@link
+   * Early access Azure client overrides (endpoint, authority host, trust certificate); see {@link
    * AzureOverrides}.
    *
    * @return configured overrides, or {@link AzureOverrides#NONE} by default
