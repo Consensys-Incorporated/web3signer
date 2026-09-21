@@ -96,20 +96,20 @@ public class Eth2SignForIdentifierHandler implements Handler<RoutingContext> {
       LOG.trace("{} || {}", routingContext.normalizedPath(), routingContext.body().asString());
       final String identifier = routingContext.pathParam("identifier");
       final Eth2SigningRequestBody eth2SigningRequestBody;
+      final Bytes signingRoot;
       try {
         eth2SigningRequestBody = getSigningRequest(routingContext.body());
+        signingRoot = computeSigningRoot(eth2SigningRequestBody);
+        if (eth2SigningRequestBody.signingRoot() != null) {
+          checkArgument(
+              eth2SigningRequestBody.signingRoot().equals(signingRoot),
+              "Signing root %s must match signing computed signing root %s from data",
+              eth2SigningRequestBody.signingRoot(),
+              signingRoot);
+        }
       } catch (final IllegalArgumentException | JsonProcessingException e) {
         handleInvalidRequest(routingContext, e);
         return;
-      }
-
-      final Bytes signingRoot = computeSigningRoot(eth2SigningRequestBody);
-      if (eth2SigningRequestBody.signingRoot() != null) {
-        checkArgument(
-            eth2SigningRequestBody.signingRoot().equals(signingRoot),
-            "Signing root %s must match signing computed signing root %s from data",
-            eth2SigningRequestBody.signingRoot(),
-            signingRoot);
       }
 
       final String normalisedIdentifier = normaliseIdentifier(identifier);

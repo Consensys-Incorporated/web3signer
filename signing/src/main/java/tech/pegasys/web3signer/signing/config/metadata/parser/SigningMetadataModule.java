@@ -183,7 +183,7 @@ public class SigningMetadataModule extends SimpleModule {
   public static class BLSPublicKeyDeserializer extends JsonDeserializer<BLSPublicKey> {
     @Override
     public BLSPublicKey deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
-      return BLSPublicKey.fromHexString(p.getValueAsString());
+      return BLSPublicKey.fromSSZBytes(Bytes.fromHexString(p.getValueAsString()));
     }
   }
 }

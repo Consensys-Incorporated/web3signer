@@ -2,8 +2,8 @@
 
 ## Upcoming Release
 ### Features Added
+- Signing support for the upcoming Glamsterdam (GLOAS / ePBS) fork, matching [remote-signing-api v1.4.0](https://github.com/ethereum/remote-signing-api/releases/tag/v1.4.0). [#1192][PR_1192]
 - Azure Key Vault connections are now cached per credential/vault set instead of rebuilt on every key load, reducing bulk-load time. [#1222][PR_1222]
-- Updated Glamsterdam (ePBS) signing support to a fork-versioned request format, matching [remote-signing-api v1.4.0](https://github.com/ethereum/remote-signing-api/releases/tag/v1.4.0).
 
 ### Bugs Fixed
 - Azure Key Vault SECP256K1 signing now uses one official Azure SDK `CryptographyClient` per key instead of REST workaround. [#1222][PR_1222]
@@ -13,6 +13,7 @@
 - Azure Key Vault acceptance tests now run against local Azure emulator instance instead of live Azure.
 
 [PR_1222]: https://github.com/Consensys-Incorporated/web3signer/pull/1222/changes
+[PR_1192]: https://github.com/Consensys-Incorporated/web3signer/pull/1192
 
 ---
 ## 26.7.0
@@ -29,11 +30,6 @@
 - The `.tar.gz` and `.zip` binary distributions now require Java 25 on the host machine to run Web3Signer (previously Java 21).
 - Docker images are unchanged — they have shipped Java 25 since 25.12.0.
 - Contributors no longer need to install JDK 25 manually. The build now uses a Gradle toolchain (`JavaLanguageVersion.of(25)`) with the foojay resolver, so Gradle will auto-detect a locally installed JDK 25 and download Temurin 25 if none is found. The Gradle daemon itself can run on any JDK supported by Gradle 9 (17+).
-
-### Features Added
-- Initial signing support for the upcoming Glamsterdam (GLOAS / ePBS) fork. Subject to change until the next Teku release pins the schemas. PR [#1192][PR_1192].
-
-[PR_1192]: https://github.com/Consensys/web3signer/pull/1192
 
 ### Security
 - Update base docker image to latest LTS Ubuntu 26.04.

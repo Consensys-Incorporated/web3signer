@@ -314,7 +314,25 @@ public class BlsSigningAcceptanceTest extends SigningAcceptanceTestBase {
 
     final Response response =
         signer.eth2Sign(KEY_PAIR.getPublicKey().toString(), requestWithMismatchedSigningRoot);
-    assertThat(response.getStatusCode()).isEqualTo(500);
+    assertThat(response.getStatusCode()).isEqualTo(400);
+  }
+
+  @Test
+  void failsWithBadRequestIfDeclaredMilestoneIsNotScheduledOnNetwork()
+      throws JsonProcessingException {
+    final String configFilename = PUBLIC_KEY.toString().substring(2);
+
+    final Path keyConfigFile = testDirectory.resolve(configFilename + ".yaml");
+    METADATA_FILE_HELPERS.createKeyStoreYamlFileAt(keyConfigFile, KEY_PAIR, KdfFunction.SCRYPT);
+
+    // Gloas is not scheduled on this network, so the declared "GLOAS" version must be rejected.
+    setupEth2Signer(Eth2Network.MINIMAL, SpecMilestone.FULU);
+
+    final Eth2SigningRequestBody request =
+        Eth2RequestUtils.createCannedRequest(ArtifactType.EXECUTION_PAYLOAD_BID);
+    final Response response = signer.eth2Sign(KEY_PAIR.getPublicKey().toString(), request);
+
+    assertThat(response.getStatusCode()).isEqualTo(400);
   }
 
   @ParameterizedTest
