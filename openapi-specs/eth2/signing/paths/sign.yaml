@@ -998,7 +998,7 @@ post:
               builder_request_auth:
                 version: "GLOAS"
                 data:
-                  data: "0x68747470733a2f2f6275696c6465722e6578616d706c652e6f7267"
+                  data: "0x6275696c6465722e6578616d706c652e6f7267"
                   slot: "32"
 
   responses:

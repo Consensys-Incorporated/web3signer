@@ -3,7 +3,7 @@
 ## Upcoming Release
 ### Features Added
 - Azure Key Vault connections are now cached per credential/vault set instead of rebuilt on every key load, reducing bulk-load time. [#1222][PR_1222]
-- Updated Glamsterdam (ePBS) signing support to a fork-versioned request format, matching [remote-signing-api#28](https://github.com/ethereum/remote-signing-api/pull/28).
+- Updated Glamsterdam (ePBS) signing support to a fork-versioned request format, matching [remote-signing-api v1.4.0](https://github.com/ethereum/remote-signing-api/releases/tag/v1.4.0).
 
 ### Bugs Fixed
 - Azure Key Vault SECP256K1 signing now uses one official Azure SDK `CryptographyClient` per key instead of REST workaround. [#1222][PR_1222]
