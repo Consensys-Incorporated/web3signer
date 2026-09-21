@@ -37,7 +37,7 @@ public class ExecutionRequests {
   @JsonProperty("consolidations")
   private final List<ConsolidationRequest> consolidations;
 
-  // Gloas (ePBS) additions, EIP-8282. Absent on pre-Gloas forks.
+  // Gloas (ePBS) additions, EIP-8282 (builder deposits and exits). Absent on pre-Gloas forks.
   @JsonProperty("builder_deposits")
   private final List<BuilderDepositRequest> builderDeposits;
 
@@ -92,31 +92,15 @@ public class ExecutionRequests {
     final ConsolidationRequestSchema consolidationSchema =
         (ConsolidationRequestSchema) schema.getConsolidationRequestsSchema().getElementSchema();
 
-    final List<tech.pegasys.teku.spec.datastructures.execution.versions.electra.DepositRequest>
-        depositsInternal =
-            deposits.stream()
-                .map(depositRequest -> depositRequest.asInternalDepositRequest(depositSchema))
-                .toList();
-    final List<tech.pegasys.teku.spec.datastructures.execution.versions.electra.WithdrawalRequest>
-        withdrawalsInternal =
-            withdrawals.stream()
-                .map(
-                    withdrawalRequest ->
-                        withdrawalRequest.asInternalWithdrawalRequest(withdrawalSchema))
-                .toList();
-    final List<
-            tech.pegasys.teku.spec.datastructures.execution.versions.electra.ConsolidationRequest>
-        consolidationsInternal =
-            consolidations.stream()
-                .map(
-                    consolidationRequest ->
-                        consolidationRequest.asInternalConsolidationRequest(consolidationSchema))
-                .toList();
-
     final ExecutionRequestsBuilder builder = schema.createBuilder();
-    builder.deposits(depositsInternal);
-    builder.withdrawals(withdrawalsInternal);
-    builder.consolidations(consolidationsInternal);
+    builder.deposits(
+        deposits.stream().map(d -> d.asInternalDepositRequest(depositSchema)).toList());
+    builder.withdrawals(
+        withdrawals.stream().map(w -> w.asInternalWithdrawalRequest(withdrawalSchema)).toList());
+    builder.consolidations(
+        consolidations.stream()
+            .map(c -> c.asInternalConsolidationRequest(consolidationSchema))
+            .toList());
 
     if (schema instanceof ExecutionRequestsSchemaGloas gloasSchema) {
       final BuilderDepositRequestSchema builderDepositSchema =
@@ -124,24 +108,16 @@ public class ExecutionRequests {
               gloasSchema.getBuilderDepositRequestsSchema().getElementSchema();
       final BuilderExitRequestSchema builderExitSchema =
           (BuilderExitRequestSchema) gloasSchema.getBuilderExitRequestsSchema().getElementSchema();
-      final List<
-              tech.pegasys.teku.spec.datastructures.execution.versions.gloas.BuilderDepositRequest>
-          builderDepositsInternal =
+      builder.builderDeposits(
+          () ->
               builderDeposits.stream()
-                  .map(
-                      builderDepositRequest ->
-                          builderDepositRequest.asInternalBuilderDepositRequest(
-                              builderDepositSchema))
-                  .toList();
-      final List<tech.pegasys.teku.spec.datastructures.execution.versions.gloas.BuilderExitRequest>
-          builderExitsInternal =
+                  .map(d -> d.asInternalBuilderDepositRequest(builderDepositSchema))
+                  .toList());
+      builder.builderExits(
+          () ->
               builderExits.stream()
-                  .map(
-                      builderExitRequest ->
-                          builderExitRequest.asInternalBuilderExitRequest(builderExitSchema))
-                  .toList();
-      builder.builderDeposits(() -> builderDepositsInternal);
-      builder.builderExits(() -> builderExitsInternal);
+                  .map(e -> e.asInternalBuilderExitRequest(builderExitSchema))
+                  .toList());
     }
 
     return builder.build();
