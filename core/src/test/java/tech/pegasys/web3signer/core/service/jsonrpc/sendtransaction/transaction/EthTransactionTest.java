@@ -33,9 +33,19 @@ import org.web3j.crypto.TransactionDecoder;
 import org.web3j.crypto.transaction.type.Transaction1559;
 import org.web3j.crypto.transaction.type.Transaction4844;
 import org.web3j.crypto.transaction.type.TransactionType;
+import org.web3j.rlp.RlpDecoder;
+import org.web3j.rlp.RlpList;
+import org.web3j.rlp.RlpString;
+import org.web3j.rlp.RlpType;
 import org.web3j.utils.Numeric;
 
 public class EthTransactionTest {
+  // 131072 zero bytes: one all-zero blob. Its KZG commitment and proof are both the compressed G1
+  // point at infinity, and the versioned hash of that commitment is the value below.
+  private static final String ZERO_BLOB = "0x" + "00".repeat(131072);
+  private static final String G1_POINT_AT_INFINITY = "0xc0" + "00".repeat(47);
+  private static final String ZERO_BLOB_VERSIONED_HASH =
+      "0x010657f37554c781402a22917dee2f75def7ab966d7b770905398eba3c444014";
 
   private EthTransaction ethTransaction;
 
@@ -129,29 +139,8 @@ public class EthTransactionTest {
 
   @Test
   public void rlpEncodesEip4844Transaction() {
-    final EthSendTransactionJsonParameters params =
-        new EthSendTransactionJsonParameters("0x7577919ae5df4941180eac211965f275cdce314d");
-    params.receiver("0xd46e8dd67c5d32be8058bb8eb970870f07244567");
-    params.gas("0x76c0");
-    params.maxPriorityFeePerGas("0x9184e72a000");
-    params.maxFeePerGas("0x9184e72a001");
-    params.nonce("0xe04d296d2460cfb8472af2c5fd05b5a214109c25688d3704aed5484f9a7792f2");
-    params.value("0x0");
-    params.data(
-        "0xd46e8dd67c5d32be8d46e8dd67c5d32be8058bb8eb970870f072445675058bb8eb970870f072445675");
-
-    // Generate 131072 bytes (1 blob) of data, all zeros, as a hex string
-    StringBuilder blobBuilder = new StringBuilder("0x");
-    for (int i = 0; i < 131072; i++) {
-      blobBuilder.append("00");
-    }
-    String blobHex = blobBuilder.toString();
-    params.blobs(new String[] {blobHex});
-
-    params.blobVersionedHashes(
-        new String[] {"0x010657f37554c781402a22917dee2f75def7ab966d7b770905398eba3c444014"});
-    params.maxFeePerBlobGas("0x9184e72a002");
-
+    final EthSendTransactionJsonParameters params = eip4844Parameters();
+    params.blobVersionedHashes(new String[] {ZERO_BLOB_VERSIONED_HASH});
     ethTransaction =
         new EthTransaction(1337L, params, () -> BigInteger.ZERO, new JsonRpcRequestId(1));
 
@@ -169,9 +158,57 @@ public class EthTransactionTest {
         .isEqualTo(Numeric.decodeQuantity("0x9184e72a001"));
 
     assertThat(decodedTransaction.getVersionedHashes().get(0).toHexString())
-        .isEqualTo("0x010657f37554c781402a22917dee2f75def7ab966d7b770905398eba3c444014");
+        .isEqualTo(ZERO_BLOB_VERSIONED_HASH);
     assertThat(decodedTransaction.getMaxFeePerBlobGas())
         .isEqualTo(Numeric.decodeQuantity("0x9184e72a002"));
+  }
+
+  @Test
+  public void signedEip4844TransactionWithBlobsIsEncodedAsNetworkWrapper() {
+    ethTransaction =
+        new EthTransaction(
+            1337L, eip4844Parameters(), () -> BigInteger.ZERO, new JsonRpcRequestId(1));
+    final SignatureData signatureData =
+        new SignatureData((byte) 27, new byte[] {2}, new byte[] {3});
+
+    // eth_sendRawTransaction only accepts blob transactions in the EIP-4844 network form:
+    // rlp([tx_payload_body, blobs, commitments, proofs])
+    final RlpList wrapper =
+        (RlpList) RlpDecoder.decode(ethTransaction.rlpEncode(signatureData)).getValues().get(0);
+    assertThat(wrapper.getValues()).hasSize(4);
+
+    final List<RlpType> body = ((RlpList) wrapper.getValues().get(0)).getValues();
+    final List<RlpType> blobs = ((RlpList) wrapper.getValues().get(1)).getValues();
+    final List<RlpType> commitments = ((RlpList) wrapper.getValues().get(2)).getValues();
+    final List<RlpType> proofs = ((RlpList) wrapper.getValues().get(3)).getValues();
+
+    assertThat(body).hasSize(14); // 11 transaction fields plus y_parity, r and s
+    assertThat(blobs).hasSize(1);
+    assertThat(((RlpString) blobs.get(0)).asString()).isEqualTo(ZERO_BLOB);
+    assertThat(commitments).hasSize(1);
+    assertThat(((RlpString) commitments.get(0)).asString()).isEqualTo(G1_POINT_AT_INFINITY);
+    assertThat(proofs).hasSize(1);
+    assertThat(((RlpString) proofs.get(0)).asString()).isEqualTo(G1_POINT_AT_INFINITY);
+    // blob_versioned_hashes (field 10) must be derived from the blob's commitment
+    final List<RlpType> versionedHashes = ((RlpList) body.get(10)).getValues();
+    assertThat(versionedHashes).hasSize(1);
+    assertThat(((RlpString) versionedHashes.get(0)).asString()).isEqualTo(ZERO_BLOB_VERSIONED_HASH);
+  }
+
+  private static EthSendTransactionJsonParameters eip4844Parameters() {
+    final EthSendTransactionJsonParameters params =
+        new EthSendTransactionJsonParameters("0x7577919ae5df4941180eac211965f275cdce314d");
+    params.receiver("0xd46e8dd67c5d32be8058bb8eb970870f07244567");
+    params.gas("0x76c0");
+    params.maxPriorityFeePerGas("0x9184e72a000");
+    params.maxFeePerGas("0x9184e72a001");
+    params.nonce("0xe04d296d2460cfb8472af2c5fd05b5a214109c25688d3704aed5484f9a7792f2");
+    params.value("0x0");
+    params.data(
+        "0xd46e8dd67c5d32be8d46e8dd67c5d32be8058bb8eb970870f072445675058bb8eb970870f072445675");
+    params.blobs(new String[] {ZERO_BLOB});
+    params.maxFeePerBlobGas("0x9184e72a002");
+    return params;
   }
 
   private static byte[] prependEip4844TransactionType(byte[] bytesToSign) {
