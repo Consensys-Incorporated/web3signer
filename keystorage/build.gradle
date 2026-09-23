@@ -15,19 +15,19 @@ apply plugin: 'java-library'
 apply plugin: 'java-test-fixtures'
 
 jar {
-  archiveBaseName = calculateJarName(project)
+  archiveBaseName = buildJarName
   manifest {
     attributes(
       'Specification-Title': archiveBaseName.get(),
       'Specification-Version': rootProject.version,
       'Implementation-Title': archiveBaseName.get(),
-      'Implementation-Version': calculateVersion()
+      'Implementation-Version': buildVersion
       )
   }
 }
 
 testFixturesJar {
-  archiveBaseName = calculateJarName(project)
+  archiveBaseName = buildJarName
 }
 
 dependencies {
