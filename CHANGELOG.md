@@ -3,6 +3,7 @@
 ## Upcoming Release
 ### Features Added
 - Signing support for the upcoming Glamsterdam (GLOAS / ePBS) fork, matching [remote-signing-api v1.4.0](https://github.com/ethereum/remote-signing-api/releases/tag/v1.4.0). [#1192][PR_1192]
+- Unstable CLI options (names beginning `--X`) are now listed by `web3signer -X` (or `--Xhelp`), grouped by the command they belong to. `web3signer eth2 -X` lists only the `eth2` unstable options. [#1228][PR_1228]
 - Azure Key Vault connections are now cached per credential/vault set instead of rebuilt on every key load, reducing bulk-load time. [#1222][PR_1222]
 
 ### Bugs Fixed
@@ -17,6 +18,7 @@
 - Default image ships `ubuntu:26.04` + Eclipse Temurin JRE 25.0.4; distroless image ships Java 25.0.4 on `gcr.io/distroless/java25-debian13:nonroot`.
 
 [PR_1222]: https://github.com/Consensys-Incorporated/web3signer/pull/1222/changes
+[PR_1228]: https://github.com/Consensys-Incorporated/web3signer/pull/1228/changes
 [PR_1192]: https://github.com/Consensys-Incorporated/web3signer/pull/1192
 
 ---

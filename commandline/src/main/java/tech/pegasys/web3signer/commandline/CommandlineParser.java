@@ -119,7 +119,7 @@ public class CommandlineParser {
     while (current != null) {
       if (current.isUsageHelpRequested()
           || current.isVersionHelpRequested()
-          || "help".equals(current.commandSpec().name())) {
+          || current.commandSpec().helpCommand()) {
         return true;
       }
       current = current.hasSubcommand() ? current.subcommand() : null;

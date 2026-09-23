@@ -48,9 +48,10 @@ import picocli.CommandLine.HelpCommand;
 @Command(
     name = Eth1SubCommand.COMMAND_NAME,
     description = "Handle Ethereum-1 SECP256k1 signing operations and public key reporting",
-    subcommands = {HelpCommand.class},
+    subcommands = {HelpCommand.class, XHelpSubCommand.class},
     versionProvider = VersionProvider.class,
-    mixinStandardHelpOptions = true)
+    mixinStandardHelpOptions = true,
+    footer = "Unstable options are omitted from this help. Run 'web3signer eth1 -X' to list them.")
 public class Eth1SubCommand extends ModeSubCommand implements Eth1Config {
 
   public static final String COMMAND_NAME = "eth1";

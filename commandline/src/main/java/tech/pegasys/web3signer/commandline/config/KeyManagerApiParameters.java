@@ -27,7 +27,7 @@ public class KeyManagerApiParameters implements KeyManagerApiConfig {
   @Option(
       names = "--Xkey-manager-skip-keystore-storage",
       description =
-          "EXPERIMENTAL: Skip writing keystores to disk when importing via Key Manager API. "
+          "Skip writing keystores to disk when importing via Key Manager API. "
               + "Keys will only exist in memory and will be lost on restart (default: ${DEFAULT-VALUE}).",
       paramLabel = "<BOOL>",
       arity = "1",

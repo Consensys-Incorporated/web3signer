@@ -92,14 +92,14 @@ public class PicoCliAzureKeyVaultParameters implements AzureKeyVaultParameters {
 
   @Option(
       names = {AZURE_ENDPOINT_OVERRIDE_OPTION},
-      description = "EXPERIMENTAL: Override Azure Key Vault endpoint.",
+      description = "Override Azure Key Vault endpoint.",
       paramLabel = "<URI>",
       hidden = true)
   private Optional<URI> endpointOverride;
 
   @Option(
       names = {AZURE_AUTHORITY_HOST_OVERRIDE_OPTION},
-      description = "EXPERIMENTAL: Override the Microsoft Entra ID (Azure AD) authority host.",
+      description = "Override the Microsoft Entra ID (Azure AD) authority host.",
       paramLabel = "<URI>",
       hidden = true)
   private Optional<URI> authorityHostOverride;
@@ -107,7 +107,7 @@ public class PicoCliAzureKeyVaultParameters implements AzureKeyVaultParameters {
   @Option(
       names = {AZURE_TRUST_CERTIFICATE_OVERRIDE_OPTION},
       description =
-          "EXPERIMENTAL: Trust the given X.509 certificate file for TLS connections to the "
+          "Trust the given X.509 certificate file for TLS connections to the "
               + "Azure Key Vault endpoint and Microsoft Entra ID authority, in place of the "
               + "platform default trust store.",
       paramLabel = "<FILE>",

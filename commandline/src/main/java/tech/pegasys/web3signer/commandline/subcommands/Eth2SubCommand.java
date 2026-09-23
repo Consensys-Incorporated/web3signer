@@ -62,12 +62,14 @@ import picocli.CommandLine.Spec;
     description = "Handle Ethereum-2 BLS signing operations and public key reporting",
     subcommands = {
       HelpCommand.class,
+      XHelpSubCommand.class,
       Eth2ExportSubCommand.class,
       Eth2ImportSubCommand.class,
       Eth2WatermarkRepairSubCommand.class
     },
     versionProvider = VersionProvider.class,
-    mixinStandardHelpOptions = true)
+    mixinStandardHelpOptions = true,
+    footer = "Unstable options are omitted from this help. Run 'web3signer eth2 -X' to list them.")
 public class Eth2SubCommand extends ModeSubCommand {
   private static final Logger LOG = LogManager.getLogger();
   public static final String COMMAND_NAME = "eth2";
