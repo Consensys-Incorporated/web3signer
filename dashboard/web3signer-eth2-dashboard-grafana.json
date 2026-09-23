@@ -938,7 +938,7 @@
               }
             ]
           },
-          "unit": "ops"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -967,12 +967,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(http_vertx_worker_pool_rejected_total{instance=~\"$system\", job=\"$job\"}[1m])",
+          "expr": "http_vertx_worker_queue_delay{instance=~\"$system\", job=\"$job\", quantile=\"0.95\"}",
           "legendFormat": "{{poolName}}",
           "refId": "A"
         }
       ],
-      "title": "Worker Pool Rejections",
+      "title": "Worker Pool Queue Delay (p95)",
       "type": "timeseries"
     },
     {

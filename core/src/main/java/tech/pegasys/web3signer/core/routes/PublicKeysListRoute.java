@@ -16,7 +16,6 @@ import tech.pegasys.web3signer.core.Context;
 import tech.pegasys.web3signer.core.service.http.handlers.PublicKeysListHandler;
 
 import io.vertx.core.http.HttpMethod;
-import io.vertx.ext.web.impl.BlockingHandlerDecorator;
 
 public class PublicKeysListRoute implements Web3SignerRoute {
 
@@ -43,9 +42,7 @@ public class PublicKeysListRoute implements Web3SignerRoute {
         .getRouter()
         .route(HttpMethod.GET, path)
         .produces(JSON_HEADER)
-        .handler(
-            new BlockingHandlerDecorator(
-                new PublicKeysListHandler(context.getArtifactSignerProviders()), false))
+        .blockingHandler(new PublicKeysListHandler(context.getArtifactSignerProviders()), false)
         .failureHandler(context.getErrorHandler());
   }
 }

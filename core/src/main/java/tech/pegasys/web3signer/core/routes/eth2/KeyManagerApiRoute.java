@@ -34,7 +34,6 @@ import java.util.Optional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.vertx.core.http.HttpMethod;
-import io.vertx.ext.web.impl.BlockingHandlerDecorator;
 
 public class KeyManagerApiRoute implements Web3SignerRoute {
   public static final String KEYSTORES_PATH = "/eth/v1/keystores";
@@ -79,9 +78,7 @@ public class KeyManagerApiRoute implements Web3SignerRoute {
     context
         .getRouter()
         .route(HttpMethod.GET, KEYSTORES_PATH)
-        .handler(
-            new BlockingHandlerDecorator(
-                new ListKeystoresHandler(blsSignerProvider, objectMapper), false))
+        .blockingHandler(new ListKeystoresHandler(blsSignerProvider, objectMapper), false)
         .failureHandler(context.getErrorHandler());
   }
 
@@ -104,11 +101,10 @@ public class KeyManagerApiRoute implements Web3SignerRoute {
     context
         .getRouter()
         .route(HttpMethod.DELETE, KEYSTORES_PATH)
-        .handler(
-            new BlockingHandlerDecorator(
-                new DeleteKeystoresHandler(
-                    objectMapper, slashingProtection, blsSignerProvider, validatorManager),
-                false))
+        .blockingHandler(
+            new DeleteKeystoresHandler(
+                objectMapper, slashingProtection, blsSignerProvider, validatorManager),
+            false)
         .failureHandler(context.getErrorHandler());
   }
 

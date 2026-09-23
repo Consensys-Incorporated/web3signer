@@ -22,7 +22,6 @@ import tech.pegasys.web3signer.signing.config.DefaultArtifactSignerProvider;
 
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
-import io.vertx.ext.web.impl.BlockingHandlerDecorator;
 
 public class CommitBoostPublicKeysRoute implements Web3SignerRoute {
   private static final String PATH = "/signer/v1/get_pubkeys";
@@ -45,9 +44,7 @@ public class CommitBoostPublicKeysRoute implements Web3SignerRoute {
         .getRouter()
         .route(HttpMethod.GET, PATH)
         .produces(JSON_HEADER)
-        .handler(
-            new BlockingHandlerDecorator(
-                new CommitBoostPublicKeysHandler(artifactSignerProvider), false))
+        .blockingHandler(new CommitBoostPublicKeysHandler(artifactSignerProvider), false)
         .failureHandler(context.getErrorHandler())
         .failureHandler(
             ctx -> {

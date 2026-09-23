@@ -30,7 +30,6 @@ import java.util.Optional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.vertx.core.http.HttpMethod;
-import io.vertx.ext.web.impl.BlockingHandlerDecorator;
 
 public class Eth2SignRoute implements Web3SignerRoute {
   private static final String SIGN_PATH = "/api/v1/eth2/sign/:identifier";
@@ -71,16 +70,15 @@ public class Eth2SignRoute implements Web3SignerRoute {
     context
         .getRouter()
         .route(HttpMethod.POST, SIGN_PATH)
-        .handler(
-            new BlockingHandlerDecorator(
-                new Eth2SignForIdentifierHandler(
-                    blsSigner,
-                    new HttpApiMetrics(context.getMetricsSystem(), BLS, artifactSignerProvider),
-                    new SlashingProtectionMetrics(context.getMetricsSystem()),
-                    slashingProtection,
-                    objectMapper,
-                    eth2Spec),
-                false))
+        .blockingHandler(
+            new Eth2SignForIdentifierHandler(
+                blsSigner,
+                new HttpApiMetrics(context.getMetricsSystem(), BLS, artifactSignerProvider),
+                new SlashingProtectionMetrics(context.getMetricsSystem()),
+                slashingProtection,
+                objectMapper,
+                eth2Spec),
+            false)
         .failureHandler(context.getErrorHandler());
   }
 }

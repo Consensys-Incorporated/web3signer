@@ -91,12 +91,7 @@ public class VertxRequestTransmitter implements RequestTransmitter {
                 return null;
               },
               false)
-          .onComplete(
-              res -> {
-                if (res.failed()) {
-                  LOG.error("Reporting failure, failed", res.cause());
-                }
-              });
+          .onFailure(err -> LOG.error("Reporting failure, failed", err));
     }
   }
 
@@ -115,13 +110,10 @@ public class VertxRequestTransmitter implements RequestTransmitter {
                       return null;
                     },
                     false)
-                .onComplete(
-                    res -> {
-                      if (res.failed()) {
-                        final Throwable t = res.cause();
-                        LOG.error("An unhandled error occurred while processing a response", t);
-                        bodyHandler.handleFailure(t);
-                      }
+                .onFailure(
+                    t -> {
+                      LOG.error("An unhandled error occurred while processing a response", t);
+                      bodyHandler.handleFailure(t);
                     }));
   }
 

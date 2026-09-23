@@ -25,7 +25,6 @@ import tech.pegasys.web3signer.signing.config.DefaultArtifactSignerProvider;
 import java.util.Optional;
 
 import io.vertx.core.http.HttpMethod;
-import io.vertx.ext.web.impl.BlockingHandlerDecorator;
 
 public class Eth1SignRoute implements Web3SignerRoute {
   private static final String SIGN_PATH = "/api/v1/eth1/sign/:identifier";
@@ -57,12 +56,11 @@ public class Eth1SignRoute implements Web3SignerRoute {
     context
         .getRouter()
         .route(HttpMethod.POST, SIGN_PATH)
-        .handler(
-            new BlockingHandlerDecorator(
-                new Eth1SignForIdentifierHandler(
-                    secpSigner,
-                    new HttpApiMetrics(context.getMetricsSystem(), SECP256K1, signerProvider)),
-                false))
+        .blockingHandler(
+            new Eth1SignForIdentifierHandler(
+                secpSigner,
+                new HttpApiMetrics(context.getMetricsSystem(), SECP256K1, signerProvider)),
+            false)
         .failureHandler(context.getErrorHandler());
   }
 }
