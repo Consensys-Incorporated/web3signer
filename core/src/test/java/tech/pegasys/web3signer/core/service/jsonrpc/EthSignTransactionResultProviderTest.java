@@ -170,9 +170,13 @@ public class EthSignTransactionResultProviderTest {
 
   @Test
   public void returnsExpectedSignatureForEip4844Transaction() {
+    // web3j 6 emits the canonical EIP-4844 signed transaction, 0x03 || rlp([...14 fields...]).
+    // web3j 5 additionally wrapped the signed payload in a blob network-wrapper list and
+    // appended three empty lists (blobs, commitments, proofs), which was not a valid
+    // EIP-4844 signed transaction. The signing preimage (and therefore r/s) is unchanged.
     assertThat(executeEthSignTransaction(get4844TxParameters()))
         .isEqualTo(
-            "0x03f88cf88782af2c46010282760094627306090abab3a6e1400e9345bc60c78a8bef570200c003e1a0010657f37554c781402a22917dee2f75def7ab966d7b770905398eba3c44401401a099ef021663f2bf3eeee30abad5f798db98f5736fad456b9da3a8c254e65523c1a073123b2465936f4ccaba0e20cad2db613bd48e833cbaad879647333506837239c0c0c0");
+            "0x03f88782af2c46010282760094627306090abab3a6e1400e9345bc60c78a8bef570200c003e1a0010657f37554c781402a22917dee2f75def7ab966d7b770905398eba3c44401401a099ef021663f2bf3eeee30abad5f798db98f5736fad456b9da3a8c254e65523c1a073123b2465936f4ccaba0e20cad2db613bd48e833cbaad879647333506837239");
   }
 
   private String executeEthSignTransaction(final JsonObject params) {

@@ -26,6 +26,7 @@ import org.apache.logging.log4j.Logger;
 import org.web3j.crypto.Credentials;
 import org.web3j.crypto.WalletUtils;
 import org.web3j.crypto.exception.CipherException;
+import tools.jackson.core.JacksonException;
 
 public class FileBasedSignerFactory {
 
@@ -55,7 +56,7 @@ public class FileBasedSignerFactory {
     try {
       final Credentials credentials = WalletUtils.loadCredentials(password, keyFilePath.toFile());
       return new CredentialSigner(credentials);
-    } catch (final IOException e) {
+    } catch (final IOException | JacksonException e) {
       final String message = READ_AUTH_FILE_MESSAGE + keyFilePath.toString();
       LOG.error(message, e);
       throw new SignerInitializationException(message, e);

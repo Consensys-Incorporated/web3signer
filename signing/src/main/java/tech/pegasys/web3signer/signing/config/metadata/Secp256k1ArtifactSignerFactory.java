@@ -31,6 +31,7 @@ import org.apache.tuweni.bytes.Bytes32;
 import org.web3j.crypto.Credentials;
 import org.web3j.crypto.WalletUtils;
 import org.web3j.crypto.exception.CipherException;
+import tools.jackson.core.JacksonException;
 
 public class Secp256k1ArtifactSignerFactory extends AbstractArtifactSignerFactory {
 
@@ -71,7 +72,7 @@ public class Secp256k1ArtifactSignerFactory extends AbstractArtifactSignerFactor
       final String password = loadPassword(keystorePasswordFile);
       final Credentials credentials = WalletUtils.loadCredentials(password, keystoreFile.toFile());
       return createCredentialSigner(credentials);
-    } catch (final IOException | CipherException e) {
+    } catch (final IOException | CipherException | JacksonException e) {
       throw new SigningMetadataException(e.getMessage(), e);
     }
   }

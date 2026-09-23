@@ -96,7 +96,8 @@ public class TlsEnabledHttpServerFactory {
       final CompletableFuture<Boolean> serverConfigured = new CompletableFuture<>();
       web3ProviderHttpServer
           .requestHandler(router)
-          .listen(result -> serverConfigured.complete(true));
+          .listen()
+          .onComplete(result -> serverConfigured.complete(true));
 
       serverConfigured.get();
 

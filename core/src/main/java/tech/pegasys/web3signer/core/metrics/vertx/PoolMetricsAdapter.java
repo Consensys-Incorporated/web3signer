@@ -20,11 +20,16 @@ import org.hyperledger.besu.plugin.services.metrics.Counter;
 import org.hyperledger.besu.plugin.services.metrics.OperationTimer;
 import org.hyperledger.besu.plugin.services.metrics.OperationTimer.TimingContext;
 
-public final class PoolMetricsAdapter implements PoolMetrics<TimingContext> {
+/**
+ * Vert.x 5's pool metrics SPI replaced {@code submitted}/{@code rejected} with {@code
+ * enqueue}/{@code dequeue}, and no longer distinguishes a rejected task: {@code dequeue} is invoked
+ * both when a queued task starts executing and when it is rejected. The worker-pool rejected-task
+ * counter was dropped accordingly, matching Vert.x's own metrics implementation.
+ */
+public final class PoolMetricsAdapter implements PoolMetrics<TimingContext, TimingContext> {
 
   private final Counter submittedCounter;
   private final Counter completedCounter;
-  private final Counter rejectedCounter;
   private final OperationTimer queueDelay;
   private final OperationTimer poolUsage;
 
@@ -46,16 +51,6 @@ public final class PoolMetricsAdapter implements PoolMetrics<TimingContext> {
                 Web3SignerMetricCategory.HTTP,
                 "vertx_worker_pool_completed_total",
                 "Total number of tasks completed by the Vertx worker pool",
-                "poolType",
-                "poolName")
-            .labels(poolType, poolName);
-
-    rejectedCounter =
-        metricsSystem
-            .createLabelledCounter(
-                Web3SignerMetricCategory.HTTP,
-                "vertx_worker_pool_rejected_total",
-                "Total number of tasks rejected by the Vertx worker pool",
                 "poolType",
                 "poolName")
             .labels(poolType, poolName);
@@ -82,26 +77,24 @@ public final class PoolMetricsAdapter implements PoolMetrics<TimingContext> {
   }
 
   @Override
-  public TimingContext submitted() {
+  public TimingContext enqueue() {
     submittedCounter.inc();
     return queueDelay.startTimer();
   }
 
   @Override
-  public void rejected(final TimingContext submittedTimerContext) {
-    rejectedCounter.inc();
-    submittedTimerContext.stopTimer();
+  public void dequeue(final TimingContext queueTimerContext) {
+    queueTimerContext.stopTimer();
   }
 
   @Override
-  public TimingContext begin(final TimingContext submittedTimerContext) {
-    submittedTimerContext.stopTimer();
+  public TimingContext begin() {
     return poolUsage.startTimer();
   }
 
   @Override
-  public void end(final TimingContext startTimerContext, final boolean succeeded) {
+  public void end(final TimingContext usageTimerContext) {
     completedCounter.inc();
-    startTimerContext.stopTimer();
+    usageTimerContext.stopTimer();
   }
 }

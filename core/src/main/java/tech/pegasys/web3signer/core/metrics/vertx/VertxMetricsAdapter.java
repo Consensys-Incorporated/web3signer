@@ -25,7 +25,7 @@ public class VertxMetricsAdapter implements VertxMetrics {
   }
 
   @Override
-  public PoolMetrics<?> createPoolMetrics(
+  public PoolMetrics<?, ?> createPoolMetrics(
       final String poolType, final String poolName, final int maxPoolSize) {
     return new PoolMetricsAdapter(metricsSystem, poolType, poolName);
   }

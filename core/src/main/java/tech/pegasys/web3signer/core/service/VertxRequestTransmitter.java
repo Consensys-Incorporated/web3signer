@@ -84,17 +84,19 @@ public class VertxRequestTransmitter implements RequestTransmitter {
   private void handleException(final Throwable thrown) {
     LOG.error("Transmission failed", thrown);
     if (!responseHandled.getAndSet(true)) {
-      vertx.executeBlocking(
-          () -> {
-            bodyHandler.handleFailure(thrown);
-            return null;
-          },
-          false,
-          res -> {
-            if (res.failed()) {
-              LOG.error("Reporting failure, failed", res.cause());
-            }
-          });
+      vertx
+          .executeBlocking(
+              () -> {
+                bodyHandler.handleFailure(thrown);
+                return null;
+              },
+              false)
+          .onComplete(
+              res -> {
+                if (res.failed()) {
+                  LOG.error("Reporting failure, failed", res.cause());
+                }
+              });
     }
   }
 
@@ -103,22 +105,24 @@ public class VertxRequestTransmitter implements RequestTransmitter {
     logResponse(response);
     response.bodyHandler(
         body ->
-            vertx.executeBlocking(
-                () -> {
-                  bodyHandler.handleResponse(
-                      response.headers(),
-                      response.statusCode(),
-                      body.toString(StandardCharsets.UTF_8));
-                  return null;
-                },
-                false,
-                res -> {
-                  if (res.failed()) {
-                    final Throwable t = res.cause();
-                    LOG.error("An unhandled error occurred while processing a response", t);
-                    bodyHandler.handleFailure(t);
-                  }
-                }));
+            vertx
+                .executeBlocking(
+                    () -> {
+                      bodyHandler.handleResponse(
+                          response.headers(),
+                          response.statusCode(),
+                          body.toString(StandardCharsets.UTF_8));
+                      return null;
+                    },
+                    false)
+                .onComplete(
+                    res -> {
+                      if (res.failed()) {
+                        final Throwable t = res.cause();
+                        LOG.error("An unhandled error occurred while processing a response", t);
+                        bodyHandler.handleFailure(t);
+                      }
+                    }));
   }
 
   private void logResponse(final HttpClientResponse response) {

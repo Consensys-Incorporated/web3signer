@@ -56,13 +56,13 @@ import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.metrics.MetricsOptions;
 import io.vertx.core.net.PfxOptions;
-import io.vertx.ext.healthchecks.HealthCheckHandler;
 import io.vertx.ext.healthchecks.Status;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import io.vertx.ext.web.handler.LoggerFormat;
 import io.vertx.ext.web.handler.LoggerHandler;
+import io.vertx.ext.web.healthchecks.HealthCheckHandler;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.net.tls.VertxTrustOptions;
@@ -206,7 +206,7 @@ public abstract class Runner implements Runnable, AutoCloseable {
 
   private void shutdownVertx(final Vertx vertx) {
     final CountDownLatch vertxShutdownLatch = new CountDownLatch(1);
-    vertx.close((res) -> vertxShutdownLatch.countDown());
+    vertx.close().onComplete(res -> vertxShutdownLatch.countDown());
     try {
       vertxShutdownLatch.await();
     } catch (InterruptedException e) {
@@ -287,7 +287,8 @@ public abstract class Runner implements Runnable, AutoCloseable {
     final CompletableFuture<Void> serverRunningFuture = new CompletableFuture<>();
     httpServer
         .requestHandler(requestHandler)
-        .listen(
+        .listen()
+        .onComplete(
             result -> {
               if (result.succeeded()) {
                 serverRunningFuture.complete(null);

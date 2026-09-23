@@ -102,7 +102,7 @@ public class WebClientOptionsFactory {
     }
 
     try {
-      webClientOptions.setPfxKeyCertOptions(convertFrom(optionalKeyStoreOptions.get()));
+      webClientOptions.setKeyCertOptions(convertFrom(optionalKeyStoreOptions.get()));
     } catch (final IOException e) {
       throw new InitializationException("Failed to load client certificate keystore.", e);
     }

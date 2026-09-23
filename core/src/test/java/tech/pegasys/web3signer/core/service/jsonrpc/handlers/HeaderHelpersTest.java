@@ -19,7 +19,6 @@ import java.util.List;
 import com.google.common.collect.Lists;
 import com.google.common.net.HttpHeaders;
 import io.vertx.core.MultiMap;
-import io.vertx.core.http.impl.headers.HeadersMultiMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -29,7 +28,7 @@ class HeaderHelpersTest {
   @ParameterizedTest
   @ValueSource(strings = {"ORIGIN", "origin", "Origin", "OrIgIn"})
   void originHeaderIsRemoved(String headerToRemove) {
-    final MultiMap input = new HeadersMultiMap();
+    final MultiMap input = MultiMap.caseInsensitiveMultiMap();
     input.add(headerToRemove, "arbitrary");
     final MultiMap output = HeaderHelpers.createHeaders(input);
 
@@ -39,7 +38,7 @@ class HeaderHelpersTest {
   @ParameterizedTest
   @ValueSource(strings = {"CONTENT-LENGTH", "content-length", "Content-Length", "CoNtEnT-LeNgTh"})
   void contentLengthHeaderIsRemoved(String headerToRemove) {
-    final MultiMap input = new HeadersMultiMap();
+    final MultiMap input = MultiMap.caseInsensitiveMultiMap();
     input.add(headerToRemove, "arbitrary");
     final MultiMap output = HeaderHelpers.createHeaders(input);
 
@@ -48,7 +47,7 @@ class HeaderHelpersTest {
 
   @Test
   void hostHeaderIsRenamedToXForwardedHost() {
-    final MultiMap input = new HeadersMultiMap();
+    final MultiMap input = MultiMap.caseInsensitiveMultiMap();
     input.add(HttpHeaders.HOST, "arbitrary");
 
     final MultiMap output = HeaderHelpers.createHeaders(input);
@@ -59,7 +58,7 @@ class HeaderHelpersTest {
 
   @Test
   void ensureMultiEntryHeadersAreCopiedCorrectly() {
-    final MultiMap input = new HeadersMultiMap();
+    final MultiMap input = MultiMap.caseInsensitiveMultiMap();
     final List<String> headerValues = Lists.newArrayList("arbitrary", "secondArbitrary");
     input.add(HttpHeaders.HOST, headerValues);
 

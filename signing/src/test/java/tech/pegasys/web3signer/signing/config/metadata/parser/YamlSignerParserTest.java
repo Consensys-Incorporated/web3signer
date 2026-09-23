@@ -242,7 +242,8 @@ class YamlSignerParserTest {
 
     Assertions.assertThatThrownBy(
             () -> signerParser.parse(signerParser.readSigningMetadata(yamlMetadata)))
-        .hasRootCauseMessage("Provider \"https\" not installed");
+        .isInstanceOf(SigningMetadataException.class)
+        .hasMessageStartingWith("Invalid signing metadata file format");
   }
 
   @Test
