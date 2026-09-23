@@ -48,6 +48,7 @@ public class XHelpSubCommandTest {
           "--Xnetwork-deneb-fork-epoch",
           "--Xnetwork-electra-fork-epoch",
           "--Xnetwork-fulu-fork-epoch",
+          "--Xnetwork-gloas-fork-epoch",
           "--Xtrusted-setup",
           "--Xsigning-ext-enabled",
           "--Xslashing-protection-db-connection-pool-enabled",
