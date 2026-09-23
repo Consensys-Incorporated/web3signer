@@ -17,8 +17,8 @@ import java.nio.file.Path;
 import java.util.Optional;
 
 /**
- * Early access Azure client overrides, bundled so new ones can be added without changing every
- * method signature that threads them through (config parsing, factories, {@link AzureKeyVault}).
+ * Unstable Azure client overrides, bundled so new ones can be added without changing every method
+ * signature that threads them through (config parsing, factories, {@link AzureKeyVault}).
  *
  * @param endpointOverride overrides the Azure Key Vault endpoint (e.g. for testing against an
  *     emulator)

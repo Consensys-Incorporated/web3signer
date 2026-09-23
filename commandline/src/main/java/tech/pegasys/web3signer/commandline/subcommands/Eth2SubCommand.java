@@ -69,8 +69,7 @@ import picocli.CommandLine.Spec;
     },
     versionProvider = VersionProvider.class,
     mixinStandardHelpOptions = true,
-    footer =
-        "Early access options are omitted from this help. Run 'web3signer eth2 -X' to list them.")
+    footer = "Unstable options are omitted from this help. Run 'web3signer eth2 -X' to list them.")
 public class Eth2SubCommand extends ModeSubCommand {
   private static final Logger LOG = LogManager.getLogger();
   public static final String COMMAND_NAME = "eth2";

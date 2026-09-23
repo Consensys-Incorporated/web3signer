@@ -3,7 +3,7 @@
 ## Upcoming Release
 ### Features Added
 - Signing support for the upcoming Glamsterdam (GLOAS / ePBS) fork, matching [remote-signing-api v1.4.0](https://github.com/ethereum/remote-signing-api/releases/tag/v1.4.0). [#1192][PR_1192]
-- Early access CLI options (names beginning `--X`) are now listed by `web3signer -X` (or `--Xhelp`), grouped by the command they belong to. `web3signer eth2 -X` lists only the `eth2` early access options. [#1228][PR_1228]
+- Unstable CLI options (names beginning `--X`) are now listed by `web3signer -X` (or `--Xhelp`), grouped by the command they belong to. `web3signer eth2 -X` lists only the `eth2` unstable options. [#1228][PR_1228]
 - Azure Key Vault connections are now cached per credential/vault set instead of rebuilt on every key load, reducing bulk-load time. [#1222][PR_1222]
 
 ### Bugs Fixed

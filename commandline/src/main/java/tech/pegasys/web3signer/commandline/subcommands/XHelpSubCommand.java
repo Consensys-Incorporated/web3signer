@@ -23,31 +23,31 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Model.OptionSpec;
 
 /**
- * Prints help text for early access options.
+ * Prints help text for unstable options.
  *
- * <p>Early access options are distinguished by
+ * <p>Unstable options are distinguished by
  *
  * <ul>
  *   <li>Being marked as 'hidden'
  *   <li>Having their first option name start with <code>--X</code>
  * </ul>
  *
- * <p>There is no stability or compatibility guarantee for early access options between releases.
- * They can be added and removed without announcement and their meaning and values can similarly
- * change without announcement or warning.
+ * <p>No stability or compatibility guarantee applies to unstable options between releases. They can
+ * be added and removed without announcement, and their meaning and values can similarly change
+ * without announcement or warning.
  */
 @CommandLine.Command(
     name = XHelpSubCommand.COMMAND_NAME,
     aliases = {"-X", "--Xhelp"},
-    description = "This command provides help text for all early access options.",
+    description = "This command provides help text for all unstable options.",
     hidden = true,
     helpCommand = true)
 public class XHelpSubCommand implements Runnable, CommandLine.IHelpCommandInitializable2 {
 
   public static final String COMMAND_NAME = "Xhelp";
-  private static final String EARLY_ACCESS_OPTION_PREFIX = "--X";
+  private static final String UNSTABLE_OPTION_PREFIX = "--X";
   private static final String STABILITY_NOTICE =
-      "Early access options are not covered by any stability or compatibility guarantee. "
+      "No stability or compatibility guarantee applies to unstable options. "
           + "They may be added, changed or removed between releases without announcement.";
 
   private CommandLine self;
@@ -69,31 +69,31 @@ public class XHelpSubCommand implements Runnable, CommandLine.IHelpCommandInitia
   public void run() {
     out.println(STABILITY_NOTICE);
     out.println();
-    printEarlyAccessOptions(self.getCommandSpec().parent());
+    printUnstableOptions(self.getCommandSpec().parent());
   }
 
-  private void printEarlyAccessOptions(final CommandSpec commandSpec) {
-    final List<OptionSpec> earlyAccessOptions = new ArrayList<>();
+  private void printUnstableOptions(final CommandSpec commandSpec) {
+    final List<OptionSpec> unstableOptions = new ArrayList<>();
     for (final OptionSpec option : commandSpec.options()) {
-      if (option.names()[0].startsWith(EARLY_ACCESS_OPTION_PREFIX)) {
-        earlyAccessOptions.add(option);
+      if (option.names()[0].startsWith(UNSTABLE_OPTION_PREFIX)) {
+        unstableOptions.add(option);
       }
     }
 
-    if (!earlyAccessOptions.isEmpty()) {
+    if (!unstableOptions.isEmpty()) {
       // Recreate the options with hidden flipped to false so that they are rendered.
       final CommandSpec revealedSpec = CommandSpec.create();
       revealedSpec.usageMessage().sortOptions(false);
-      for (final OptionSpec option : earlyAccessOptions) {
+      for (final OptionSpec option : unstableOptions) {
         revealedSpec.addOption(option.toBuilder().hidden(false).build());
       }
-      out.printf("Early access options for %s:%n", commandSpec.qualifiedName());
+      out.printf("Unstable options for %s:%n", commandSpec.qualifiedName());
       out.println(new Help(revealedSpec, colorScheme).optionList());
     }
 
     // A subcommand is registered under its name and each of its aliases, so de-duplicate.
     for (final CommandLine subcommand : new LinkedHashSet<>(commandSpec.subcommands().values())) {
-      printEarlyAccessOptions(subcommand.getCommandSpec());
+      printUnstableOptions(subcommand.getCommandSpec());
     }
   }
 }

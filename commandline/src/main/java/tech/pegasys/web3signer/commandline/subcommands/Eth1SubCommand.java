@@ -51,8 +51,7 @@ import picocli.CommandLine.HelpCommand;
     subcommands = {HelpCommand.class, XHelpSubCommand.class},
     versionProvider = VersionProvider.class,
     mixinStandardHelpOptions = true,
-    footer =
-        "Early access options are omitted from this help. Run 'web3signer eth1 -X' to list them.")
+    footer = "Unstable options are omitted from this help. Run 'web3signer eth1 -X' to list them.")
 public class Eth1SubCommand extends ModeSubCommand implements Eth1Config {
 
   public static final String COMMAND_NAME = "eth1";

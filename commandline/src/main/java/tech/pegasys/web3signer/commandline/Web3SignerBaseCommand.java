@@ -71,7 +71,7 @@ import picocli.CommandLine.Spec;
     footerHeading = "%n",
     subcommands = {HelpCommand.class, XHelpSubCommand.class},
     footer =
-        "Early access options are omitted from this help. Run 'web3signer -X' to list them.%n%n"
+        "Unstable options are omitted from this help. Run 'web3signer -X' to list them.%n%n"
             + "Web3Signer is licensed under the Apache License 2.0")
 public class Web3SignerBaseCommand implements BaseConfig, Runnable {
   private static final int VERTX_WORKER_POOL_SIZE_DEFAULT = 20;

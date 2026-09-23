@@ -34,12 +34,12 @@ import picocli.CommandLine;
 public class XHelpSubCommandTest {
 
   private static final String STABILITY_NOTICE =
-      "Early access options are not covered by any stability or compatibility guarantee. "
+      "No stability or compatibility guarantee applies to unstable options. "
           + "They may be added, changed or removed between releases without announcement.";
-  private static final String ETH2_HEADING = "Early access options for web3signer eth2:";
-  private static final String ETH1_HEADING = "Early access options for web3signer eth1:";
+  private static final String ETH2_HEADING = "Unstable options for web3signer eth2:";
+  private static final String ETH1_HEADING = "Unstable options for web3signer eth1:";
 
-  /** All early access options on the eth2 subtree, in declaration order. */
+  /** All unstable options on the eth2 subtree, in declaration order. */
   private static final List<String> ETH2_OPTIONS =
       List.of(
           "--Xnetwork-altair-fork-epoch",
@@ -57,7 +57,7 @@ public class XHelpSubCommandTest {
           "--Xazure-trust-certificate-override",
           "--Xkey-manager-skip-keystore-storage");
 
-  /** The only early access options on the eth1 subtree. */
+  /** The only unstable options on the eth1 subtree. */
   private static final List<String> ETH1_OPTIONS =
       List.of(
           "--Xazure-endpoint-override",
@@ -95,7 +95,7 @@ public class XHelpSubCommandTest {
 
   @ParameterizedTest(name = "{index}: {1}")
   @MethodSource("provideRootVariations")
-  void rootXHelpListsEveryEarlyAccessOption(final String[] args, final String description) {
+  void rootXHelpListsEveryUnstableOption(final String[] args, final String description) {
     final int result = parser.parseCommandLine(args);
 
     assertThat(result).as(description + " - result code").isZero();
@@ -114,7 +114,7 @@ public class XHelpSubCommandTest {
     ETH1_OPTIONS.forEach(
         option -> assertThat(output).as(description + " - " + option).contains(option));
 
-    assertThat(earlyAccessOptionLines(output)).hasSize(ETH2_OPTIONS.size() + ETH1_OPTIONS.size());
+    assertThat(unstableOptionLines(output)).hasSize(ETH2_OPTIONS.size() + ETH1_OPTIONS.size());
   }
 
   private static Stream<Arguments> provideRootVariations() {
@@ -135,7 +135,7 @@ public class XHelpSubCommandTest {
     assertThat(output).as(description + " - std out").contains(ETH2_HEADING);
     assertThat(output).contains("--Xtrusted-setup");
     assertThat(output).doesNotContain(ETH1_HEADING);
-    assertThat(earlyAccessOptionLines(output)).hasSize(ETH2_OPTIONS.size());
+    assertThat(unstableOptionLines(output)).hasSize(ETH2_OPTIONS.size());
   }
 
   private static Stream<Arguments> provideEth2Variations() {
@@ -171,7 +171,7 @@ public class XHelpSubCommandTest {
   }
 
   @Test
-  void earlyAccessOptionsPreserveDeclarationOrder() {
+  void unstableOptionsPreserveDeclarationOrder() {
     parser.parseCommandLine("-X");
 
     final String output = commandOutput.toString();
@@ -198,13 +198,13 @@ public class XHelpSubCommandTest {
 
   @ParameterizedTest(name = "{index}: {1}")
   @MethodSource("provideHelpPointerVariations")
-  void helpPointsAtTheEarlyAccessListing(final String[] args, final String expectedPointer) {
+  void helpPointsAtTheUnstableListing(final String[] args, final String expectedPointer) {
     final int result = parser.parseCommandLine(args);
 
     assertThat(result).isZero();
     assertThat(commandOutput.toString())
         .as("std out")
-        .contains("Early access options are omitted from this help")
+        .contains("Unstable options are omitted from this help")
         .contains(expectedPointer);
   }
 
@@ -216,14 +216,14 @@ public class XHelpSubCommandTest {
   }
 
   @Test
-  void xhelpIsNotRegisteredOnDescendantsWithoutEarlyAccessOptions() {
+  void xhelpIsNotRegisteredOnDescendantsWithoutUnstableOptions() {
     final int result = parser.parseCommandLine("eth2", "export", "-X");
 
     assertThat(result).isNotZero();
     assertThat(commandError.toString()).contains("Unknown option: '-X'");
   }
 
-  private static List<String> earlyAccessOptionLines(final String output) {
+  private static List<String> unstableOptionLines(final String output) {
     return output.lines().map(String::trim).filter(line -> line.startsWith("--X")).toList();
   }
 }
