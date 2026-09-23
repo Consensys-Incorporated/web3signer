@@ -12,6 +12,10 @@
 ### CI/Build Enhancements
 - Azure Key Vault acceptance tests now run against local Azure emulator instance instead of live Azure.
 
+### Security
+- Docker base images re-pinned to their current multi-platform index digests.
+- Default image ships `ubuntu:26.04` + Eclipse Temurin JRE 25.0.4; distroless image ships Java 25.0.4 on `gcr.io/distroless/java25-debian13:nonroot`.
+
 [PR_1222]: https://github.com/Consensys-Incorporated/web3signer/pull/1222/changes
 [PR_1192]: https://github.com/Consensys-Incorporated/web3signer/pull/1192
 

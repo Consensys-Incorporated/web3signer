@@ -1,11 +1,11 @@
 ## Web3Signer Docker images
 
-Web3Signer is published as two Docker image variants. Both ship Eclipse Temurin JRE 25 and the same Web3Signer application; they differ in the base image and how Web3Signer is launched.
+Web3Signer is published as two Docker image variants. Both ship the same Web3Signer distribution; they differ in the base image and how Web3Signer is launched. The exact base images — including their digest pins — are declared in [`docker/Dockerfile`](Dockerfile) and [`docker/Dockerfile.distroless`](Dockerfile.distroless), which are the source of truth for this page. The table below only summarises the trade-offs.
 
 | Variant | Tag suffix | Base image | Shell / package manager | Read-only filesystem |
 | ------- | ---------- | ---------- | ----------------------- | -------------------- |
-| Default (`docker/Dockerfile`) | *(none)* e.g. `consensys/web3signer:latest` | `ubuntu:24.04` + `eclipse-temurin:25-jre` | Yes | Requires a writable `/tmp` |
-| Distroless (`docker/Dockerfile.distroless`) | `-distroless` e.g. `consensys/web3signer:latest-distroless` | `gcr.io/distroless/java25-debian13:nonroot` | No | Works with `--read-only` out of the box |
+| Default (`docker/Dockerfile`) | *(none)* e.g. `consensys/web3signer:latest` | Ubuntu + Eclipse Temurin JRE | Yes | Requires a writable `/tmp` |
+| Distroless (`docker/Dockerfile.distroless`) | `-distroless` e.g. `consensys/web3signer:latest-distroless` | Google Distroless (Debian-based, `nonroot` user) | No | Works with `--read-only` out of the box |
 
 Pick the distroless variant when you want a smaller attack surface (no shell, no package manager), non-root execution by default, and the ability to run under a read-only root filesystem.
 
