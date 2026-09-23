@@ -25,6 +25,7 @@ import tech.pegasys.web3signer.commandline.config.PicoCliTlsServerOptions;
 import tech.pegasys.web3signer.commandline.config.PicoCliTlsServerOptionsValidator;
 import tech.pegasys.web3signer.commandline.convertor.MetricCategoryConverter;
 import tech.pegasys.web3signer.commandline.logging.LoggingFormat;
+import tech.pegasys.web3signer.commandline.subcommands.XHelpSubCommand;
 import tech.pegasys.web3signer.common.Web3SignerMetricCategory;
 import tech.pegasys.web3signer.common.config.SignerLoaderConfig;
 import tech.pegasys.web3signer.core.config.BaseConfig;
@@ -68,8 +69,10 @@ import picocli.CommandLine.Spec;
     descriptionHeading = "%nDescription:%n%n",
     optionListHeading = "%nOptions:%n",
     footerHeading = "%n",
-    subcommands = {HelpCommand.class},
-    footer = "Web3Signer is licensed under the Apache License 2.0")
+    subcommands = {HelpCommand.class, XHelpSubCommand.class},
+    footer =
+        "Unstable options are omitted from this help. Run 'web3signer -X' to list them.%n%n"
+            + "Web3Signer is licensed under the Apache License 2.0")
 public class Web3SignerBaseCommand implements BaseConfig, Runnable {
   private static final int VERTX_WORKER_POOL_SIZE_DEFAULT = 20;
   @Spec private CommandLine.Model.CommandSpec spec; // injected by picocli
