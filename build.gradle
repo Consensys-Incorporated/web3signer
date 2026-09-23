@@ -316,7 +316,6 @@ subprojects {
     exclude group: 'io.tmio', module: 'tuweni-units'
   }
 
-
   tasks.register('integrationTest', Test) {
     dependsOn "compileTestJava"
     group = "verification"

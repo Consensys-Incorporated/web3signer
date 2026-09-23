@@ -105,6 +105,15 @@ public class SigningAcceptanceTestBase extends AcceptanceTestBase {
         builder.withElectraForkEpoch(0L);
         builder.withFuluForkEpoch(0L);
       }
+      case GLOAS -> {
+        builder.withAltairForkEpoch(0L);
+        builder.withBellatrixForkEpoch(0L);
+        builder.withCapellaForkEpoch(0L);
+        builder.withDenebForkEpoch(0L);
+        builder.withElectraForkEpoch(0L);
+        builder.withFuluForkEpoch(0L);
+        builder.withGloasForkEpoch(0L);
+      }
       default ->
           throw new IllegalStateException(
               "Setting manual fork epoch is not yet implemented for " + specMilestone);

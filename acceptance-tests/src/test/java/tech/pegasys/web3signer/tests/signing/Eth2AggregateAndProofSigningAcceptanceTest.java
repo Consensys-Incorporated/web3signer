@@ -57,7 +57,7 @@ public class Eth2AggregateAndProofSigningAcceptanceTest extends SigningAcceptanc
   @ParameterizedTest(name = "#{index} - {0}: Sign and verify AggregateAndProofV2 Signature")
   @EnumSource(
       value = SpecMilestone.class,
-      names = {"PHASE0", "ALTAIR", "BELLATRIX", "CAPELLA", "DENEB", "ELECTRA", "FULU"})
+      names = {"PHASE0", "ALTAIR", "BELLATRIX", "CAPELLA", "DENEB", "ELECTRA", "FULU", "GLOAS"})
   void signAndVerifyAggregateAndProofV2Signature(final SpecMilestone specMilestone)
       throws Exception {
     final Eth2AggregateAndProofSigningRequestUtil util =

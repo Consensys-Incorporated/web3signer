@@ -140,7 +140,7 @@ public class BeaconBlockBodyElectra extends BeaconBlockBodyAltair {
                   .map(SszKZGCommitment::new)
                   .collect(blobKZGCommitmentsSchema.collector()));
           builder.executionRequests(
-              this.executionRequests.asInternalConsolidationRequest(
+              this.executionRequests.asInternalExecutionRequests(
                   SchemaDefinitionsElectra.required(spec.getSchemaDefinitions())
                       .getExecutionRequestsSchema()));
 

@@ -450,6 +450,10 @@ public class CmdLineParamsConfigFileImpl implements CmdLineParamsBuilder {
       yamlConfigMap.put("eth2.Xnetwork-fulu-fork-epoch", signerConfig.getFuluForkEpoch().get());
     }
 
+    if (signerConfig.getGloasForkEpoch().isPresent()) {
+      yamlConfigMap.put("eth2.Xnetwork-gloas-fork-epoch", signerConfig.getGloasForkEpoch().get());
+    }
+
     if (signerConfig.getNetwork().isPresent()) {
       yamlConfigMap.put("eth2.network", signerConfig.getNetwork().get());
     }

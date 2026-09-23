@@ -23,11 +23,16 @@ import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.BlockRequ
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.json.BlockRequestDeserializer;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.BLSPubKey;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.BLSSignature;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.KZGCommitment;
 import tech.pegasys.web3signer.core.service.http.serializers.BLSPubKeyDeserializer;
 import tech.pegasys.web3signer.core.service.http.serializers.BLSPubKeySerializer;
 import tech.pegasys.web3signer.core.service.http.serializers.BLSSignatureDeserializer;
 import tech.pegasys.web3signer.core.service.http.serializers.BLSSignatureSerializer;
+import tech.pegasys.web3signer.core.service.http.serializers.KZGCommitmentDeserializer;
+import tech.pegasys.web3signer.core.service.http.serializers.KZGCommitmentSerializer;
 import tech.pegasys.web3signer.core.service.http.serializers.SszBitvectorSerializer;
+import tech.pegasys.web3signer.core.service.http.serializers.UInt256Deserializer;
+import tech.pegasys.web3signer.core.service.http.serializers.UInt256Serializer;
 import tech.pegasys.web3signer.signing.config.metadata.parser.SigningMetadataModule;
 import tech.pegasys.web3signer.signing.config.metadata.parser.SigningMetadataModule.Bytes32Serializer;
 
@@ -40,6 +45,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
+import org.apache.tuweni.units.bigints.UInt256;
 import org.apache.tuweni.units.bigints.UInt64;
 
 public class SigningObjectMapperFactory {
@@ -83,6 +89,10 @@ public class SigningObjectMapperFactory {
     module.addDeserializer(BLSPubKey.class, new BLSPubKeyDeserializer());
     module.addDeserializer(BLSSignature.class, new BLSSignatureDeserializer());
     module.addSerializer(BLSSignature.class, new BLSSignatureSerializer());
+    module.addSerializer(KZGCommitment.class, new KZGCommitmentSerializer());
+    module.addDeserializer(KZGCommitment.class, new KZGCommitmentDeserializer());
+    module.addSerializer(UInt256.class, new UInt256Serializer());
+    module.addDeserializer(UInt256.class, new UInt256Deserializer());
 
     module.addSerializer(SszBitvector.class, new SszBitvectorSerializer());
 
@@ -90,6 +100,13 @@ public class SigningObjectMapperFactory {
 
     module.addDeserializer(Bytes20.class, new SigningMetadataModule.Bytes20Deserializer());
     module.addSerializer(Bytes20.class, new SigningMetadataModule.Bytes20Serializer());
+
+    module.addDeserializer(
+        tech.pegasys.teku.bls.BLSPublicKey.class,
+        new SigningMetadataModule.BLSPublicKeyDeserializer());
+    module.addSerializer(
+        tech.pegasys.teku.bls.BLSPublicKey.class,
+        new SigningMetadataModule.BLSPublicKeySerializer());
 
     return module;
   }

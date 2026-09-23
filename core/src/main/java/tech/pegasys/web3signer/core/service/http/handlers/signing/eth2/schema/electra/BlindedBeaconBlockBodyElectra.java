@@ -20,7 +20,7 @@ import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.BeaconBlockBody;
 import tech.pegasys.teku.spec.datastructures.blocks.blockbody.versions.electra.BlindedBeaconBlockBodySchemaElectra;
 import tech.pegasys.teku.spec.datastructures.execution.ExecutionPayloadHeaderSchema;
-import tech.pegasys.teku.spec.datastructures.execution.versions.electra.ExecutionRequestsSchema;
+import tech.pegasys.teku.spec.datastructures.execution.ExecutionRequestsSchema;
 import tech.pegasys.teku.spec.datastructures.type.SszKZGCommitment;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.Attestation;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.AttesterSlashing;
@@ -135,7 +135,7 @@ public class BlindedBeaconBlockBodyElectra extends BeaconBlockBodyAltair {
     final SszListSchema<SszKZGCommitment, ?> blobKZGCommitmentsSchema =
         getBeaconBlockBodySchema(spec).getBlobKzgCommitmentsSchema();
 
-    final ExecutionRequestsSchema executionRequestsSchema =
+    final ExecutionRequestsSchema<?> executionRequestsSchema =
         getBeaconBlockBodySchema(spec).getExecutionRequestsSchema();
 
     return super.asInternalBeaconBlockBody(
@@ -154,7 +154,7 @@ public class BlindedBeaconBlockBodyElectra extends BeaconBlockBodyAltair {
                   .map(SszKZGCommitment::new)
                   .collect(blobKZGCommitmentsSchema.collector()));
           builder.executionRequests(
-              this.executionRequests.asInternalConsolidationRequest(executionRequestsSchema));
+              this.executionRequests.asInternalExecutionRequests(executionRequestsSchema));
           return SafeFuture.COMPLETE;
         });
   }

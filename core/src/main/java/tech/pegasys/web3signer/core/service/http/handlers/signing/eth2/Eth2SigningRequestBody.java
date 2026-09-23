@@ -17,6 +17,11 @@ import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.At
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.BeaconBlock;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.VoluntaryExit;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.altair.ContributionAndProof;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.BuilderRequestAuth;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ExecutionPayloadBid;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.PayloadAttestationData;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ProposerPreferences;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -38,4 +43,13 @@ public record Eth2SigningRequestBody(
     @JsonProperty("sync_aggregator_selection_data")
         SyncAggregatorSelectionData syncAggregatorSelectionData,
     @JsonProperty("contribution_and_proof") ContributionAndProof contributionAndProof,
-    @JsonProperty("validator_registration") ValidatorRegistration validatorRegistration) {}
+    @JsonProperty("validator_registration") ValidatorRegistration validatorRegistration,
+    @JsonProperty("execution_payload_bid")
+        VersionedRequest<ExecutionPayloadBid> executionPayloadBid,
+    @JsonProperty("execution_payload_envelope")
+        VersionedRequest<ExecutionPayloadEnvelope> executionPayloadEnvelope,
+    @JsonProperty("payload_attestation_message")
+        VersionedRequest<PayloadAttestationData> payloadAttestationMessage,
+    @JsonProperty("proposer_preferences") VersionedRequest<ProposerPreferences> proposerPreferences,
+    @JsonProperty("builder_request_auth")
+        VersionedRequest<BuilderRequestAuth> builderRequestAuth) {}

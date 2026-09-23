@@ -16,6 +16,7 @@ import static java.util.Collections.emptyList;
 import static tech.pegasys.web3signer.core.util.DepositSigningRootUtil.computeDomain;
 
 import tech.pegasys.teku.infrastructure.async.SafeFuture;
+import tech.pegasys.teku.infrastructure.bytes.Bytes20;
 import tech.pegasys.teku.infrastructure.bytes.Bytes4;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
@@ -37,6 +38,7 @@ import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.ForkInfo;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.RandaoReveal;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.SyncCommitteeMessage;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.ValidatorRegistration;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.VersionedRequest;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.AggregateAndProof;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.Attestation;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.AttestationData;
@@ -47,7 +49,15 @@ import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.Be
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.Checkpoint;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.Eth1Data;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.Fork;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.KZGCommitment;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.VoluntaryExit;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.electra.ExecutionRequests;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.BuilderRequestAuth;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ExecutionPayloadBid;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ExecutionPayloadEnvelope;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ExecutionPayloadGloas;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.PayloadAttestationData;
+import tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.gloas.ProposerPreferences;
 import tech.pegasys.web3signer.core.util.DepositSigningRootUtil;
 
 import java.util.Random;
@@ -88,6 +98,12 @@ public class Eth2RequestUtils {
   private static final Eth2BlockSigningRequestUtil ALTAIR_BLOCK_UTIL =
       new Eth2BlockSigningRequestUtil(SpecMilestone.ALTAIR);
 
+  // Gloas Spec
+  private static final Spec GLOAS_SPEC = TestSpecFactory.createMinimalGloas();
+  private static final DataStructureUtil GLOAS_DATA_STRUCTURE_UTIL =
+      new DataStructureUtil(GLOAS_SPEC);
+  private static final SigningRootUtil GLOAS_SIGNING_ROOT_UTIL = new SigningRootUtil(GLOAS_SPEC);
+
   public static Eth2SigningRequestBody createCannedRequest(final ArtifactType artifactType) {
     return switch (artifactType) {
       case DEPOSIT -> createDepositRequest();
@@ -116,6 +132,16 @@ public class Eth2RequestUtils {
           createSyncCommitteeContributionAndProofRequest();
 
       case VALIDATOR_REGISTRATION -> createValidatorRegistrationRequest();
+
+      case EXECUTION_PAYLOAD_BID -> createExecutionPayloadBidRequest();
+
+      case EXECUTION_PAYLOAD_ENVELOPE -> createExecutionPayloadEnvelopeRequest();
+
+      case PAYLOAD_ATTESTATION_MESSAGE -> createPayloadAttestationMessageRequest();
+
+      case PROPOSER_PREFERENCES -> createProposerPreferencesRequest();
+
+      case BUILDER_REQUEST_AUTH -> createBuilderRequestAuthRequest();
     };
   }
 
@@ -413,6 +439,129 @@ public class Eth2RequestUtils {
         .withType(ArtifactType.VALIDATOR_REGISTRATION)
         .withSigningRoot(signingRoot)
         .withValidatorRegistration(validatorRegistration)
+        .build();
+  }
+
+  public static ForkInfo gloasForkInfo() {
+    final tech.pegasys.teku.spec.datastructures.state.Fork internalFork =
+        GLOAS_SPEC.getForkSchedule().getFork(UInt64.ZERO);
+    final Fork fork =
+        new Fork(
+            internalFork.getPreviousVersion(),
+            internalFork.getCurrentVersion(),
+            internalFork.getEpoch());
+    return new ForkInfo(fork, Bytes32.fromHexString(GENESIS_VALIDATORS_ROOT));
+  }
+
+  private static Eth2SigningRequestBody createExecutionPayloadBidRequest() {
+    final ForkInfo forkInfo = gloasForkInfo();
+    final tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadBid randomBid =
+        GLOAS_DATA_STRUCTURE_UTIL.randomExecutionPayloadBid();
+    final ExecutionPayloadBid bid =
+        new ExecutionPayloadBid(
+            randomBid.getParentBlockHash(),
+            randomBid.getParentBlockRoot(),
+            randomBid.getBlockHash(),
+            randomBid.getPrevRandao(),
+            new Bytes20(randomBid.getFeeRecipient().getWrappedBytes()),
+            randomBid.getGasLimit(),
+            randomBid.getBuilderIndex(),
+            randomBid.getSlot(),
+            randomBid.getValue(),
+            randomBid.getExecutionPayment(),
+            randomBid.getBlobKzgCommitments().stream()
+                .map(c -> new KZGCommitment(c.getKZGCommitment()))
+                .toList(),
+            randomBid.getExecutionRequestsRoot());
+    final Bytes signingRoot =
+        GLOAS_SIGNING_ROOT_UTIL.signingRootForSignExecutionPayloadBid(
+            randomBid, forkInfo.asInternalForkInfo());
+    return Eth2SigningRequestBodyBuilder.anEth2SigningRequestBody()
+        .withType(ArtifactType.EXECUTION_PAYLOAD_BID)
+        .withSigningRoot(signingRoot)
+        .withForkInfo(forkInfo)
+        .withExecutionPayloadBid(new VersionedRequest<>(SpecMilestone.GLOAS, bid))
+        .build();
+  }
+
+  private static Eth2SigningRequestBody createExecutionPayloadEnvelopeRequest() {
+    final ForkInfo forkInfo = gloasForkInfo();
+    final tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ExecutionPayloadEnvelope
+        randomEnvelope =
+            GLOAS_DATA_STRUCTURE_UTIL.randomExecutionPayloadEnvelope(UInt64.valueOf(7));
+    final ExecutionPayloadEnvelope envelope =
+        new ExecutionPayloadEnvelope(
+            new ExecutionPayloadGloas(randomEnvelope.getPayload()),
+            new ExecutionRequests(randomEnvelope.getExecutionRequests()),
+            randomEnvelope.getBuilderIndex(),
+            randomEnvelope.getBeaconBlockRoot(),
+            randomEnvelope.getParentBeaconBlockRoot());
+    final Bytes signingRoot =
+        GLOAS_SIGNING_ROOT_UTIL.signingRootForSignExecutionPayloadEnvelope(
+            randomEnvelope, forkInfo.asInternalForkInfo());
+    return Eth2SigningRequestBodyBuilder.anEth2SigningRequestBody()
+        .withType(ArtifactType.EXECUTION_PAYLOAD_ENVELOPE)
+        .withSigningRoot(signingRoot)
+        .withForkInfo(forkInfo)
+        .withExecutionPayloadEnvelope(new VersionedRequest<>(SpecMilestone.GLOAS, envelope))
+        .build();
+  }
+
+  private static Eth2SigningRequestBody createPayloadAttestationMessageRequest() {
+    final ForkInfo forkInfo = gloasForkInfo();
+    final tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.PayloadAttestationData
+        randomData = GLOAS_DATA_STRUCTURE_UTIL.randomPayloadAttestationData(UInt64.valueOf(7));
+    final PayloadAttestationData payloadAttestationData =
+        new PayloadAttestationData(
+            randomData.getBeaconBlockRoot(),
+            randomData.getSlot(),
+            randomData.isPayloadPresent(),
+            randomData.isBlobDataAvailable());
+    final Bytes signingRoot =
+        GLOAS_SIGNING_ROOT_UTIL.signingRootForSignPayloadAttestationData(
+            randomData, forkInfo.asInternalForkInfo());
+    return Eth2SigningRequestBodyBuilder.anEth2SigningRequestBody()
+        .withType(ArtifactType.PAYLOAD_ATTESTATION_MESSAGE)
+        .withSigningRoot(signingRoot)
+        .withForkInfo(forkInfo)
+        .withPayloadAttestationMessage(
+            new VersionedRequest<>(SpecMilestone.GLOAS, payloadAttestationData))
+        .build();
+  }
+
+  private static Eth2SigningRequestBody createProposerPreferencesRequest() {
+    final ForkInfo forkInfo = gloasForkInfo();
+    final tech.pegasys.teku.spec.datastructures.epbs.versions.gloas.ProposerPreferences
+        randomPreferences = GLOAS_DATA_STRUCTURE_UTIL.randomProposerPreferences();
+    final ProposerPreferences proposerPreferences =
+        new ProposerPreferences(
+            randomPreferences.getDependentRoot(),
+            randomPreferences.getProposalSlot(),
+            randomPreferences.getValidatorIndex(),
+            randomPreferences.getFeeRecipient(),
+            randomPreferences.getTargetGasLimit());
+    final Bytes signingRoot =
+        GLOAS_SIGNING_ROOT_UTIL.signingRootForSignProposerPreferences(
+            randomPreferences, forkInfo.asInternalForkInfo());
+    return Eth2SigningRequestBodyBuilder.anEth2SigningRequestBody()
+        .withType(ArtifactType.PROPOSER_PREFERENCES)
+        .withSigningRoot(signingRoot)
+        .withForkInfo(forkInfo)
+        .withProposerPreferences(new VersionedRequest<>(SpecMilestone.GLOAS, proposerPreferences))
+        .build();
+  }
+
+  private static Eth2SigningRequestBody createBuilderRequestAuthRequest() {
+    final tech.pegasys.teku.spec.datastructures.builder.versions.gloas.BuilderRequestAuth
+        randomRequestAuth = GLOAS_DATA_STRUCTURE_UTIL.randomBuilderRequestAuth();
+    final BuilderRequestAuth builderRequestAuth =
+        new BuilderRequestAuth(randomRequestAuth.getData().getBytes(), randomRequestAuth.getSlot());
+    final Bytes signingRoot =
+        GLOAS_SIGNING_ROOT_UTIL.signingRootForSignBuilderRequestAuth(randomRequestAuth);
+    return Eth2SigningRequestBodyBuilder.anEth2SigningRequestBody()
+        .withType(ArtifactType.BUILDER_REQUEST_AUTH)
+        .withSigningRoot(signingRoot)
+        .withBuilderRequestAuth(new VersionedRequest<>(SpecMilestone.GLOAS, builderRequestAuth))
         .build();
   }
 

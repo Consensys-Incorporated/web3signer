@@ -305,11 +305,34 @@ public class BlsSigningAcceptanceTest extends SigningAcceptanceTestBase {
             request.syncCommitteeMessage(),
             request.syncAggregatorSelectionData(),
             request.contributionAndProof(),
-            request.validatorRegistration());
+            request.validatorRegistration(),
+            request.executionPayloadBid(),
+            request.executionPayloadEnvelope(),
+            request.payloadAttestationMessage(),
+            request.proposerPreferences(),
+            request.builderRequestAuth());
 
     final Response response =
         signer.eth2Sign(KEY_PAIR.getPublicKey().toString(), requestWithMismatchedSigningRoot);
-    assertThat(response.getStatusCode()).isEqualTo(500);
+    assertThat(response.getStatusCode()).isEqualTo(400);
+  }
+
+  @Test
+  void failsWithBadRequestIfDeclaredMilestoneIsNotScheduledOnNetwork()
+      throws JsonProcessingException {
+    final String configFilename = PUBLIC_KEY.toString().substring(2);
+
+    final Path keyConfigFile = testDirectory.resolve(configFilename + ".yaml");
+    METADATA_FILE_HELPERS.createKeyStoreYamlFileAt(keyConfigFile, KEY_PAIR, KdfFunction.SCRYPT);
+
+    // Gloas is not scheduled on this network, so the declared "GLOAS" version must be rejected.
+    setupEth2Signer(Eth2Network.MINIMAL, SpecMilestone.FULU);
+
+    final Eth2SigningRequestBody request =
+        Eth2RequestUtils.createCannedRequest(ArtifactType.EXECUTION_PAYLOAD_BID);
+    final Response response = signer.eth2Sign(KEY_PAIR.getPublicKey().toString(), request);
+
+    assertThat(response.getStatusCode()).isEqualTo(400);
   }
 
   @ParameterizedTest
@@ -343,7 +366,12 @@ public class BlsSigningAcceptanceTest extends SigningAcceptanceTestBase {
             request.syncCommitteeMessage(),
             request.syncAggregatorSelectionData(),
             request.contributionAndProof(),
-            request.validatorRegistration());
+            request.validatorRegistration(),
+            request.executionPayloadBid(),
+            request.executionPayloadEnvelope(),
+            request.payloadAttestationMessage(),
+            request.proposerPreferences(),
+            request.builderRequestAuth());
 
     final Response response =
         signer.eth2Sign(
@@ -400,6 +428,12 @@ public class BlsSigningAcceptanceTest extends SigningAcceptanceTestBase {
           SYNC_COMMITTEE_SELECTION_PROOF,
           SYNC_COMMITTEE_CONTRIBUTION_AND_PROOF ->
           setupEth2Signer(Eth2Network.MINIMAL, SpecMilestone.ALTAIR);
+      case EXECUTION_PAYLOAD_BID,
+          EXECUTION_PAYLOAD_ENVELOPE,
+          PAYLOAD_ATTESTATION_MESSAGE,
+          PROPOSER_PREFERENCES,
+          BUILDER_REQUEST_AUTH ->
+          setupEth2Signer(Eth2Network.MINIMAL, SpecMilestone.GLOAS);
       default -> setupEth2Signer(Eth2Network.MINIMAL, SpecMilestone.PHASE0);
     }
   }
