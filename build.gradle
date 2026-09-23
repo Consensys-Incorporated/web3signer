@@ -537,15 +537,25 @@ tasks.register('releaseAcceptanceTest', Test) {
   dependsOn ':acceptance-tests:acceptanceTest'
 }
 
-def calculateJarName(Project project) {
-  def jarName = project.name
-  def parent = project.parent
+// Subproject build scripts need the implementation version and the jar base name as well.
+// Expose both as extra properties on every project so the lookup stays project-local:
+// resolving a method declared in the root build script from a subproject is deprecated
+// in Gradle 9.6 and will fail in Gradle 10.
+// See https://docs.gradle.org/9.7.1/userguide/upgrading_version_9.html#deprecated_implicit_lookup_in_parent_projects
+def jarNameOf = { Project p ->
+  def jarName = p.name
+  def parent = p.parent
 
   while (parent != null) {
-    if (parent != rootProject) {
+    if (parent != p.rootProject) {
       jarName = parent.name + '-' + jarName
     }
     parent = parent.parent
   }
   return jarName
+}
+
+allprojects { Project p ->
+  ext.buildVersion = specificVersion
+  ext.buildJarName = jarNameOf(p)
 }
