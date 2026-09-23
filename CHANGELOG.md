@@ -5,10 +5,15 @@
 - Signing support for the upcoming Glamsterdam (GLOAS / ePBS) fork, matching [remote-signing-api v1.4.0](https://github.com/ethereum/remote-signing-api/releases/tag/v1.4.0). [#1192][PR_1192]
 - Unstable CLI options (names beginning `--X`) are now listed by `web3signer -X` (or `--Xhelp`), grouped by the command they belong to. `web3signer eth2 -X` lists only the `eth2` unstable options. [#1228][PR_1228]
 - Azure Key Vault connections are now cached per credential/vault set instead of rebuilt on every key load, reducing bulk-load time. [#1222][PR_1222]
+- Vert.x is upgraded to 5.2.0 and web3j to 6.0.0, together with the other dependencies and build plugins. [#1231][PR_1231]
 
 ### Bugs Fixed
 - Azure Key Vault SECP256K1 signing now uses one official Azure SDK `CryptographyClient` per key instead of REST workaround. [#1222][PR_1222]
 - Netty is upgraded to `4.2.17.Final` to prevent io_uring read stalls on reused connections.[#1222][PR_1222]
+- `eth_signTransaction` for EIP-4844 transactions now returns the canonical signed transaction (`0x03 || rlp([...])`) instead of wrapping it in a blob network wrapper with empty sidecar lists. [#1231][PR_1231]
+
+### Breaking Changes
+- The `http_vertx_worker_pool_rejected_total` metric is no longer exported, because Vert.x 5 does not report rejected worker tasks separately (they only occur once a pool has shut down). The bundled Grafana dashboard now charts worker queue delay instead. [#1231][PR_1231]
 
 ### CI/Build Enhancements
 - Azure Key Vault acceptance tests now run against local Azure emulator instance instead of live Azure.
@@ -17,9 +22,10 @@
 - Docker base images re-pinned to their current multi-platform index digests. [#1230][PR_1230]
 - Default image ships `ubuntu:26.04` + Eclipse Temurin JRE 25.0.4; distroless image ships Java 25.0.4 on `gcr.io/distroless/java25-debian13:nonroot`. [#1230][PR_1230]
 
-[PR_1222]: https://github.com/Consensys-Incorporated/web3signer/pull/1222/changes
-[PR_1228]: https://github.com/Consensys-Incorporated/web3signer/pull/1228/changes
-[PR_1230]: https://github.com/Consensys-Incorporated/web3signer/pull/1230/changes
+[PR_1222]: https://github.com/Consensys-Incorporated/web3signer/pull/1222
+[PR_1228]: https://github.com/Consensys-Incorporated/web3signer/pull/1228
+[PR_1230]: https://github.com/Consensys-Incorporated/web3signer/pull/1230
+[PR_1231]: https://github.com/Consensys-Incorporated/web3signer/pull/1231
 [PR_1192]: https://github.com/Consensys-Incorporated/web3signer/pull/1192
 
 ---
