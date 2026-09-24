@@ -26,11 +26,11 @@ buildscript {
 }
 
 plugins {
-  id 'org.owasp.dependencycheck' version "12.2.1"
+  id 'org.owasp.dependencycheck' version "12.2.2"
   id 'java-test-fixtures'
-  id 'com.diffplug.spotless' version '8.4.0'
-  id 'com.github.ben-manes.versions' version '0.54.0' //`./gradlew dependencyUpdates --no-parallel` to report outdated dependencies
-  id 'com.github.jk1.dependency-license-report' version '3.1.2'
+  id 'com.diffplug.spotless' version '8.10.2'
+  id 'com.github.ben-manes.versions' version '0.63.1' //`./gradlew dependencyUpdates --no-parallel` to report outdated dependencies
+  id 'com.github.jk1.dependency-license-report' version '3.1.4'
   id 'io.spring.dependency-management' version '1.1.7'
   id 'me.champeau.jmh' version '0.7.3' apply false
   id 'net.ltgt.errorprone' version '4.4.0'
@@ -88,7 +88,7 @@ allprojects {
 
   version = rootProject.version
 
-  jacoco { toolVersion = '0.8.14' }
+  jacoco { toolVersion = '0.8.15' }
 
   tasks.register('sourcesJar', Jar) {
     dependsOn classes

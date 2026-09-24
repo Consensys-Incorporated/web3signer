@@ -36,7 +36,7 @@ dependencies {
   implementation 'io.consensys.tuweni:tuweni-net'
   implementation 'com.google.guava:guava'
   implementation 'org.bouncycastle:bcprov-jdk18on'
-  implementation 'com.github.ben-manes.caffeine:caffeine:3.2.3'
+  implementation 'com.github.ben-manes.caffeine:caffeine:3.2.4'
   implementation 'software.amazon.awssdk:auth'
   implementation 'software.amazon.awssdk:kms'
   implementation 'com.google.cloud:google-cloud-secretmanager'
