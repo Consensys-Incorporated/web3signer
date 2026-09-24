@@ -242,8 +242,8 @@ class YamlSignerParserTest {
 
     Assertions.assertThatThrownBy(
             () -> signerParser.parse(signerParser.readSigningMetadata(yamlMetadata)))
-        .isInstanceOf(SigningMetadataException.class)
-        .hasMessageStartingWith("Invalid signing metadata file format");
+        .rootCause()
+        .hasMessageContaining("scheme 'https' not allowed for Path deserialization");
   }
 
   @Test
