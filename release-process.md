@@ -55,8 +55,9 @@ The run takes about 20 minutes:
 3. It pushes and signs the Docker images `consensys/web3signer:X.Y.Z` and `X.Y.Z-distroless`, and for final
    releases also moves `latest` and `latest-distroless` to them. They are public from this point on, before
    anyone has reviewed the release.
-4. It creates the draft release with the notes, `web3signer-X.Y.Z.tar.gz`, `web3signer-X.Y.Z.zip` and their
-   `.sha256` files.
+4. It records signed build provenance for `web3signer-X.Y.Z.tar.gz` and `web3signer-X.Y.Z.zip` (a GitHub
+   artifact attestation), then creates the draft release with the notes, those two files and their
+   `.sha256` files. The notes include the commands users run to verify the files.
 
 ## 4. Review and publish the draft
 
@@ -92,7 +93,9 @@ on, and they stay immutable if it is turned off again. For those releases:
 - The tag can't be moved or deleted, and the files can't be changed or removed.
 - Deleting the release doesn't free the version: its tag name can never be used again.
 - The title, the notes and the pre-release and latest flags stay editable.
-- Users can check a release with `gh release verify X.Y.Z` and `gh release verify-asset X.Y.Z <file>`.
+- Users can check a release with `gh release verify X.Y.Z` and `gh release verify-asset X.Y.Z <file>`. The
+  build provenance check, `gh attestation verify <file> --repo Consensys-Incorporated/web3signer`, doesn't
+  depend on immutability.
 
 ## Deprecating a published release
 

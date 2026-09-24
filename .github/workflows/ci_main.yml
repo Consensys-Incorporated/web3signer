@@ -352,6 +352,8 @@ jobs:
     environment: release
     permissions:
         contents: write
+        id-token: write      # sign the build provenance through GitHub OIDC
+        attestations: write  # store the build provenance attestation
     env:
       TAG: ${{ github.ref_name }}
     steps:
@@ -371,6 +373,15 @@ jobs:
         run: |
           shasum -a 256 "web3signer-${TAG}.tar.gz" > "web3signer-${TAG}.tar.gz.sha256"
           shasum -a 256 "web3signer-${TAG}.zip" > "web3signer-${TAG}.zip.sha256"
+
+      # Signed SLSA build provenance for the binaries, checked by
+      # `gh attestation verify <file> --repo Consensys-Incorporated/web3signer`
+      - name: Attest Build Provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            build/distributions/web3signer-${{ env.TAG }}.tar.gz
+            build/distributions/web3signer-${{ env.TAG }}.zip
 
       - name: Write Release Notes
         run: |
@@ -425,6 +436,17 @@ jobs:
             echo ""
             echo "Hardened image (Google Distroless, read-only-filesystem compatible):"
             echo "\`docker pull consensys/web3signer:${TAG}-distroless\`"
+            echo ""
+            echo "### Verify"
+            echo "Binaries, with the [GitHub CLI](https://cli.github.com/):"
+            echo '```sh'
+            echo "# the file is the one published with this release"
+            echo "gh release verify-asset ${TAG} web3signer-${TAG}.tar.gz --repo ${GITHUB_REPOSITORY}"
+            echo "# the file was built by this repository's CI workflow"
+            echo "gh attestation verify web3signer-${TAG}.tar.gz --repo ${GITHUB_REPOSITORY}"
+            echo '```'
+            echo ""
+            echo "Docker images: see [Verifying image signatures and attestations](${REPO_URL}/blob/${TAG}/docker/README.md#verifying-image-signatures-and-attestations)."
             echo ""
             echo "---"
             echo "**Full Changelog**: ${REPO_URL}/compare/${PREVIOUS_TAG}...${TAG}"
