@@ -93,7 +93,8 @@ public class EthSignTypedDataIntegrationTest extends IntegrationTestBase {
             EthSignTypedData.class);
 
     final Iterable<Map.Entry<String, String>> expectedHeaders =
-        singletonList(ImmutablePair.of("Content", HttpHeaderValues.APPLICATION_JSON.toString()));
+        singletonList(
+            ImmutablePair.of("Content-Type", HttpHeaderValues.APPLICATION_JSON.toString()));
 
     final JsonRpcSuccessResponse responseBody =
         new JsonRpcSuccessResponse(
@@ -118,7 +119,8 @@ public class EthSignTypedDataIntegrationTest extends IntegrationTestBase {
             EthSignTypedData.class);
 
     final Iterable<Map.Entry<String, String>> expectedHeaders =
-        singletonList(ImmutablePair.of("Content", HttpHeaderValues.APPLICATION_JSON.toString()));
+        singletonList(
+            ImmutablePair.of("Content-Type", HttpHeaderValues.APPLICATION_JSON.toString()));
 
     final JsonRpcErrorResponse responseBody =
         new JsonRpcErrorResponse(requestBody.getId(), SIGNING_FROM_IS_NOT_AN_UNLOCKED_ACCOUNT);

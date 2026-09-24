@@ -12,6 +12,9 @@
  */
 package tech.pegasys.web3signer.core.routes.eth2;
 
+import static io.vertx.core.http.HttpHeaders.CONTENT_TYPE;
+import static tech.pegasys.web3signer.core.service.http.handlers.ContentTypes.JSON_UTF_8;
+
 import tech.pegasys.web3signer.core.Context;
 import tech.pegasys.web3signer.core.routes.Web3SignerRoute;
 import tech.pegasys.web3signer.core.service.http.handlers.signing.SignerForIdentifier;
@@ -49,17 +52,18 @@ public class Eth2SignExtensionRoute implements Web3SignerRoute {
         .getRouter()
         .route(HttpMethod.POST, SIGN_EXT_PATH)
         .blockingHandler(new SigningExtensionHandler(blsSigner), false)
-        .failureHandler(context.getErrorHandler())
         .failureHandler(
             ctx -> {
               final int statusCode = ctx.statusCode();
               if (statusCode == 400) {
                 ctx.response()
                     .setStatusCode(statusCode)
+                    .putHeader(CONTENT_TYPE, JSON_UTF_8)
                     .end(new JsonObject().put("error", "Bad Request").encode());
               } else if (statusCode == 404) {
                 ctx.response()
                     .setStatusCode(statusCode)
+                    .putHeader(CONTENT_TYPE, JSON_UTF_8)
                     .end(new JsonObject().put("error", "Identifier not found.").encode());
               } else {
                 ctx.next(); // go to global failure handler

@@ -36,15 +36,13 @@ public class ReloadRoute implements Web3SignerRoute {
         .getRouter()
         .route(HttpMethod.GET, RELOAD_PATH)
         .produces(JSON_HEADER)
-        .handler(reloadHandler)
-        .failureHandler(context.getErrorHandler());
+        .handler(reloadHandler);
 
     // Register POST endpoint for reload operation
     context
         .getRouter()
         .route(HttpMethod.POST, RELOAD_PATH)
         .produces(JSON_HEADER)
-        .handler(reloadHandler)
-        .failureHandler(context.getErrorHandler());
+        .handler(reloadHandler);
   }
 }

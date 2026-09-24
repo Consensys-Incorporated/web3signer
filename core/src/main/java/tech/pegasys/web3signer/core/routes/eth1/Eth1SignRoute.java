@@ -60,7 +60,6 @@ public class Eth1SignRoute implements Web3SignerRoute {
             new Eth1SignForIdentifierHandler(
                 secpSigner,
                 new HttpApiMetrics(context.getMetricsSystem(), SECP256K1, signerProvider)),
-            false)
-        .failureHandler(context.getErrorHandler());
+            false);
   }
 }

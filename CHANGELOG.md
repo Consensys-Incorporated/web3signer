@@ -11,6 +11,7 @@
 - Azure Key Vault SECP256K1 signing now uses one official Azure SDK `CryptographyClient` per key instead of REST workaround. [#1222][PR_1222]
 - Netty is upgraded to `4.2.17.Final` to prevent io_uring read stalls on reused connections.[#1222][PR_1222]
 - `eth_signTransaction` for EIP-4844 transactions now returns the canonical signed transaction (`0x03 || rlp([...])`) instead of wrapping it in a blob network wrapper with empty sidecar lists. [#1231][PR_1231]
+- HTTP API errors (Key Manager, signing, reload, unknown paths) now return `application/json` with a `{"message": "..."}` body instead of plain text or HTML. eth1 JSON-RPC responses now send `Content-Type: application/json` instead of the misspelled `Content` header. [#1179][ISSUE_1179]
 
 ### Breaking Changes
 - The `http_vertx_worker_pool_rejected_total` metric is no longer exported, because Vert.x 5 does not report rejected worker tasks separately (they only occur once a pool has shut down). The bundled Grafana dashboard now charts worker queue delay instead. [#1231][PR_1231]
@@ -27,6 +28,7 @@
 [PR_1230]: https://github.com/Consensys-Incorporated/web3signer/pull/1230
 [PR_1231]: https://github.com/Consensys-Incorporated/web3signer/pull/1231
 [PR_1192]: https://github.com/Consensys-Incorporated/web3signer/pull/1192
+[ISSUE_1179]: https://github.com/Consensys-Incorporated/web3signer/issues/1179
 
 ---
 ## 26.7.0

@@ -40,7 +40,8 @@ public class EthSignIntegrationTest extends IntegrationTestBase {
         jsonRpc().ethSign(unlockedAccount, "some random data to be signed");
 
     final Iterable<Map.Entry<String, String>> expectedHeaders =
-        singletonList(ImmutablePair.of("Content", HttpHeaderValues.APPLICATION_JSON.toString()));
+        singletonList(
+            ImmutablePair.of("Content-Type", HttpHeaderValues.APPLICATION_JSON.toString()));
 
     final JsonRpcSuccessResponse responseBody =
         new JsonRpcSuccessResponse(
@@ -60,7 +61,8 @@ public class EthSignIntegrationTest extends IntegrationTestBase {
         jsonRpc().ethSign(PUBLIC_KEY_OF_UNLOCKED_ACCOUNT, "some random data to be signed");
 
     final Iterable<Map.Entry<String, String>> expectedHeaders =
-        singletonList(ImmutablePair.of("Content", HttpHeaderValues.APPLICATION_JSON.toString()));
+        singletonList(
+            ImmutablePair.of("Content-Type", HttpHeaderValues.APPLICATION_JSON.toString()));
 
     final JsonRpcErrorResponse responseBody =
         new JsonRpcErrorResponse(requestBody.getId(), SIGNING_FROM_IS_NOT_AN_UNLOCKED_ACCOUNT);
@@ -78,7 +80,8 @@ public class EthSignIntegrationTest extends IntegrationTestBase {
         jsonRpc().ethSign(A_RANDOM_ADDRESS, "some random data to be signed");
 
     final Iterable<Map.Entry<String, String>> expectedHeaders =
-        singletonList(ImmutablePair.of("Content", HttpHeaderValues.APPLICATION_JSON.toString()));
+        singletonList(
+            ImmutablePair.of("Content-Type", HttpHeaderValues.APPLICATION_JSON.toString()));
 
     final JsonRpcErrorResponse responseBody =
         new JsonRpcErrorResponse(requestBody.getId(), SIGNING_FROM_IS_NOT_AN_UNLOCKED_ACCOUNT);

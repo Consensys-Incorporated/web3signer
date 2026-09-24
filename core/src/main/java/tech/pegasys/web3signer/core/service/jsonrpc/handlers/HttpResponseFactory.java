@@ -19,6 +19,7 @@ import tech.pegasys.web3signer.core.service.jsonrpc.response.JsonRpcResponse;
 import tech.pegasys.web3signer.core.service.jsonrpc.response.JsonRpcSuccessResponse;
 
 import io.netty.handler.codec.http.HttpHeaderValues;
+import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.Json;
 
@@ -28,7 +29,7 @@ public class HttpResponseFactory {
 
   public void response(
       final HttpServerResponse response, final int statusCode, final JsonRpcResponse body) {
-    response.putHeader("Content", JSON);
+    response.putHeader(HttpHeaders.CONTENT_TYPE, JSON);
     response.setStatusCode(statusCode);
     response.setChunked(false);
     response.end(Json.encodeToBuffer(body));

@@ -78,8 +78,7 @@ public class KeyManagerApiRoute implements Web3SignerRoute {
     context
         .getRouter()
         .route(HttpMethod.GET, KEYSTORES_PATH)
-        .blockingHandler(new ListKeystoresHandler(blsSignerProvider, objectMapper), false)
-        .failureHandler(context.getErrorHandler());
+        .blockingHandler(new ListKeystoresHandler(blsSignerProvider, objectMapper), false);
   }
 
   private void registerPost(ValidatorManager validatorManager) {
@@ -93,8 +92,7 @@ public class KeyManagerApiRoute implements Web3SignerRoute {
                 slashingProtection,
                 blsSignerProvider,
                 validatorManager),
-            false)
-        .failureHandler(context.getErrorHandler());
+            false);
   }
 
   private void registerDelete(ValidatorManager validatorManager) {
@@ -104,8 +102,7 @@ public class KeyManagerApiRoute implements Web3SignerRoute {
         .blockingHandler(
             new DeleteKeystoresHandler(
                 objectMapper, slashingProtection, blsSignerProvider, validatorManager),
-            false)
-        .failureHandler(context.getErrorHandler());
+            false);
   }
 
   private ValidatorManager createValidatorManager() {

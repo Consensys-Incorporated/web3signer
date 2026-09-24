@@ -87,7 +87,23 @@ public class DeleteKeystoresAcceptanceTest extends KeyManagerTestBase {
   public void invalidRequestBodyReturnsError() throws URISyntaxException {
     setupSignerWithKeyManagerApi(WITH_SLASHING_PROTECTION_DATA);
     final Response response = callDeleteKeystores("{\"invalid\": \"json body\"}");
-    response.then().assertThat().statusCode(400);
+    response
+        .then()
+        .assertThat()
+        .statusCode(400)
+        .contentType(ContentType.JSON)
+        .body("message", is("Bad Request"));
+  }
+
+  @Test
+  public void internalServerErrorReturnsJsonErrorBody() throws URISyntaxException {
+    setupSignerWithKeyManagerApi(WITH_SLASHING_PROTECTION_DATA);
+    callDeleteKeystores("{\"pubkeys\": null}")
+        .then()
+        .assertThat()
+        .statusCode(500)
+        .contentType(ContentType.JSON)
+        .body("message", is("Internal Server Error"));
   }
 
   @Test

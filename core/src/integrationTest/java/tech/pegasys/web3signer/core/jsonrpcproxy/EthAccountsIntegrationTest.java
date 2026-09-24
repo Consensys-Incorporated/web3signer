@@ -32,7 +32,8 @@ class EthAccountsIntegrationTest extends IntegrationTestBase {
 
     final Request<?, EthAccounts> requestBody = jsonRpc().ethAccounts();
     final Iterable<Entry<String, String>> expectedHeaders =
-        singletonList(ImmutablePair.of("Content", HttpHeaderValues.APPLICATION_JSON.toString()));
+        singletonList(
+            ImmutablePair.of("Content-Type", HttpHeaderValues.APPLICATION_JSON.toString()));
 
     final JsonRpcSuccessResponse responseBody =
         new JsonRpcSuccessResponse(requestBody.getId(), singletonList(unlockedAccount));

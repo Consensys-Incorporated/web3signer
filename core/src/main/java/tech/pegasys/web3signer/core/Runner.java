@@ -22,7 +22,7 @@ import tech.pegasys.web3signer.core.config.MetricsPushOptions;
 import tech.pegasys.web3signer.core.config.TlsOptions;
 import tech.pegasys.web3signer.core.metrics.vertx.VertxMetricsAdapterFactory;
 import tech.pegasys.web3signer.core.service.http.HostAllowListHandler;
-import tech.pegasys.web3signer.core.service.http.handlers.LogErrorHandler;
+import tech.pegasys.web3signer.core.service.http.handlers.JsonErrorHandler;
 import tech.pegasys.web3signer.core.service.http.handlers.UpcheckHandler;
 import tech.pegasys.web3signer.core.util.FileUtil;
 import tech.pegasys.web3signer.signing.ArtifactSignerProvider;
@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -80,6 +81,14 @@ public abstract class Runner implements Runnable, AutoCloseable {
 
   private static final Logger LOG = LogManager.getLogger();
 
+  /**
+   * Status codes rendered as a JSON error body by {@link JsonErrorHandler}. 405 and 415 are
+   * intentionally excluded: Vert.x only emits the RFC 9110 {@code Allow} / {@code Accept} headers
+   * for them when no error handler is registered for that code.
+   */
+  private static final Set<Integer> JSON_ERROR_STATUS_CODES =
+      Set.of(400, 403, 404, 406, 412, 413, 417, 500, 502, 504);
+
   protected final BaseConfig baseConfig;
 
   private HealthCheckHandler healthCheckHandler;
@@ -102,7 +111,9 @@ public abstract class Runner implements Runnable, AutoCloseable {
             .build();
     final Router router = Router.router(vertx);
 
-    final LogErrorHandler errorHandler = new LogErrorHandler();
+    final JsonErrorHandler jsonErrorHandler = new JsonErrorHandler();
+    JSON_ERROR_STATUS_CODES.forEach(
+        statusCode -> router.errorHandler(statusCode, jsonErrorHandler));
     healthCheckHandler = HealthCheckHandler.create(vertx);
     try {
       final List<ArtifactSignerProvider> artifactSignerProviders =
@@ -147,12 +158,9 @@ public abstract class Runner implements Runnable, AutoCloseable {
        BodyHandler must be first handler after platform and security handlers
       */
       router.route().handler(BodyHandler.create());
-      registerUpcheckRoute(router, errorHandler);
+      registerUpcheckRoute(router);
 
-      router
-          .route(HttpMethod.GET, HEALTHCHECK_PATH)
-          .handler(healthCheckHandler)
-          .failureHandler(errorHandler);
+      router.route(HttpMethod.GET, HEALTHCHECK_PATH).handler(healthCheckHandler);
 
       registerHealthCheckProcedure(DEFAULT_CHECK, promise -> promise.complete(Status.OK()));
 
@@ -169,13 +177,7 @@ public abstract class Runner implements Runnable, AutoCloseable {
       registerClose(reloadWorkerExecutor::close);
 
       final Context context =
-          new Context(
-              router,
-              metricsSystem,
-              errorHandler,
-              vertx,
-              artifactSignerProviders,
-              reloadWorkerExecutor);
+          new Context(router, metricsSystem, vertx, artifactSignerProviders, reloadWorkerExecutor);
 
       populateRouter(context);
 
@@ -254,12 +256,8 @@ public abstract class Runner implements Runnable, AutoCloseable {
 
   protected abstract void populateRouter(final Context context);
 
-  private void registerUpcheckRoute(final Router router, final LogErrorHandler errorHandler) {
-    router
-        .route(HttpMethod.GET, UPCHECK_PATH)
-        .produces(TEXT_PLAIN)
-        .handler(new UpcheckHandler())
-        .failureHandler(errorHandler);
+  private void registerUpcheckRoute(final Router router) {
+    router.route(HttpMethod.GET, UPCHECK_PATH).produces(TEXT_PLAIN).handler(new UpcheckHandler());
   }
 
   protected void registerHealthCheckProcedure(

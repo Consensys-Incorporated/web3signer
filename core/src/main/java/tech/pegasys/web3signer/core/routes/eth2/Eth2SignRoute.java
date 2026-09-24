@@ -78,7 +78,6 @@ public class Eth2SignRoute implements Web3SignerRoute {
                 slashingProtection,
                 objectMapper,
                 eth2Spec),
-            false)
-        .failureHandler(context.getErrorHandler());
+            false);
   }
 }
