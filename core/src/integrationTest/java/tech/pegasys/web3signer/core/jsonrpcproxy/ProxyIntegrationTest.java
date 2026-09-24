@@ -47,7 +47,7 @@ public class ProxyIntegrationTest extends IntegrationTestBase {
       singletonList(ImmutablePair.of("Content-Type", "Application/Json"));
 
   private static final String ROOT_PATH = "/arbitraryRootPath";
-  private static final String NOT_FOUND_BODY = "{\"message\":\"Not Found\"}";
+  private static final String NOT_FOUND_BODY = "{\"code\":404,\"message\":\"Not Found\"}";
 
   @BeforeAll
   public static void localSetup() {

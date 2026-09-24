@@ -17,6 +17,7 @@ import static tech.pegasys.web3signer.core.service.http.handlers.ContentTypes.JS
 import static tech.pegasys.web3signer.signing.util.IdentifierUtils.normaliseIdentifier;
 
 import tech.pegasys.web3signer.core.service.http.SigningObjectMapperFactory;
+import tech.pegasys.web3signer.core.service.http.handlers.ErrorResponseException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -60,7 +61,9 @@ public class SigningExtensionHandler implements Handler<RoutingContext> {
         .sign(identifier, payload)
         .ifPresentOrElse(
             blsSigHex -> respondWithSignature(routingContext, payload, blsSigHex),
-            () -> routingContext.fail(NOT_FOUND));
+            () ->
+                routingContext.fail(
+                    NOT_FOUND, new ErrorResponseException("Identifier not found.")));
   }
 
   private void respondWithSignature(

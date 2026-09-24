@@ -27,8 +27,8 @@ import org.apache.logging.log4j.Logger;
 
 /**
  * Router level error handler. Renders every routing failure that no route specific failure handler
- * has answered as the JSON {@code ErrorResponse} shape declared by the Web3Signer OpenAPI specs
- * ({@code {"message": "<http reason phrase>"}}), instead of Vert.x's default plain text reason
+ * has answered as a JSON {@code ErrorResponse} ({@code {"code": <status>, "message": "<http reason
+ * phrase or ErrorResponseException message>"}}), instead of Vert.x's default plain text reason
  * phrase / HTML 404 page. Also records the failure in the log.
  */
 public class JsonErrorHandler implements Handler<RoutingContext> {
@@ -48,13 +48,14 @@ public class JsonErrorHandler implements Handler<RoutingContext> {
       return;
     }
 
+    final String message =
+        context.failure() instanceof ErrorResponseException errorResponse
+            ? errorResponse.getMessage()
+            : HttpResponseStatus.valueOf(statusCode).reasonPhrase();
     response
         .setStatusCode(statusCode)
         .putHeader(CONTENT_TYPE, JSON_UTF_8)
-        .end(
-            new JsonObject()
-                .put("message", HttpResponseStatus.valueOf(statusCode).reasonPhrase())
-                .encode());
+        .end(new JsonObject().put("code", statusCode).put("message", message).encode());
   }
 
   private static void logFailure(final RoutingContext context, final int statusCode) {

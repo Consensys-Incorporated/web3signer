@@ -21,6 +21,7 @@ import static tech.pegasys.web3signer.signing.util.IdentifierUtils.normaliseIden
 
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.web3signer.core.service.http.SigningObjectMapperFactory;
+import tech.pegasys.web3signer.core.service.http.handlers.ErrorResponseException;
 import tech.pegasys.web3signer.core.service.http.handlers.commitboost.json.RequestSignatureBody;
 import tech.pegasys.web3signer.signing.ArtifactSignerProvider;
 
@@ -60,7 +61,7 @@ public class CommitBoostRequestSignatureHandler implements Handler<RoutingContex
       // Check for pubkey based on signing type, if not exist, fail with 404
       final String identifier = normaliseIdentifier(requestSignatureBody.publicKey());
       if (!commitBoostSigner.isSignerAvailable(identifier, requestSignatureBody.type())) {
-        context.fail(HTTP_NOT_FOUND);
+        context.fail(HTTP_NOT_FOUND, new ErrorResponseException("Unknown pubkey"));
         return;
       }
 
@@ -70,7 +71,7 @@ public class CommitBoostRequestSignatureHandler implements Handler<RoutingContex
       final Optional<String> optionalSig =
           commitBoostSigner.sign(identifier, requestSignatureBody.type(), signingRoot);
       if (optionalSig.isEmpty()) {
-        context.fail(HTTP_NOT_FOUND);
+        context.fail(HTTP_NOT_FOUND, new ErrorResponseException("Unknown pubkey"));
         return;
       }
 
@@ -78,7 +79,7 @@ public class CommitBoostRequestSignatureHandler implements Handler<RoutingContex
       final String jsonEncoded = JSON_MAPPER.writeValueAsString(optionalSig.get());
       context.response().putHeader(CONTENT_TYPE, JSON_UTF_8).end(jsonEncoded);
     } catch (final Exception e) {
-      context.fail(HTTP_INTERNAL_ERROR, e);
+      context.fail(HTTP_INTERNAL_ERROR, new ErrorResponseException("Internal Error", e));
     }
   }
 }

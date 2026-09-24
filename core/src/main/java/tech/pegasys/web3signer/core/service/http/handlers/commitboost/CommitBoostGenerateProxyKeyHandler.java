@@ -21,6 +21,7 @@ import static tech.pegasys.web3signer.signing.util.IdentifierUtils.normaliseIden
 
 import tech.pegasys.teku.spec.Spec;
 import tech.pegasys.web3signer.core.service.http.SigningObjectMapperFactory;
+import tech.pegasys.web3signer.core.service.http.handlers.ErrorResponseException;
 import tech.pegasys.web3signer.core.service.http.handlers.commitboost.json.CommitBoostSignRequestType;
 import tech.pegasys.web3signer.core.service.http.handlers.commitboost.json.GenerateProxyKeyBody;
 import tech.pegasys.web3signer.core.service.http.handlers.commitboost.json.ProxyDelegation;
@@ -72,7 +73,7 @@ public class CommitBoostGenerateProxyKeyHandler implements Handler<RoutingContex
         commitBoostSignerProvider.isSignerAvailable(
             consensusPubKey, CommitBoostSignRequestType.CONSENSUS);
     if (!signerAvailable) {
-      context.fail(HTTP_NOT_FOUND);
+      context.fail(HTTP_NOT_FOUND, new ErrorResponseException("Unknown pubkey"));
       return;
     }
 
@@ -96,7 +97,7 @@ public class CommitBoostGenerateProxyKeyHandler implements Handler<RoutingContex
           commitBoostSignerProvider.sign(
               consensusPubKey, CommitBoostSignRequestType.CONSENSUS, signingRoot);
       if (optionalSig.isEmpty()) {
-        context.fail(HTTP_NOT_FOUND);
+        context.fail(HTTP_NOT_FOUND, new ErrorResponseException("Unknown pubkey"));
         return;
       }
 
@@ -107,7 +108,7 @@ public class CommitBoostGenerateProxyKeyHandler implements Handler<RoutingContex
       final String jsonEncoded = JSON_MAPPER.writeValueAsString(signedProxyDelegation);
       context.response().putHeader(CONTENT_TYPE, JSON_UTF_8).end(jsonEncoded);
     } catch (final Exception e) {
-      context.fail(HTTP_INTERNAL_ERROR, e);
+      context.fail(HTTP_INTERNAL_ERROR, new ErrorResponseException("Internal Error", e));
     }
   }
 }
