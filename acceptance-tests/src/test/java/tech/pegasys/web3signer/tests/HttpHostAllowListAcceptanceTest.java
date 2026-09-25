@@ -96,6 +96,30 @@ public class HttpHostAllowListAcceptanceTest extends AcceptanceTestBase {
   }
 
   @Test
+  void jsonRpcEndpointForNonAllowedHostRespondsWithForbiddenResponse() {
+    final SignerConfiguration signerConfiguration =
+        new SignerConfigurationBuilder()
+            .withHttpAllowHostList(Collections.singletonList("127.0.0.1"))
+            .withMode("eth1")
+            .build();
+    startSigner(signerConfiguration);
+
+    given()
+        .baseUri(signer.getUrl())
+        .contentType(ContentType.JSON)
+        .body("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_accounts\",\"params\":[]}")
+        .when()
+        .header("Host", "bar")
+        .post("/")
+        .then()
+        .assertThat()
+        .statusCode(403)
+        .contentType(ContentType.JSON)
+        .body("code", equalTo(403))
+        .body("message", equalTo("Host not authorized."));
+  }
+
+  @Test
   void upcheckWithoutValueInHostHeaderRespondsWithForbiddenResponse() throws Exception {
     final SignerConfiguration signerConfiguration =
         new SignerConfigurationBuilder()
