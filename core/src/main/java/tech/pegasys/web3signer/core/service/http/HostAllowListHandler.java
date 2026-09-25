@@ -12,11 +12,14 @@
  */
 package tech.pegasys.web3signer.core.service.http;
 
+import static java.net.HttpURLConnection.HTTP_FORBIDDEN;
+
+import tech.pegasys.web3signer.core.service.http.handlers.ErrorResponseException;
+
 import java.util.List;
 import java.util.Optional;
 
 import io.vertx.core.Handler;
-import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.net.HostAndPort;
 import io.vertx.ext.web.RoutingContext;
 import org.apache.logging.log4j.LogManager;
@@ -37,13 +40,7 @@ public class HostAllowListHandler implements Handler<RoutingContext> {
         || (hostHeader.isPresent() && hostIsInAllowlist(hostHeader.get()))) {
       event.next();
     } else {
-      final HttpServerResponse response = event.response();
-      if (!response.closed()) {
-        response
-            .setStatusCode(403)
-            .putHeader("Content-Type", "application/json; charset=utf-8")
-            .end("{\"message\":\"Host not authorized.\"}");
-      }
+      event.fail(HTTP_FORBIDDEN, new ErrorResponseException("Host not authorized."));
     }
   }
 

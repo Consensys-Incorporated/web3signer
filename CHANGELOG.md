@@ -15,6 +15,7 @@
 
 ### Breaking Changes
 - The `http_vertx_worker_pool_rejected_total` metric is no longer exported, because Vert.x 5 does not report rejected worker tasks separately (they only occur once a pool has shut down). The bundled Grafana dashboard now charts worker queue delay instead. [#1231][PR_1231]
+- `POST /reload` responses now use the shared `{"code": <status>, "message": "..."}` body: `202` returns `"code": 202` instead of `"status": "accepted"`, and `409` returns `"code": 409` instead of `"status": "error"`. `GET /reload` is unchanged. [#1235][PR_1235]
 
 ### CI/Build Enhancements
 - Azure Key Vault acceptance tests now run against local Azure emulator instance instead of live Azure.

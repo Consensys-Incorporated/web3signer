@@ -29,6 +29,7 @@ import tech.pegasys.web3signer.tests.signing.SigningAcceptanceTestBase;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
+import io.restassured.http.ContentType;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;
 
@@ -45,7 +46,8 @@ public class ReloadAcceptanceTest extends SigningAcceptanceTestBase {
         .callReload()
         .then()
         .statusCode(202)
-        .body("status", equalTo("accepted"))
+        .contentType(ContentType.JSON)
+        .body("code", equalTo(202))
         .body("message", containsString("background"));
   }
 
@@ -71,7 +73,8 @@ public class ReloadAcceptanceTest extends SigningAcceptanceTestBase {
         .callReload()
         .then()
         .statusCode(409)
-        .body("status", equalTo("error"))
+        .contentType(ContentType.JSON)
+        .body("code", equalTo(409))
         .body("message", containsString("already in progress"));
   }
 
@@ -100,7 +103,7 @@ public class ReloadAcceptanceTest extends SigningAcceptanceTestBase {
         .until(() -> signer.listPublicKeys(BLS).size() == 3);
 
     // Second reload should now succeed
-    signer.callReload().then().statusCode(202).body("status", equalTo("accepted"));
+    signer.callReload().then().statusCode(202).body("code", equalTo(202));
   }
 
   @Test

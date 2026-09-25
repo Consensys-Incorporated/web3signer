@@ -15,6 +15,7 @@ package tech.pegasys.web3signer.tests;
 import static io.restassured.RestAssured.given;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.hamcrest.Matchers.equalTo;
 
 import tech.pegasys.web3signer.dsl.signer.SignerConfiguration;
 import tech.pegasys.web3signer.dsl.signer.SignerConfigurationBuilder;
@@ -88,7 +89,10 @@ public class HttpHostAllowListAcceptanceTest extends AcceptanceTestBase {
         .get(UPCHECK_ENDPOINT)
         .then()
         .assertThat()
-        .statusCode(403);
+        .statusCode(403)
+        .contentType(ContentType.JSON)
+        .body("code", equalTo(403))
+        .body("message", equalTo("Host not authorized."));
   }
 
   @Test
@@ -120,7 +124,7 @@ public class HttpHostAllowListAcceptanceTest extends AcceptanceTestBase {
       final String response = reader.lines().collect(Collectors.joining("\n"));
 
       assertThat(response).startsWith("HTTP/1.1 403 Forbidden");
-      assertThat(response).contains("{\"message\":\"Host not authorized.\"}");
+      assertThat(response).contains("{\"code\":403,\"message\":\"Host not authorized.\"}");
     }
   }
 

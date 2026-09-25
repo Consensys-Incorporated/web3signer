@@ -12,6 +12,11 @@
  */
 package tech.pegasys.web3signer.core.service.http.handlers;
 
+import static io.vertx.core.http.HttpHeaders.CONTENT_TYPE;
+import static java.net.HttpURLConnection.HTTP_ACCEPTED;
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
+import static tech.pegasys.web3signer.core.service.http.handlers.ContentTypes.JSON_UTF_8;
+
 import tech.pegasys.web3signer.signing.ArtifactSignerProvider;
 
 import java.time.Instant;
@@ -27,6 +32,7 @@ import io.vertx.core.Handler;
 import io.vertx.core.WorkerExecutor;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.Json;
+import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -59,12 +65,11 @@ public class ReloadHandler implements Handler<RoutingContext> {
 
   @Override
   public void handle(final RoutingContext routingContext) {
+    // ReloadRoute binds only GET and POST
     if (routingContext.request().method().equals(HttpMethod.GET)) {
       handleStatusRequest(routingContext);
-    } else if (routingContext.request().method().equals(HttpMethod.POST)) {
-      handleReloadRequest(routingContext);
     } else {
-      routingContext.response().setStatusCode(405).end(); // Method Not Allowed
+      handleReloadRequest(routingContext);
     }
   }
 
@@ -92,17 +97,10 @@ public class ReloadHandler implements Handler<RoutingContext> {
   private void handleReloadRequest(final RoutingContext routingContext) {
     // Check if reload is already in progress
     if (!reloadInProgress.compareAndSet(false, true)) {
-      routingContext
-          .response()
-          .setStatusCode(409) // Conflict
-          .putHeader("Content-Type", "application/json")
-          .end(
-              Json.encode(
-                  Map.of(
-                      "status",
-                      "error",
-                      "message",
-                      "A reload operation is already in progress. Please try again later.")));
+      routingContext.fail(
+          HTTP_CONFLICT,
+          new ErrorResponseException(
+              "A reload operation is already in progress. Please try again later."));
       return;
     }
 
@@ -162,15 +160,15 @@ public class ReloadHandler implements Handler<RoutingContext> {
       // Respond immediately - reload happens in background
       routingContext
           .response()
-          .setStatusCode(202) // Accepted
-          .putHeader("Content-Type", "application/json")
+          .setStatusCode(HTTP_ACCEPTED)
+          .putHeader(CONTENT_TYPE, JSON_UTF_8)
           .end(
-              Json.encode(
-                  Map.of(
-                      "status",
-                      "accepted",
+              new JsonObject()
+                  .put("code", HTTP_ACCEPTED)
+                  .put(
                       "message",
-                      "Reload operation accepted and is running in the background. Use GET /reload to check status.")));
+                      "Reload operation accepted and is running in the background. Use GET /reload to check status.")
+                  .encode());
     } catch (final RuntimeException e) {
       // Reset flag and state if executeBlocking throws synchronously
       currentStatus.set(ReloadStatus.FAILED);

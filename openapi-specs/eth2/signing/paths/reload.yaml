@@ -101,18 +101,17 @@ post:
           schema:
             type: object
             required:
-              - status
+              - code
               - message
             properties:
-              status:
-                type: string
-                enum: ['accepted']
-                description: 'Request acceptance status'
+              code:
+                type: integer
+                description: 'HTTP status code (202)'
               message:
                 type: string
                 description: 'Human-readable message with instructions to check status'
           example:
-            status: 'accepted'
+            code: 202
             message: 'Reload operation accepted and is running in the background. Use GET /reload to check status.'
     '409':
       description: 'A reload operation is already in progress'
@@ -121,18 +120,34 @@ post:
           schema:
             type: object
             required:
-              - status
+              - code
               - message
             properties:
-              status:
-                type: string
-                enum: ['error']
-                description: 'Error status'
+              code:
+                type: integer
+                description: 'HTTP status code'
               message:
                 type: string
                 description: 'Human-readable error message'
           example:
-            status: 'error'
+            code: 409
             message: 'A reload operation is already in progress. Please try again later.'
     '500':
       description: 'Internal Web3Signer server error - failed to initiate reload operation'
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - code
+              - message
+            properties:
+              code:
+                type: integer
+                description: 'HTTP status code'
+              message:
+                type: string
+                description: 'Human-readable error message'
+          example:
+            code: 500
+            message: 'Internal Server Error'
