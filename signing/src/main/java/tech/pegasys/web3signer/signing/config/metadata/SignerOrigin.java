@@ -18,5 +18,6 @@ public enum SignerOrigin {
   AWS,
   GCP,
   FILE_KEYSTORE,
-  FILE_RAW
+  FILE_RAW,
+  POSTGRES
 }
