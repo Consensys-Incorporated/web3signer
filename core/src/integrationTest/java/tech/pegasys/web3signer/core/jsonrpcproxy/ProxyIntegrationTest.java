@@ -48,6 +48,7 @@ public class ProxyIntegrationTest extends IntegrationTestBase {
 
   private static final String ROOT_PATH = "/arbitraryRootPath";
   private static final String NOT_FOUND_BODY = "{\"code\":404,\"message\":\"Not Found\"}";
+  private static final String FORBIDDEN_BODY = "{\"code\":403,\"message\":\"Forbidden\"}";
 
   @BeforeAll
   public static void localSetup() {
@@ -211,7 +212,7 @@ public class ProxyIntegrationTest extends IntegrationTestBase {
 
     sendPostRequestAndVerifyResponse(
         request.web3Signer(requestHeaders, RPC_REQUEST),
-        response.web3Signer("", HttpResponseStatus.FORBIDDEN));
+        response.web3Signer(FORBIDDEN_BODY, HttpResponseStatus.FORBIDDEN));
   }
 
   @Test

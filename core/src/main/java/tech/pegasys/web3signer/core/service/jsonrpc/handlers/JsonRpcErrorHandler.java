@@ -49,10 +49,14 @@ public class JsonRpcErrorHandler implements Handler<RoutingContext> {
         context.statusCode() == -1 ? INTERNAL_SERVER_ERROR.code() : context.statusCode();
 
     final Throwable failure = context.failure();
-    if (failure == null || failure instanceof ErrorResponseException) {
-      // Not a JSON-RPC level failure: a platform rejection (e.g. CORS) or a handler that supplied
-      // a client-facing message (e.g. host allow-list) which merely matched this route. Render it
-      // like every other HTTP API failure instead of an id-less JSON-RPC envelope.
+    if (failure == null
+        || failure instanceof ErrorResponseException
+        || (failure instanceof VertxException
+            && statusCode == HttpResponseStatus.FORBIDDEN.code())) {
+      // Not a JSON-RPC level failure, so render it like every other HTTP API failure rather than
+      // as a JSON-RPC envelope: a bare fail(statusCode), a handler-supplied client message
+      // (ErrorResponseException, e.g. host allow-list) or Vert.x CorsHandler's origin rejection,
+      // which fails with 403 + VertxException("CORS Rejected - Invalid origin").
       jsonErrorHandler.handle(context);
       return;
     }
@@ -72,11 +76,6 @@ public class JsonRpcErrorHandler implements Handler<RoutingContext> {
           requestId,
           statusCode,
           JsonRpcError.CONNECTION_TO_DOWNSTREAM_NODE_TIMED_OUT);
-    } else if ((failure instanceof IllegalStateException || failure instanceof VertxException)
-        && statusCode == HttpResponseStatus.FORBIDDEN.code()) {
-      // send status code and empty body
-      context.response().setStatusCode(statusCode);
-      context.response().end();
     } else {
       LOG.error("Unhandled exception handling request", failure);
       httpResponseFactory.failureResponse(
