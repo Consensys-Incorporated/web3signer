@@ -1,69 +1,56 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
-    <!-- See https://jeremylong.github.io/DependencyCheck/general/suppression.html for examples -->
+    <!--
+      See https://dependency-check.github.io/DependencyCheck/general/suppression.html for examples.
+      Every rule must name the CVE(s) it suppresses and explain why it does not apply to web3signer.
+      Remove rules that dependency-check reports as "Suppression Rule had zero matches".
+    -->
     <suppress>
         <notes><![CDATA[
-          FALSE POSITIVE
-          file name: azure-json-1.1.0.jar
-          As per https://msrc.microsoft.com/update-guide/vulnerability/CVE-2024-43591
-          this vulnerability is applicable on Azure Service Connector and Azure CLI.
-          We are not using these libraries in our code.
+          FALSE POSITIVE: CVE-2024-35255 (Azure Identity / MSAL elevation of privilege).
+          NVD limits the Java entry to MSAL for Java < 1.15.1 (https://nvd.nist.gov/vuln/detail/CVE-2024-35255);
+          MSRC lists azure-identity for Java as fixed in 1.12.2. We ship azure-identity 1.18.x and msal4j 1.23.x.
         ]]></notes>
-        <packageUrl regex="true">^pkg:maven/com\.azure/azure-json@.*$</packageUrl>
-        <cve>CVE-2024-43591</cve>
-    </suppress>
-    <suppress>
-        <notes><![CDATA[
-          file name: azure-identity-1.13.1.jar
-          As per https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-36415 this was fixed in 1.10.2. We are on fixed version.
-        ]]></notes>
-        <packageUrl regex="true">^pkg:maven/com\.azure/azure-identity@.*$</packageUrl>
-        <cve>CVE-2023-36415</cve>
-    </suppress>
-    <suppress>
-        <notes><![CDATA[
-        file name: azure-core-1.50.0.jar
-        file name: azure-core-http-netty-1.15.2.jar
-        file name: azure-json-1.1.0.jar
-        file name: azure-identity-1.13.1.jar
-
-        As per https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-36052 this issue is fixed in Azure cli
-        version 2.53.1. However, we are not using azure-cli libraries in our code.
-        ]]></notes>
-        <packageUrl regex="true">^pkg:maven/com\.azure/(azure-core@.*|azure-core-http-netty@.*|azure-json@.*|azure-identity@.*)$</packageUrl>
-        <cve>CVE-2023-36052</cve>
-    </suppress>
-    <suppress>
-        <notes><![CDATA[
-            file name: azure-identity-1.13.1.jar
-            As per https://nvd.nist.gov/vuln/detail/CVE-2024-35255, this is fixed in 1.12.2.
-
-            file name: msal4j-1.16.1.jar
-            As per https://msrc.microsoft.com/update-guide/vulnerability/CVE-2024-35255, this is fixed in 1.15.1.
-
-            file name: msal4j-persistence-extension-1.3.0.jar
-            msal4j-persistence-extension has compile dependency on older version of msal4j. We are on 1.16.1 which is
-            not affected by CVE-2024-35255.
-        ]]></notes>
-        <packageUrl regex="true">^pkg:maven/(com\.microsoft\.azure|com\.azure)/(azure-identity@.*|msal4j@.*|msal4j-persistence-extension@.*)$</packageUrl>
+        <packageUrl regex="true">^pkg:maven/(com\.azure/azure-identity|com\.microsoft\.azure/msal4j)@.*$</packageUrl>
         <cve>CVE-2024-35255</cve>
     </suppress>
     <suppress>
         <notes><![CDATA[
-            file name: dataflow-errorprone-3.42.0-eisop4.jar (shaded: com.google.guava:guava:30.1.1-jre)
-
-            This file is part of errorprone which is used at build time. This is not part of the runtime dependencies.
+          FALSE POSITIVE: CVE-2026-33117 is in the Azure Key Vault Keys library (azure-security-keyvault-keys < 4.10.6)
+          local cryptography path. NVD uses the generic cpe:2.3:a:microsoft:azure_sdk_for_java CPE, so the versions of
+          unrelated Azure SDK artifacts (azure-core 1.59.x, azure-json 1.5.x, ...) match "< 4.10.6".
+          azure-security-keyvault-keys itself (4.11.x) is not flagged.
         ]]></notes>
-        <packageUrl regex="true">^pkg:maven/com\.google\.guava/guava@.*$</packageUrl>
-        <cve>CVE-2023-2976</cve>
+        <packageUrl regex="true">^pkg:maven/com\.azure/(azure-core|azure-core-http-netty|azure-identity|azure-json|azure-xml)@.*$</packageUrl>
+        <cve>CVE-2026-33117</cve>
     </suppress>
     <suppress>
         <notes><![CDATA[
-            file name: dataflow-errorprone-3.42.0-eisop4.jar (shaded: com.google.guava:guava:30.1.1-jre)
-
-            This file is part of errorprone which is used at build time. This is not part of the runtime dependencies.
+          FALSE POSITIVE: protobuf CVEs matched against gRPC artifacts. The CPE analyzer maps io.grpc:grpc-protobuf(-lite)
+          to cpe:2.3:a:google:protobuf(-java) using the gRPC version (1.x). The protobuf runtime we ship is
+          com.google.protobuf:protobuf-java 4.33.x, which is scanned separately and not affected.
         ]]></notes>
-        <packageUrl regex="true">^pkg:maven/com\.google\.guava/guava@.*$</packageUrl>
-        <cve>CVE-2020-8908</cve>
+        <packageUrl regex="true">^pkg:maven/io\.grpc/grpc-protobuf(-lite)?@.*$</packageUrl>
+        <cve>CVE-2015-5237</cve>
+        <cve>CVE-2024-7254</cve>
+    </suppress>
+    <suppress>
+        <notes><![CDATA[
+          FALSE POSITIVE: dev.cel:protobuf is Google CEL's protobuf integration artifact, not protobuf-java.
+          Its version (0.x) is matched against cpe:2.3:a:google:protobuf-java.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/dev\.cel/protobuf@.*$</packageUrl>
+        <cve>CVE-2024-7254</cve>
+    </suppress>
+    <suppress>
+        <notes><![CDATA[
+          FALSE POSITIVE: OpenTelemetry CVEs for other language implementations matched against Java artifacts via the
+          generic cpe:2.3:a:opentelemetry:opentelemetry CPE.
+          CVE-2026-54285: opentelemetry-js (@opentelemetry/core W3CBaggagePropagator), NVD target_sw node.js.
+          CVE-2026-39882: OpenTelemetry-Go OTLP HTTP exporters, NVD target_sw go.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/(io\.opentelemetry/opentelemetry-.*|io\.prometheus/prometheus-metrics-tracer-otel(-agent)?)@.*$</packageUrl>
+        <cve>CVE-2026-54285</cve>
+        <cve>CVE-2026-39882</cve>
     </suppress>
 </suppressions>

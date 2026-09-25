@@ -144,10 +144,10 @@ allprojects {
     nvd.apiKey = System.getenv('NVD_API_KEY')
     failBuildOnCVSS = 7 // Fail on high CVSS severity
     suppressionFile = "${rootDir}/gradle/owasp-suppression.xml"
-    skipConfigurations = [
-      'integrationTestCompileClasspath',
-      'integrationTestRuntimeClasspath'
-    ]
+    // HTML for people, JSON for the CI data-freshness check, SARIF for GitHub code scanning
+    formats = ['HTML', 'JSON', 'SARIF']
+    // Only what ships in the distribution; build tooling (errorprone, jacoco) and test classpaths are out of scope
+    scanConfigurations = ['runtimeClasspath']
     skipProjects = [
       ':acceptance-tests'
     ]

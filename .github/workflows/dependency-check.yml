@@ -1,0 +1,102 @@
+name: dependency-check
+
+# Nightly OWASP dependency-check of the dependencies shipped in the distribution (runtimeClasspath).
+# Findings are uploaded to GitHub code scanning (Security tab) under the "owasp-dependency-check" category.
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two scans at once: both would update and save the same NVD database cache.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-24.04
+    environment: security
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Java and Gradle
+        uses: Consensys-Incorporated/github-actions/java-setup-gradle@89c262a30cae735be99dc776f9556b796fb456ca  # main
+        with:
+          VERSION: '25'
+
+      # The NVD database (~130 MB, a 7-8 minute download with an API key) is cached between runs and updated
+      # incrementally. The key rolls over every ISO week so that incremental updates never drift for long:
+      # the first run of a week starts from an empty database. dependency-check-gradle 13.0.0 ignores
+      # dependencyCheck.data.directory, so the database lives in its default location under ~/.gradle.
+      - name: Compute NVD database cache key
+        id: nvd-cache
+        run: echo "prefix=dependency-check-data-$(date -u +%G-W%V)-" >> "$GITHUB_OUTPUT"
+
+      # v6.1.0
+      - name: Restore NVD database
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.gradle/dependency-check-data
+          key: ${{ steps.nvd-cache.outputs.prefix }}${{ github.run_id }}
+          restore-keys: ${{ steps.nvd-cache.outputs.prefix }}
+
+      - name: Update NVD database
+        id: update
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: ./gradlew --no-daemon :dependencyCheckUpdate
+
+      # Saved separately from the scan: the scan fails the job on findings (failBuildOnCVSS), which would
+      # otherwise skip the save. Only a successfully updated database is saved.
+      # v6.1.0
+      - name: Save NVD database
+        if: steps.update.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.gradle/dependency-check-data
+          key: ${{ steps.nvd-cache.outputs.prefix }}${{ github.run_id }}
+
+      - name: Scan dependencies
+        id: scan
+        run: ./gradlew --no-daemon :dependencyCheckAggregate
+
+      # A database that stopped receiving updates still produces a clean-looking report, just without newer CVEs.
+      - name: Check NVD data freshness
+        if: ${{ !cancelled() && (steps.scan.outcome == 'success' || steps.scan.outcome == 'failure') }}
+        env:
+          REPORT: build/reports/dependency-check/dependency-check-report.json
+          MAX_AGE_HOURS: '48'
+        run: |
+          LAST_MODIFIED=$(jq -r '.scanInfo.dataSource[] | select(.name == "NVD API Last Modified") | .timestamp' "$REPORT")
+          AGE_SECONDS=$(( $(date -u +%s) - $(date -u -d "$LAST_MODIFIED" +%s) ))
+          AGE="$(( AGE_SECONDS / 3600 ))h$(( (AGE_SECONDS % 3600) / 60 ))m"
+          echo "NVD data last modified at $LAST_MODIFIED (${AGE} ago)"
+          # Compare seconds, not whole hours: truncating would let a 48h30m old database pass a 48h limit.
+          if [ "$AGE_SECONDS" -gt "$(( MAX_AGE_HOURS * 3600 ))" ]; then
+            echo "::error::NVD data is ${AGE} old (limit ${MAX_AGE_HOURS}h); the database is not being updated."
+            exit 1
+          fi
+
+      - name: Upload results to GitHub code scanning
+        if: ${{ !cancelled() && hashFiles('build/reports/dependency-check/dependency-check-report.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4
+        with:
+          sarif_file: build/reports/dependency-check/dependency-check-report.sarif
+          category: owasp-dependency-check
+
+      - name: Upload reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dependency-check-report
+          path: build/reports/dependency-check/
+          retention-days: 14
+          if-no-files-found: ignore
