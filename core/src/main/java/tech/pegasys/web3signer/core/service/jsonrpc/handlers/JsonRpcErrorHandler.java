@@ -57,10 +57,9 @@ public class JsonRpcErrorHandler implements Handler<RoutingContext> {
       return;
     }
 
-    if (failure instanceof JsonRpcException) {
-      final JsonRpcException ex = (JsonRpcException) failure;
+    if (failure instanceof JsonRpcException jsonRpcException) {
       httpResponseFactory.failureResponse(
-          context.response(), requestId, statusCode, ex.getJsonRpcError());
+          context.response(), requestId, statusCode, jsonRpcException.getJsonRpcError());
     } else if (failure instanceof ConnectException || failure instanceof SSLException) {
       httpResponseFactory.failureResponse(
           context.response(),
