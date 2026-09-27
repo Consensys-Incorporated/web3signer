@@ -25,7 +25,7 @@ dependencyManagement {
     // longer provides: the sibling type-id property is not populated, leaving
     // WalletFile.Crypto.kdf null and failing every V3 keystore load. Keep the family on the
     // version shipped by the Vert.x 5 stack.
-    mavenBom 'tools.jackson:jackson-bom:3.1.5'
+    mavenBom 'tools.jackson:jackson-bom:3.2.2'
   }
 
   dependencies {
