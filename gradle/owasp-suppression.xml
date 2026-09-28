@@ -16,6 +16,15 @@
     </suppress>
     <suppress>
         <notes><![CDATA[
+          FALSE POSITIVE: CVE-2023-36415 (Azure Identity SDK RCE). NVD lists Java as fixed in 1.10.2
+          (https://nvd.nist.gov/vuln/detail/CVE-2023-36415). The match comes from the JavaScript entry (< 3.3.1) of the
+          same generic azure_identity_sdk CPE; dependency-check ignores the target_sw language. We ship azure-identity 1.18.x.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/com\.azure/azure-identity@.*$</packageUrl>
+        <cve>CVE-2023-36415</cve>
+    </suppress>
+    <suppress>
+        <notes><![CDATA[
           FALSE POSITIVE: CVE-2026-33117 is in the Azure Key Vault Keys library (azure-security-keyvault-keys < 4.10.6)
           local cryptography path. NVD uses the generic cpe:2.3:a:microsoft:azure_sdk_for_java CPE, so the versions of
           unrelated Azure SDK artifacts (azure-core 1.59.x, azure-json 1.5.x, ...) match "< 4.10.6".
@@ -26,21 +35,13 @@
     </suppress>
     <suppress>
         <notes><![CDATA[
-          FALSE POSITIVE: protobuf CVEs matched against gRPC artifacts. The CPE analyzer maps io.grpc:grpc-protobuf(-lite)
-          to cpe:2.3:a:google:protobuf(-java) using the gRPC version (1.x). The protobuf runtime we ship is
-          com.google.protobuf:protobuf-java 4.33.x, which is scanned separately and not affected.
-        ]]></notes>
-        <packageUrl regex="true">^pkg:maven/io\.grpc/grpc-protobuf(-lite)?@.*$</packageUrl>
-        <cve>CVE-2015-5237</cve>
-        <cve>CVE-2024-7254</cve>
-    </suppress>
-    <suppress>
-        <notes><![CDATA[
           FALSE POSITIVE: dev.cel:protobuf is Google CEL's protobuf integration artifact, not protobuf-java.
           Its version (0.x) is matched against cpe:2.3:a:google:protobuf-java.
         ]]></notes>
         <packageUrl regex="true">^pkg:maven/dev\.cel/protobuf@.*$</packageUrl>
         <cve>CVE-2024-7254</cve>
+        <cve>CVE-2022-3171</cve>
+        <cve>CVE-2021-22569</cve>
     </suppress>
     <suppress>
         <notes><![CDATA[
@@ -48,9 +49,26 @@
           generic cpe:2.3:a:opentelemetry:opentelemetry CPE.
           CVE-2026-54285: opentelemetry-js (@opentelemetry/core W3CBaggagePropagator), NVD target_sw node.js.
           CVE-2026-39882: OpenTelemetry-Go OTLP HTTP exporters, NVD target_sw go.
+          CVE-2026-41078: OpenTelemetry .NET Jaeger exporter (OpenTelemetry.Exporter.Jaeger), NVD target_sw .net.
+          CVE-2026-40894: OpenTelemetry .NET OpenTelemetry.Api / Extensions.Propagators, NVD target_sw .net.
+          CVE-2026-41178: OpenTelemetry-Go baggage parsing, NVD target_sw go.
+          CVE-2026-44967: opentelemetry-cpp OTLP HTTP exporters, NVD target_sw c++.
         ]]></notes>
         <packageUrl regex="true">^pkg:maven/(io\.opentelemetry/opentelemetry-.*|io\.prometheus/prometheus-metrics-tracer-otel(-agent)?)@.*$</packageUrl>
         <cve>CVE-2026-54285</cve>
         <cve>CVE-2026-39882</cve>
+        <cve>CVE-2026-41078</cve>
+        <cve>CVE-2026-40894</cve>
+        <cve>CVE-2026-41178</cve>
+        <cve>CVE-2026-44967</cve>
+    </suppress>
+    <suppress>
+        <notes><![CDATA[
+          FALSE POSITIVE: CVE-2026-53914 is unsafe deserialization of Kotlin build cache metadata. GHSA-r937-wjx7-w2jp
+          lists only org.jetbrains.kotlin:kotlin-gradle-plugin (< 2.4.20-Beta1) as affected. NVD uses the generic
+          cpe:2.3:a:jetbrains:kotlin (< 2.4.20), which matches the kotlin-stdlib runtime pulled in by okhttp/okio and tuweni.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/org\.jetbrains\.kotlin/kotlin-stdlib@.*$</packageUrl>
+        <cve>CVE-2026-53914</cve>
     </suppress>
 </suppressions>

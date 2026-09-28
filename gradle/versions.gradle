@@ -97,8 +97,13 @@ dependencyManagement {
       }
       entry ('spec') {
         exclude group: 'org.bouncycastle', name: 'bcprov-jdk15on'
+        // CVE-2025-48924
+        exclude group: 'commons-lang', name: 'commons-lang'
       }
-      entry 'serializer'
+      entry ('serializer') {
+        // CVE-2025-48924
+        exclude group: 'commons-lang', name: 'commons-lang'
+      }
       entry 'unsigned'
       entry 'async'
       entry ('networks') {
@@ -109,7 +114,10 @@ dependencyManagement {
         // CVE-2025-48924
         exclude group: 'commons-lang', name: 'commons-lang'
       }
-      entry 'execution-types'
+      entry ('execution-types') {
+        // CVE-2025-48924
+        exclude group: 'commons-lang', name: 'commons-lang'
+      }
       entry 'kzg'
     }
 
