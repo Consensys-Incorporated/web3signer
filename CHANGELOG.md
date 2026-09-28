@@ -2,6 +2,7 @@
 
 ## Upcoming Release
 ### Features Added
+- Scheduled the Glamsterdam (Gloas) upgrade on Sepolia for epoch 353024 (October 6, 2026 13:53:36 UTC). [#1240][PR_1240]
 - Signing support for the upcoming Glamsterdam (GLOAS / ePBS) fork, matching [remote-signing-api v1.4.0](https://github.com/ethereum/remote-signing-api/releases/tag/v1.4.0). [#1192][PR_1192]
 - Unstable CLI options (names beginning `--X`) are now listed by `web3signer -X` (or `--Xhelp`), grouped by the command they belong to. `web3signer eth2 -X` lists only the `eth2` unstable options. [#1228][PR_1228]
 - Azure Key Vault connections are now cached per credential/vault set instead of rebuilt on every key load, reducing bulk-load time. [#1222][PR_1222]
@@ -32,6 +33,7 @@
 [PR_1192]: https://github.com/Consensys-Incorporated/web3signer/pull/1192
 [PR_1235]: https://github.com/Consensys-Incorporated/web3signer/pull/1235
 [PR_1237]: https://github.com/Consensys-Incorporated/web3signer/pull/1237
+[PR_1240]: https://github.com/Consensys-Incorporated/web3signer/pull/1240
 
 ---
 ## 26.7.0
