@@ -36,6 +36,7 @@ public class SlashingProtectionDatabaseVersionAcceptanceTest {
     // System.exit() call in the Web3signerApp (which exits the test, rather than terminating
     // the app (thus it work as expected with a ProcessRunner (i.e. when run from gradle)).
 
+    DatabaseUtil.reset(); // this test corrupts its database, never reuse another test's
     final String dbUrl = DatabaseUtil.create().databaseUrl();
     final Jdbi jdbi = Jdbi.create(dbUrl, DB_USERNAME, DB_PASSWORD);
     jdbi.useHandle(h -> h.execute("DROP TABLE database_version"));
