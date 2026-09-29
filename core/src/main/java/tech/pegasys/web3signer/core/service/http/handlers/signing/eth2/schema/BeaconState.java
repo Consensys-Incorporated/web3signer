@@ -15,7 +15,6 @@ package tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszBitvector;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.teku.spec.Spec;
-import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.datastructures.blocks.BeaconBlockAndState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.BeaconStateSchema;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.MutableBeaconState;
@@ -169,10 +168,9 @@ public abstract class BeaconState implements State {
                   current_justified_checkpoint.asInternalCheckpoint());
               state.setFinalizedCheckpoint(finalized_checkpoint.asInternalCheckpoint());
 
-              applyAdditionalFields(state, spec.atSlot(state.getSlot()));
+              applyAdditionalFields(state);
             });
   }
 
-  protected abstract void applyAdditionalFields(
-      final MutableBeaconState state, final SpecVersion specVersion);
+  protected abstract void applyAdditionalFields(final MutableBeaconState state);
 }

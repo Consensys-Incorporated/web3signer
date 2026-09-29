@@ -16,7 +16,6 @@ import tech.pegasys.teku.infrastructure.ssz.SszList;
 import tech.pegasys.teku.infrastructure.ssz.collections.SszBitvector;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
-import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.datastructures.state.SyncCommittee.SyncCommitteeSchema;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.MutableBeaconState;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.versions.altair.BeaconStateSchemaAltair;
@@ -116,8 +115,7 @@ public class BeaconStateAltair extends BeaconState implements State {
   }
 
   @Override
-  protected void applyAdditionalFields(
-      final MutableBeaconState state, final SpecVersion specVersion) {
+  protected void applyAdditionalFields(final MutableBeaconState state) {
     state
         .toMutableVersionAltair()
         .ifPresent(

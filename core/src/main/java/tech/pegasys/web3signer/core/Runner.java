@@ -118,7 +118,7 @@ public abstract class Runner implements Runnable, AutoCloseable {
     healthCheckHandler = HealthCheckHandler.create(vertx);
     try {
       final List<ArtifactSignerProvider> artifactSignerProviders =
-          Optional.ofNullable(createArtifactSignerProvider(vertx, metricsSystem)).orElse(List.of());
+          Optional.ofNullable(createArtifactSignerProvider(metricsSystem)).orElse(List.of());
       artifactSignerProviders.forEach(this::registerClose);
 
       createVersionMetric(metricsSystem);
@@ -264,7 +264,7 @@ public abstract class Runner implements Runnable, AutoCloseable {
   }
 
   protected abstract List<ArtifactSignerProvider> createArtifactSignerProvider(
-      final Vertx vertx, final MetricsSystem metricsSystem);
+      final MetricsSystem metricsSystem);
 
   protected abstract void populateRouter(final Context context);
 

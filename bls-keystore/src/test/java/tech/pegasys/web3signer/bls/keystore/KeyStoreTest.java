@@ -38,6 +38,7 @@ import java.util.stream.Stream;
 import com.google.common.io.Resources;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -104,39 +105,34 @@ class KeyStoreTest {
   public static Stream<Arguments> resourceLoaderErrorConditions() {
     return Stream.of(
         Arguments.of(
-            "Invalid json",
-            MISSING_SECTION_KEYSTORE_RESOURCE,
+            Named.of("Invalid json", MISSING_SECTION_KEYSTORE_RESOURCE),
             "Invalid KeyStore: Missing property 'params' for external type id 'function'"),
         Arguments.of(
-            "Unsupported version",
-            UNSUPPORTED_VERSION_JSON_RESOURCE,
+            Named.of("Unsupported version", UNSUPPORTED_VERSION_JSON_RESOURCE),
             "KeyStore version not supported: 3"),
         Arguments.of(
-            "Unsupported checksum fn",
-            UNSUPPORTED_CHECKSUM_FUNCTION_JSON,
+            Named.of("Unsupported checksum fn", UNSUPPORTED_CHECKSUM_FUNCTION_JSON),
             "Checksum function [sha128] is not supported."),
         Arguments.of(
-            "Unsupported cipher fn",
-            UNSUPPORTED_CIPHER_FUNCTION_JSON,
+            Named.of("Unsupported cipher fn", UNSUPPORTED_CIPHER_FUNCTION_JSON),
             "Cipher function [aes-256-ctr] is not supported."),
         Arguments.of(
-            "Unsupported kdf fn",
-            UNSUPPORTED_KDF_FUNCTION_JSON,
+            Named.of("Unsupported kdf fn", UNSUPPORTED_KDF_FUNCTION_JSON),
             "Kdf function [pbkdf3] is not supported."),
         Arguments.of(
-            "Unsupported pbkdf2 fn",
-            UNSUPPORTED_PBKDF2_PRF_FUNCTION_JSON,
+            Named.of("Unsupported pbkdf2 fn", UNSUPPORTED_PBKDF2_PRF_FUNCTION_JSON),
             "PBKDF2 pseudorandom function (prf) [hmac-sha512] is not supported."),
         Arguments.of(
-            "Unsupported dklen fn",
-            UNSUPPORTED_DKLEN_FUNCTION_JSON,
+            Named.of("Unsupported dklen fn", UNSUPPORTED_DKLEN_FUNCTION_JSON),
             "Generated key length parameter dklen must be >= 32."),
 
         // required attributes
         Arguments.of(
-            "Missing crypto", MISSING_CRYPTO, "Invalid KeyStore: Missing 'crypto' property"),
+            Named.of("Missing crypto", MISSING_CRYPTO),
+            "Invalid KeyStore: Missing 'crypto' property"),
         Arguments.of(
-            "Missing version", MISSING_VERSION, "Invalid KeyStore: Missing 'version' property"));
+            Named.of("Missing version", MISSING_VERSION),
+            "Invalid KeyStore: Missing 'version' property"));
   }
 
   @ParameterizedTest(name = "{index} - Load And Decrypt Keystore with {0}")
@@ -204,8 +200,7 @@ class KeyStoreTest {
 
   @ParameterizedTest(name = "{0} should result in an error")
   @MethodSource("resourceLoaderErrorConditions")
-  void shouldErrorLoadingFromFile(
-      final String description, final String resource, final String messageStartsWith) {
+  void shouldErrorLoadingFromFile(final String resource, final String messageStartsWith) {
     assertThatExceptionOfType(RuntimeException.class)
         .isThrownBy(() -> loadKeyStoreFromResource(resource))
         .withMessageStartingWith(messageStartsWith);
@@ -213,8 +208,7 @@ class KeyStoreTest {
 
   @ParameterizedTest(name = "{0} should result in an error")
   @MethodSource("resourceLoaderErrorConditions")
-  void shouldErrorLoadingFromString(
-      final String description, final String resource, final String messageStartsWith) {
+  void shouldErrorLoadingFromString(final String resource, final String messageStartsWith) {
     assertThatExceptionOfType(KeyStoreValidationException.class)
         .isThrownBy(() -> loadKeystoreFromString(resource))
         .withMessageStartingWith(messageStartsWith);

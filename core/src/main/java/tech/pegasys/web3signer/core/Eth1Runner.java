@@ -49,7 +49,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
-import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.healthchecks.Status;
 import org.apache.logging.log4j.LogManager;
@@ -85,7 +84,7 @@ public class Eth1Runner extends Runner {
 
   @Override
   protected List<ArtifactSignerProvider> createArtifactSignerProvider(
-      final Vertx vertx, final MetricsSystem metricsSystem) {
+      final MetricsSystem metricsSystem) {
     // Create factories ONCE at startup
     final AzureKeyVaultFactory azureKeyVaultFactory = new AzureKeyVaultFactory();
     final CachedAwsKmsClientFactory cachedAwsKmsClientFactory =

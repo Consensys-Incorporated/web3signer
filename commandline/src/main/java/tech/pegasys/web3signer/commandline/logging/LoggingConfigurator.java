@@ -100,8 +100,8 @@ public class LoggingConfigurator {
           .build();
     } else {
       return PatternLayout.newBuilder()
-          .withConfiguration(config)
-          .withPattern(DEFAULT_PATTERN)
+          .setConfiguration(config)
+          .setPattern(DEFAULT_PATTERN)
           .build();
     }
   }

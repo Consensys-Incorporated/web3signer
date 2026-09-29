@@ -14,7 +14,6 @@ package tech.pegasys.web3signer.core.service.http.handlers.signing.eth2.schema.b
 
 import tech.pegasys.teku.infrastructure.ssz.collections.SszBitvector;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
-import tech.pegasys.teku.spec.SpecVersion;
 import tech.pegasys.teku.spec.datastructures.execution.versions.bellatrix.ExecutionPayloadHeaderSchemaBellatrix;
 import tech.pegasys.teku.spec.datastructures.state.SyncCommittee.SyncCommitteeSchema;
 import tech.pegasys.teku.spec.datastructures.state.beaconstate.MutableBeaconState;
@@ -97,8 +96,7 @@ public class BeaconStateBellatrix extends BeaconStateAltair {
   }
 
   @Override
-  protected void applyAdditionalFields(
-      final MutableBeaconState state, final SpecVersion specVersion) {
+  protected void applyAdditionalFields(final MutableBeaconState state) {
     state
         .toMutableVersionBellatrix()
         .ifPresent(

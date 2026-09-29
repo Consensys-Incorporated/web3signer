@@ -42,7 +42,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 
-import io.vertx.core.Vertx;
 import org.apache.logging.log4j.Level;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.junit.jupiter.api.AfterEach;
@@ -680,7 +679,7 @@ class CommandlineParserTest {
 
     @Override
     protected List<ArtifactSignerProvider> createArtifactSignerProvider(
-        final Vertx vertx, final MetricsSystem metricsSystem) {
+        final MetricsSystem metricsSystem) {
       return List.of(
           new DefaultArtifactSignerProvider(
               MappedResults::newSetInstance, Optional.empty(), Optional.empty()));

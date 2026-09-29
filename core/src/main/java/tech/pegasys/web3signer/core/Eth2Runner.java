@@ -73,7 +73,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 
-import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.healthchecks.Status;
 import org.apache.logging.log4j.LogManager;
@@ -157,7 +156,7 @@ public class Eth2Runner extends Runner {
 
   @Override
   protected List<ArtifactSignerProvider> createArtifactSignerProvider(
-      final Vertx vertx, final MetricsSystem metricsSystem) {
+      final MetricsSystem metricsSystem) {
     // create factory instance ONCE at startup
     final SignerLoader signerLoader = new SignerLoader(baseConfig.getSignerLoaderConfig());
 
