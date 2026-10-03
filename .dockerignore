@@ -1,6 +1,4 @@
-# Ignore everything
-**
-
-# Whitelist specific directories
-!build/distributions/
-!docker/
+**/.gradle
+**/build
+.idea
+*.iml

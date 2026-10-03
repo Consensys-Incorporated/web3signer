@@ -14,21 +14,20 @@ Pick the distroless variant when you want a smaller attack surface (no shell, no
 From the root of the project:
 
 ```sh
-./gradlew distTar
-
 # Default image
 docker build --no-cache --pull \
-  --build-arg TAR_FILE=./build/distributions/web3signer-develop.tar.gz \
   -f ./docker/Dockerfile -t web3signer:develop .
 
 # Distroless image
 docker build --no-cache --pull \
-  --build-arg TAR_FILE=./build/distributions/web3signer-develop.tar.gz \
   -f ./docker/Dockerfile.distroless -t web3signer:develop-distroless .
 
 docker run --rm -it web3signer:develop --version
 docker run --rm -it web3signer:develop-distroless --version
 ```
+
+Each Dockerfile builds the Web3Signer distribution from the checked-out source
+with the Gradle wrapper in a builder stage.
 
 ## Running the distroless image
 

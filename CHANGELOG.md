@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+### Features Added
+
+### Bugs Fixed
+
+### Breaking Changes
+
+### CI/Build Enhancements
+- Default and distroless Docker images now build directly from source, without requiring a pre-built distribution archive.
+
+### Security
+
+
+---
 ## 26.9.0
 ### Features Added
 - Scheduled the Glamsterdam (Gloas) upgrade on Sepolia for epoch 353024 (October 6, 2026 13:53:36 UTC). [#1240][PR_1240]

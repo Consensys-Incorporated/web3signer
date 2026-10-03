@@ -1,14 +1,11 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 
-# Stage 1: Validate and extract application
-FROM alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS app-extract
-ARG TAR_FILE
-RUN test -n "$TAR_FILE" || (echo "ERROR: TAR_FILE build argument is required" && exit 1)
-COPY ${TAR_FILE} /tmp/web3signer.tar.gz
-RUN gzip -t /tmp/web3signer.tar.gz || (echo "ERROR: TAR_FILE is not a valid gzip archive" && exit 1) && \
-    mkdir -p /opt/web3signer && \
-    tar -xzf /tmp/web3signer.tar.gz -C /opt/web3signer --strip-components=1 && \
-    rm /tmp/web3signer.tar.gz
+# Stage 1: Build the application distribution from source
+FROM eclipse-temurin:25.0.4_7-jre@sha256:bb036ed6cfdc57e3da7c22634d15f1b840d2caf76183861c80e81ca4b5104abb AS app-build
+WORKDIR /workspace
+COPY . .
+RUN --mount=type=cache,target=/root/.gradle \
+    ./gradlew --no-daemon installDist
 
 # Stage 2: Final image with Ubuntu base for latest security patches
 FROM ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
@@ -45,7 +42,7 @@ RUN apt-get update && \
 
 # Copy full JRE from Eclipse Temurin (no module complexity, all features available)
 COPY --from=eclipse-temurin:25.0.4_7-jre@sha256:bb036ed6cfdc57e3da7c22634d15f1b840d2caf76183861c80e81ca4b5104abb /opt/java/openjdk /opt/java/openjdk
-COPY --from=app-extract --chown=web3signer:web3signer /opt/web3signer /opt/web3signer
+COPY --from=app-build --chown=web3signer:web3signer /workspace/build/install/web3signer /opt/web3signer
 
 USER web3signer
 WORKDIR /opt/web3signer
