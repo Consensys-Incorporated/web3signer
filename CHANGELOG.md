@@ -2,6 +2,7 @@
 
 ## Unreleased
 ### Features Added
+- Docker images can now be built without a local Java install: when the `TAR_FILE` build argument is omitted, `docker/Dockerfile` and `docker/Dockerfile.distroless` build the distribution from source inside Docker. Building from a pre-built `TAR_FILE` remains the recommended path. See `docker/README.md`. [#1249][PR_1249]
 
 ### Bugs Fixed
 
@@ -11,6 +12,7 @@
 
 ### Security
 
+[PR_1249]: https://github.com/Consensys-Incorporated/web3signer/pull/1249
 
 ---
 ## 26.9.0

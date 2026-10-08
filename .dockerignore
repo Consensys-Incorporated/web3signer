@@ -1,6 +1,13 @@
-# Ignore everything
-**
-
-# Whitelist specific directories
+# Build outputs and local tooling state. Source (including .git, needed for
+# version info) stays in the context so the Dockerfiles can build from source
+# when TAR_FILE is not supplied. BuildKit only transfers files a build uses, so
+# TAR_FILE builds still only send the distribution tarball.
+**/build/
 !build/distributions/
-!docker/
+**/.gradle/
+**/out/
+.idea/
+.vscode/
+.fleet/
+*.iml
+docker/reports/

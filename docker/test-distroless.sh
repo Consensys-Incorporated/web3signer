@@ -6,7 +6,7 @@
 # nothing anywhere on the rootfs is written at startup. If this test fails,
 # something regressed that started writing outside /opt/web3signer/native-libs
 # (e.g. a new dependency that triggers Netty native transport extraction, or
-# jblst reverting the jar-strip in Dockerfile.distroless stage 2) — investigate
+# jblst reverting the jar-strip in Dockerfile.distroless prep stage) — investigate
 # before masking it with `--tmpfs /tmp`.
 #
 # The test also bulk-loads an EIP-2335 keystore via --keystores-path. This
