@@ -324,6 +324,76 @@ class DefaultArtifactSignerProviderTest {
     assertThat(removedCaptures.get(1)).containsExactlyInAnyOrder(PUBLIC_KEY1, PUBLIC_KEY2);
   }
 
+  @Test
+  void erroredReloadRetainsPreviouslyLoadedSignersAndReportsNoRemovals() throws Exception {
+    final ArtifactSigner mockSigner1 = mock(ArtifactSigner.class);
+    when(mockSigner1.getIdentifier()).thenReturn(PUBLIC_KEY1);
+    final ArtifactSigner mockSigner2 = mock(ArtifactSigner.class);
+    when(mockSigner2.getIdentifier()).thenReturn(PUBLIC_KEY2);
+
+    final String publicKey3 =
+        "0xb53d21a4cfd562c469cc81514d4ce5a6b577d8403d32a394dc265dd190b47fa9f829ffd7847571dd1164a4328cb4a738";
+    final ArtifactSigner mockSigner3 = mock(ArtifactSigner.class);
+    when(mockSigner3.getIdentifier()).thenReturn(publicKey3);
+
+    final List<Set<String>> addedCaptures = new ArrayList<>();
+    final List<Set<String>> removedCaptures = new ArrayList<>();
+    final BiConsumer<Set<String>, Set<String>> callback =
+        (added, removed) -> {
+          addedCaptures.add(Set.copyOf(added));
+          removedCaptures.add(Set.copyOf(removed));
+        };
+
+    // First load with keys 1 and 2
+    final AtomicReference<MappedResults<ArtifactSigner>> resultsRef =
+        new AtomicReference<>(MappedResults.newInstance(List.of(mockSigner1, mockSigner2), 0));
+    signerProvider =
+        new DefaultArtifactSignerProvider(resultsRef::get, Optional.of(callback), Optional.empty());
+    signerProvider.load().get();
+
+    // Reload reports an error and only returns keys 2 and 3 (key1 could not be loaded)
+    resultsRef.set(MappedResults.newInstance(List.of(mockSigner2, mockSigner3), 1));
+    signerProvider.load().get();
+
+    // key1 is retained instead of being reported as removed, key3 is still added
+    assertThat(signerProvider.availableIdentifiers())
+        .containsExactlyInAnyOrder(PUBLIC_KEY1, PUBLIC_KEY2, publicKey3);
+    assertThat(signerProvider.getSigner(PUBLIC_KEY1)).contains(mockSigner1);
+    assertThat(addedCaptures.get(1)).containsExactly(publicKey3);
+    assertThat(removedCaptures.get(1)).isEmpty();
+  }
+
+  @Test
+  void errorFreeReloadRemovesSignersRetainedByPreviousErroredReload() throws Exception {
+    final ArtifactSigner mockSigner1 = mock(ArtifactSigner.class);
+    when(mockSigner1.getIdentifier()).thenReturn(PUBLIC_KEY1);
+    final ArtifactSigner mockSigner2 = mock(ArtifactSigner.class);
+    when(mockSigner2.getIdentifier()).thenReturn(PUBLIC_KEY2);
+
+    final List<Set<String>> removedCaptures = new ArrayList<>();
+    final BiConsumer<Set<String>, Set<String>> callback =
+        (added, removed) -> removedCaptures.add(Set.copyOf(removed));
+
+    final AtomicReference<MappedResults<ArtifactSigner>> resultsRef =
+        new AtomicReference<>(MappedResults.newInstance(List.of(mockSigner1, mockSigner2), 0));
+    signerProvider =
+        new DefaultArtifactSignerProvider(resultsRef::get, Optional.of(callback), Optional.empty());
+    signerProvider.load().get();
+
+    // Errored reload: key1 missing but retained
+    resultsRef.set(MappedResults.newInstance(List.of(mockSigner2), 1));
+    signerProvider.load().get();
+    assertThat(signerProvider.availableIdentifiers())
+        .containsExactlyInAnyOrder(PUBLIC_KEY1, PUBLIC_KEY2);
+
+    // Error-free reload: key1 is genuinely gone, so it is now reported as removed
+    resultsRef.set(MappedResults.newInstance(List.of(mockSigner2), 0));
+    signerProvider.load().get();
+
+    assertThat(signerProvider.availableIdentifiers()).containsExactly(PUBLIC_KEY2);
+    assertThat(removedCaptures.get(2)).containsExactly(PUBLIC_KEY1);
+  }
+
   private List<BLSKeyPair> randomBLSV4Keystores(final String identifier) throws IOException {
     final Path v4Dir =
         Files.createDirectories(

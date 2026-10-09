@@ -4,6 +4,7 @@
 ### Features Added
 
 ### Bugs Fixed
+- `POST /reload` no longer disables validators when a keystore source (keystore directory, password file or vault) fails to load. Keys that are missing from an errored load are retained; a later error-free reload still removes keys that are genuinely gone. [#1248][issue_1248] Fix via [#1251][PR_1251].
 
 ### Breaking Changes
 
@@ -11,6 +12,12 @@
 
 ### Security
 
+### Known Issues
+- While any key source keeps reporting load errors, `POST /reload` does not unload keys that were removed from their source; they stay loaded and enabled in slashing protection until the errors are fixed or Web3Signer is restarted. A single persistent error is enough, for example a malformed keystore or key config file, or an unreadable vault secret, so single-source setups are affected too. Use the key manager API (`DELETE /eth/v1/keystores`) to remove a key immediately. [#1252][issue_1252]
+
+[issue_1248]: https://github.com/Consensys-Incorporated/web3signer/issues/1248
+[PR_1251]: https://github.com/Consensys-Incorporated/web3signer/pull/1251
+[issue_1252]: https://github.com/Consensys-Incorporated/web3signer/issues/1252
 
 ---
 ## 26.9.0

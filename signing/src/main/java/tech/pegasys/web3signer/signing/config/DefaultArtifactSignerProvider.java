@@ -125,10 +125,12 @@ public class DefaultArtifactSignerProvider implements ArtifactSignerProvider {
    * complete new state, never a mix. This is critical for maintaining consistency during signing
    * operations while a reload is in progress.
    *
-   * <p><b>Error Handling:</b> Individual signer loading failures (e.g., malformed keystores,
-   * invalid keys) are counted but do not prevent the loading of other valid signers. Successfully
-   * loaded signers are made available even if some configurations fail. The returned error count
-   * allows callers to detect partial failures.
+   * <p><b>Error Handling:</b> Individual signer loading failures are counted but do not prevent
+   * loading of other valid signers. Signers missing from an errored load are retained, so a
+   * transient failure cannot remove them from slashing protection; the next error-free load drops
+   * keys that are genuinely gone. Errors are counted, not attributed to a source or file, so while
+   * any load error persists (even a single malformed file in the same directory) a key removed from
+   * its source stays loaded; use the key manager delete API to remove a key immediately.
    *
    * <p>This method is typically invoked:
    *
@@ -167,7 +169,30 @@ public class DefaultArtifactSignerProvider implements ArtifactSignerProvider {
                             LOG.warn(
                                 "Duplicate key found while loading: {}", signer1.getIdentifier());
                             return signer1;
-                          }));
+                          },
+                          HashMap::new));
+
+          // A source failure (unreadable keystore dir/password file, vault outage, ...) returns an
+          // error count and only the keys it managed to load. Retain previously loaded signers
+          // missing from an errored load instead of reporting them as removed, which would disable
+          // them in slashing protection permanently.
+          if (errorCount > 0) {
+            final Map<String, ArtifactSigner> retainedSigners = new HashMap<>();
+            currentState.signers.forEach(
+                (identifier, signer) -> {
+                  if (!newSigners.containsKey(identifier)) {
+                    retainedSigners.put(identifier, signer);
+                  }
+                });
+            if (!retainedSigners.isEmpty()) {
+              LOG.warn(
+                  "Signer loading reported {} error(s); retaining {} previously loaded signer(s)"
+                      + " that could not be re-loaded",
+                  errorCount,
+                  retainedSigners.size());
+              newSigners.putAll(retainedSigners);
+            }
+          }
 
           // Build new proxy signers map
           final Map<String, Set<ArtifactSigner>> newProxySigners = new HashMap<>();
