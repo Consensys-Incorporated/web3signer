@@ -10,6 +10,8 @@ body:
         
         ⚠️ **Security Reminder:** Never include private keys, keystore passwords, cloud credentials, or secrets in your report.
         
+        **Security Vulnerabilities:** Do not report vulnerabilities in a public issue. Report them privately as described in the [security policy](https://github.com/Consensys-Incorporated/web3signer/security/policy).
+        
         *Note: If you have a setup question or need configuration help rather than reporting a bug, please use [GitHub Discussions](https://github.com/Consensys-Incorporated/web3signer/discussions/categories/q-a) instead.*
   - type: input
     id: version
