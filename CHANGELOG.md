@@ -11,8 +11,9 @@
 ### CI/Build Enhancements
 
 ### Security
-- Default Docker image now ships Eclipse Temurin JRE 25.0.5+8, fetched from the Adoptium release and verified against its published SHA-256, and the distroless image is re-pinned to a `gcr.io/distroless/java25-debian13:nonroot` digest that ships Temurin 25.0.5+8. These builds remove the trust paths of the compromised eMudhra intermediate CAs ([adoptium/temurin#317](https://github.com/adoptium/temurin/issues/317)). The other Docker base image digests are re-pinned to current.
+- Default Docker image now ships Eclipse Temurin JRE 25.0.5+8, fetched from the Adoptium release and verified against its published SHA-256, and the distroless image is re-pinned to a `gcr.io/distroless/java25-debian13:nonroot` digest that ships Temurin 25.0.5+8. These builds remove the trust paths of the compromised eMudhra intermediate CAs ([adoptium/temurin#317](https://github.com/adoptium/temurin/issues/317)). The other Docker base image digests are re-pinned to current. [#1267][PR_1267]
 
+[PR_1267]: https://github.com/Consensys-Incorporated/web3signer/pull/1267
 
 ---
 ## 26.10.0
