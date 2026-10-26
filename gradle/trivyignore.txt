@@ -1,2 +1,3 @@
-# Only applicable when parsing yaml from untrusted sources
-CVE-2022-1471
+# Trivy ignores for the nightly Docker image scan (.github/workflows/trivy.yml).
+# One CVE id per line. Every entry must explain why the CVE does not apply to the images we ship.
+# Trivy does not report entries that match nothing, so re-check this file when the base images are bumped.

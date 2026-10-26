@@ -8,6 +8,7 @@
 ### Breaking Changes
 
 ### CI/Build Enhancements
+- Trivy scans the published Docker images nightly, for both variants of the `develop` and `latest` tags, and publishes HIGH/CRITICAL findings to GitHub code scanning under one category per image. Findings that have no upstream fix are reported too, and the run fails on findings like dependency-check; accepted findings go in `gradle/trivyignore.txt`. [#1270][PR_1270]
 
 ### Security
 - Docker images now ship Eclipse Temurin JRE 25.0.5+8 to mitigate the eMudhra CA compromise ([adoptium/temurin#317](https://github.com/adoptium/temurin/issues/317)); base image digests re-pinned. [#1267][PR_1267]
@@ -15,6 +16,7 @@
 
 [PR_1267]: https://github.com/Consensys-Incorporated/web3signer/pull/1267
 [PR_1268]: https://github.com/Consensys-Incorporated/web3signer/pull/1268
+[PR_1270]: https://github.com/Consensys-Incorporated/web3signer/pull/1270
 
 ---
 ## 26.10.1

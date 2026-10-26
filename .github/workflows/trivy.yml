@@ -1,0 +1,60 @@
+name: trivy
+
+# Nightly Trivy scan of the published Docker images: the default and distroless variants of the `develop`
+# (master) and `latest` (final release) tags. Findings are uploaded to GitHub code scanning (Security tab).
+#
+# Each image uploads under its own `trivy-<tag>` category. A category is an alert stream: two uploads sharing
+# one would overwrite each other's results, and renaming one leaves the alerts of the old stream open forever
+# because nothing uploads to it again. Keep these names stable for that reason.
+on:
+  schedule:
+    - cron: '47 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trivy:
+    name: trivy (${{ matrix.tag }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [develop, develop-distroless, latest, latest-distroless]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # The Trivy image, not aquasecurity/trivy-action: the action pulls in aquasecurity/setup-trivy, which is not
+      # on the organisation's allowed-actions list, and both were hijacked in GHSA-69fq-xp46-6x23. Pinned by digest.
+      # Unfixed findings are reported too. linux/amd64 only: arm64 uses the same digest-pinned bases and ships
+      # identical package versions (the build-time apt upgrade is the only thing that could race between the arches).
+      - name: Scan consensys/web3signer:${{ matrix.tag }}
+        uses: docker://aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222
+        with:
+          args: >-
+            image
+            --image-src remote
+            --platform linux/amd64
+            --scanners vuln
+            --pkg-types os,library
+            --severity HIGH,CRITICAL
+            --ignorefile gradle/trivyignore.txt
+            --no-progress
+            --timeout 15m
+            --exit-code 1
+            --format sarif
+            --output trivy-results.sarif
+            consensys/web3signer:${{ matrix.tag }}
+
+      - name: Upload results to GitHub code scanning
+        if: ${{ !cancelled() && hashFiles('trivy-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-${{ matrix.tag }}
