@@ -13,10 +13,12 @@
 ### Security
 - Docker images now ship Eclipse Temurin JRE 25.0.5+8 to mitigate the eMudhra CA compromise ([adoptium/temurin#317](https://github.com/adoptium/temurin/issues/317)); base image digests re-pinned. [#1267][PR_1267]
 - Vert.x upgraded to 5.2.2 and Netty to 4.2.19.Final to fix CVE-2026-102479, CVE-2026-102467 and CVE-2026-102476. [#1268][PR_1268]
+- Jackson 3 (`tools.jackson`) upgraded to 3.1.7 to fix CVE-2026-91777. [#1272][PR_1272]
 
 [PR_1267]: https://github.com/Consensys-Incorporated/web3signer/pull/1267
 [PR_1268]: https://github.com/Consensys-Incorporated/web3signer/pull/1268
 [PR_1270]: https://github.com/Consensys-Incorporated/web3signer/pull/1270
+[PR_1272]: https://github.com/Consensys-Incorporated/web3signer/pull/1272
 
 ---
 ## 26.10.1
