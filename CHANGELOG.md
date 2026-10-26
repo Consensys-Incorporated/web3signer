@@ -11,8 +11,10 @@
 
 ### Security
 - Docker images now ship Eclipse Temurin JRE 25.0.5+8 to mitigate the eMudhra CA compromise ([adoptium/temurin#317](https://github.com/adoptium/temurin/issues/317)); base image digests re-pinned. [#1267][PR_1267]
+- Vert.x upgraded to 5.2.2, fixing CVE-2026-102479 (HTTP/1.x request smuggling via canonicalized headers), CVE-2026-102467 (unbounded WebSocket decompression) and CVE-2026-102476 (incomplete client SSL context cache key) in `vertx-core`. The other Vert.x 5.2.0 CVEs reported by dependency scanners are in modules web3signer does not ship or features it does not use. Netty upgraded to 4.2.19.Final for its HTTP codec security fixes. [#1268][PR_1268]
 
 [PR_1267]: https://github.com/Consensys-Incorporated/web3signer/pull/1267
+[PR_1268]: https://github.com/Consensys-Incorporated/web3signer/pull/1268
 
 ---
 ## 26.10.1
