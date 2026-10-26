@@ -1,8 +1,7 @@
 # Changelog
 
-## 26.10.1
+## Unreleased
 ### Features Added
-- Unscheduled the Gloas (Glamsterdam) fork for the Hoodi network, which was previously scheduled at epoch 132352 (26 Oct 2026 17:42:48 UTC). Teku libraries updated to 26.10.2. Required update for the Hoodi network.
 
 ### Bugs Fixed
 
@@ -14,6 +13,20 @@
 - Docker images now ship Eclipse Temurin JRE 25.0.5+8 to mitigate the eMudhra CA compromise ([adoptium/temurin#317](https://github.com/adoptium/temurin/issues/317)); base image digests re-pinned. [#1267][PR_1267]
 
 [PR_1267]: https://github.com/Consensys-Incorporated/web3signer/pull/1267
+
+---
+## 26.10.1
+### Features Added
+- Unscheduled the Gloas (Glamsterdam) fork for the Hoodi network, which was previously scheduled at epoch 132352 (26 Oct 2026 17:42:48 UTC). Teku libraries updated to 26.10.2. Required update for the Hoodi network.
+
+### Bugs Fixed
+
+### Breaking Changes
+
+### CI/Build Enhancements
+
+### Security
+
 
 ---
 ## 26.10.0
