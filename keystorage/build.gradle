@@ -91,11 +91,9 @@ dependencies {
   testFixturesImplementation 'com.fasterxml.jackson.core:jackson-databind'
   testFixturesImplementation 'org.apache.logging.log4j:log4j-api'
   testFixturesImplementation 'io.consensys.tuweni:tuweni-net'
-  testFixturesImplementation 'org.assertj:assertj-core'
-  testFixturesImplementation 'org.awaitility:awaitility'
   testFixturesImplementation 'org.bouncycastle:bcpkix-jdk18on'
   testFixturesImplementation 'org.bouncycastle:bcprov-jdk18on'
-  testFixturesImplementation 'org.zeroturnaround:zt-exec'
+  testFixturesImplementation 'org.testcontainers:testcontainers'
 
   errorprone("com.google.errorprone:error_prone_core")
 }

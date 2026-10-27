@@ -16,7 +16,6 @@ import java.time.LocalTime
 
 plugins {
   id "de.undercouch.download" version "5.7.0"
-  id "com.google.osdetector" version "1.7.3"
 }
 
 dependencies {
@@ -113,55 +112,8 @@ tasks.register('extractBesu', Copy) {
   into layout.buildDirectory.dir("besu")
 }
 
-def vaultBinary () {
-  switch (osdetector.os) {
-    case "windows":
-      return layout.buildDirectory.file("vault-bin/vault.exe").get().asFile.absolutePath
-    default:
-      return layout.buildDirectory.file("vault-bin/vault").get().asFile.absolutePath
-  }
-}
-
-def getOsXArchForVault() {
-  switch(osdetector.arch) {
-    case "aarch_64":
-      return "arm64"
-    default:
-      return "amd64"
-  }
-}
-
-def vaultDownloadUrl() {
-  // see gradle.properties for Hashicorp Vault URL
-  switch (osdetector.os) {
-    case "windows":
-      return "${hashicorpVaultUrl}/${hashicorpVaultVersion}/vault_${hashicorpVaultVersion}_windows_amd64.zip"
-    case "linux":
-      return "${hashicorpVaultUrl}/${hashicorpVaultVersion}/vault_${hashicorpVaultVersion}_linux_amd64.zip"
-    case "osx":
-      return "${hashicorpVaultUrl}/${hashicorpVaultVersion}/vault_${hashicorpVaultVersion}_darwin_${getOsXArchForVault()}.zip"
-    default:
-      throw new GradleException("Unsupported OS: ${osdetector.os}")
-  }
-}
-
-tasks.register('downloadVault', Download) {
-  src {
-    return vaultDownloadUrl()
-  }
-  dest layout.buildDirectory.file("downloads/hashicorp.zip")
-  onlyIfModified true
-}
-
-tasks.register('extractVault', Copy) {
-  dependsOn tasks.named('downloadVault')
-
-  from zipTree(tasks.named('downloadVault').get().dest)
-  into layout.buildDirectory.dir("vault-bin")
-}
-
 tasks.register('acceptanceTest', Test) {
-  dependsOn rootProject.installDist, tasks.named('extractBesu'), tasks.named('extractVault')
+  dependsOn rootProject.installDist, tasks.named('extractBesu')
 
   // Gradle 9 dropped implicit convention-based wiring for custom Test tasks; must be explicit.
   testClassesDirs = sourceSets.test.output.classesDirs
@@ -174,7 +126,7 @@ tasks.register('acceptanceTest', Test) {
   //systemProperty 'debugSubProcess', 'true'
   systemProperty 'acctests.runWeb3SignerAsProcess', 'true'
   systemProperty 'besuInstallDir', layout.buildDirectory.dir("besu").get().asFile.absolutePath
-  systemProperty 'vaultBinary', vaultBinary()
+  systemProperty 'hashicorpVaultImage', hashicorpVaultImage
   systemProperty 'azureKeyVaultEmulatorImage', azureKeyVaultEmulatorImage
   // embedded pg initdb needs following
   environment "LC_CTYPE", "en_US.UTF-8"

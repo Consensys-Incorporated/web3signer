@@ -12,81 +12,82 @@
  */
 package tech.pegasys.web3signer.keystore.hashicorp.dsl;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import tech.pegasys.web3signer.keystore.dsl.certificates.SelfSignedCertificate;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.cert.CertificateEncodingException;
-import java.util.HashMap;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManagerFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.awaitility.Awaitility;
-import org.zeroturnaround.exec.ProcessExecutor;
-import org.zeroturnaround.exec.ProcessResult;
-import org.zeroturnaround.exec.stream.LogOutputStream;
-import org.zeroturnaround.exec.stream.slf4j.Slf4jStream;
+import org.slf4j.LoggerFactory;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
+import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.utility.MountableFile;
 
+/**
+ * A Hashicorp Vault server in a Testcontainers container, initialized, unsealed and with a kv-v2
+ * engine mounted at {@code secret}. Every instance runs its own container with in-memory storage,
+ * so tests never share Vault state.
+ */
 public class HashicorpNode {
   private static final Logger LOG = LogManager.getLogger();
-  private static final Logger VAULT_PROCESS_LOG =
-      LogManager.getLogger(HashicorpNode.class + ".VaultServer");
+  private static final org.slf4j.Logger VAULT_PROCESS_LOG =
+      LoggerFactory.getLogger(HashicorpNode.class.getName() + ".VaultServer");
 
-  // automatically sets by gradle test tasks. Should be set manually in IDE if not using gradle
-  private static final String vaultBinary = System.getProperty("vaultBinary");
+  // Automatically set by the gradle acceptanceTest task from gradle.properties'
+  // hashicorpVaultImage.
+  // Should be set manually in IDE if not using gradle.
+  private static final String IMAGE_PROPERTY = "hashicorpVaultImage";
 
   private static final String VAULT_ROOT_PATH = "secret";
+  private static final int VAULT_PORT = 8200;
+  private static final String CONTAINER_CERT_FILE = "/vault/tls/server.crt";
+  private static final String CONTAINER_KEY_FILE = "/vault/tls/server.key";
+  // The vault process does not run as root, so the copied files must be world-readable.
+  private static final int READABLE_FILE_MODE = 0644;
 
   private final Optional<SelfSignedCertificate> serverTlsCertificate;
-  private final Path vaultPath;
-  private final Pattern portPattern = Pattern.compile(".*cluster address: \".*:(\\d+)\".*");
+  private final GenericContainer<?> container;
   private final ObjectMapper objectMapper = new ObjectMapper();
 
-  private static final String HOST = "127.0.0.1";
-  private final AtomicInteger port = new AtomicInteger(0);
-
   // initialized after start
-  private HashicorpVaultCommands hashicorpVaultCommands;
-  private Future<ProcessResult> serverFuture;
+  private HttpClient httpClient;
   private String vaultToken;
 
   /**
-   * Create a local Hashicorp Vault process and start it.
+   * Create a Hashicorp Vault container and start it.
    *
-   * <p>System property vaultInstallDir and vaultBinary should be set before calling this method.
+   * <p>System property hashicorpVaultImage should be set before calling this method.
    *
    * @param withTls if TLS should be enabled
    * @return A started instance of HashicorpNode
    */
   public static HashicorpNode createAndStartHashicorp(final boolean withTls) {
-    if (vaultBinary == null) {
-      throw new IllegalStateException("System property [vaultBinary] is missing.");
-    }
-
-    final Path vault = Path.of(vaultBinary);
-    if (!vault.toFile().exists()) {
-      throw new IllegalStateException("Vault binary doesn't exist. " + vault.toString());
+    final String image = System.getProperty(IMAGE_PROPERTY);
+    if (image == null) {
+      throw new IllegalStateException("System property [" + IMAGE_PROPERTY + "] is missing.");
     }
 
     try {
       final HashicorpNode hashicorpNode =
-          withTls
-              ? new HashicorpNode(vault, SelfSignedCertificate.generate())
-              : new HashicorpNode(vault, null);
+          new HashicorpNode(
+              DockerImageName.parse(image),
+              withTls ? Optional.of(SelfSignedCertificate.generate()) : Optional.empty());
       hashicorpNode.start();
       return hashicorpNode;
     } catch (final Exception e) {
@@ -94,59 +95,39 @@ public class HashicorpNode {
     }
   }
 
-  private HashicorpNode(final Path vaultPath, final SelfSignedCertificate serverTlsCertificate) {
-    this.vaultPath = vaultPath;
-    this.serverTlsCertificate = Optional.ofNullable(serverTlsCertificate);
+  private HashicorpNode(
+      final DockerImageName image, final Optional<SelfSignedCertificate> serverTlsCertificate)
+      throws IOException, GeneralSecurityException {
+    this.serverTlsCertificate = serverTlsCertificate;
+    this.container =
+        new GenericContainer<>(image)
+            .withExposedPorts(VAULT_PORT)
+            .withCommand("server")
+            .withEnv("VAULT_LOCAL_CONFIG", serverConfig())
+            // disable_mlock makes the IPC_LOCK capability unnecessary
+            .withEnv("SKIP_SETCAP", "true")
+            .withLogConsumer(new Slf4jLogConsumer(VAULT_PROCESS_LOG))
+            .waitingFor(Wait.forLogMessage(".*Vault server started!.*", 1));
+    if (serverTlsCertificate.isPresent()) {
+      copyTlsFilesToContainer(serverTlsCertificate.get());
+    }
   }
 
-  void start()
-      throws IOException, CertificateEncodingException, TimeoutException, InterruptedException {
-    startVaultServer();
-    hashicorpVaultCommands = new HashicorpVaultCommands(vaultPath.toString(), vaultUrl());
+  private void start() throws IOException, GeneralSecurityException {
+    LOG.info("Starting vault server container ({})", container.getDockerImageName());
+    container.start();
+    httpClient = createHttpClient();
 
-    final HashicorpVaultTokens hashicorpVaultTokens = initVault();
-    unseal(hashicorpVaultTokens.getUnsealKey());
+    unseal(initVault());
     enableHashicorpKeyValueV2Engine();
   }
 
-  // Start vault server. Sets port variable once started.
-  private void startVaultServer() throws IOException, CertificateEncodingException {
-    LOG.info("Starting vault server");
-    final AtomicBoolean serverStarted = new AtomicBoolean(false);
-    serverFuture =
-        new ProcessExecutor(vaultPath.toString(), "server", "-config=" + getVaultServerConfig())
-            .readOutput(true)
-            .redirectOutput(
-                new LogOutputStream() {
-                  @Override
-                  protected void processLine(final String line) {
-                    VAULT_PROCESS_LOG.info(line);
-
-                    // process Vault port (i.e. cluster port - 1)
-                    final Matcher matcher = portPattern.matcher(line);
-                    if (matcher.find()) {
-                      port.set(Integer.parseInt(matcher.group(1)) - 1);
-                    }
-
-                    if (line.contains("Vault server started!")) {
-                      serverStarted.set(true);
-                    }
-                  }
-                })
-            .destroyOnExit()
-            .start()
-            .getFuture();
-
-    Awaitility.await().atMost(5, TimeUnit.SECONDS).untilTrue(serverStarted);
-  }
-
   public void shutdown() {
-    if (serverFuture != null) {
-      LOG.info("Shutting down Vault server Process...");
-      serverFuture.cancel(true);
-      serverFuture = null;
+    if (container.isRunning()) {
+      LOG.info("Shutting down Vault server container...");
+      container.stop();
     } else {
-      LOG.info("Vault server process is not running.");
+      LOG.info("Vault server container is not running.");
     }
   }
 
@@ -155,11 +136,14 @@ public class HashicorpNode {
   }
 
   public String getHost() {
-    return HOST;
+    // "localhost" can resolve to the IPv6 loopback first, while Docker commonly publishes ports on
+    // the IPv4 loopback only, which the TLS certificate also names. Pin to 127.0.0.1 in that case.
+    final String host = container.getHost();
+    return "localhost".equals(host) ? "127.0.0.1" : host;
   }
 
   public int getPort() {
-    return port.intValue();
+    return container.getMappedPort(VAULT_PORT);
   }
 
   public Optional<SelfSignedCertificate> getServerCertificate() {
@@ -175,130 +159,136 @@ public class HashicorpNode {
   */
   public String addSecretsToVault(final Map<String, String> entries, final String path) {
     LOG.info("creating the secret in vault that contains the private key.");
-    final String secretPutPath = String.join("/", VAULT_ROOT_PATH, path);
-    for (final Map.Entry<String, String> entry : entries.entrySet()) {
-      try {
-        final String commandOutput =
-            executeCommandAndGetOutput(
-                hashicorpVaultCommands.putSecretCommand(
-                    entry.getKey(), entry.getValue(), secretPutPath));
-
-        assertThat(commandOutput.contains("created_time")).isTrue();
-      } catch (final IOException | InterruptedException | TimeoutException e) {
-        throw new RuntimeException("Error adding secrets to vault", e);
-      }
-
-      LOG.info("The secret ({}) was created successfully.", entry.getKey());
+    final JsonNode response =
+        sendRequest("POST", getHttpApiPathForSecret(path), Map.of("data", entries));
+    if (!response.path("data").hasNonNull("created_time")) {
+      throw new IllegalStateException("Unexpected response writing secret: " + response);
     }
+    LOG.info("The secret with keys {} was created successfully.", entries.keySet());
     return getHttpApiPathForSecret(path);
   }
 
-  private Path getVaultServerConfig() throws IOException, CertificateEncodingException {
-    final String config =
-        "{\"storage\": {\"inmem\":{}}, \"disable_mlock\": true, "
-            + "\"default_lease_ttl\": \"168h\", \"max_lease_ttl\": \"720h\", "
-            + "\"listener\": {\"tcp\": {"
-            + "\"address\":\"127.0.0.1:0\""
-            + ","
-            + tlsEnvConfig()
-            + "}}}";
-
-    final Path configFile = Files.createTempFile("at_vault_config", ".json");
-    return Files.writeString(configFile, config);
+  private String serverConfig() throws IOException {
+    final Map<String, Object> tcpListener =
+        serverTlsCertificate.isPresent()
+            ? Map.of(
+                "address",
+                "0.0.0.0:" + VAULT_PORT,
+                "tls_min_version",
+                "tls12",
+                "tls_cert_file",
+                CONTAINER_CERT_FILE,
+                "tls_key_file",
+                CONTAINER_KEY_FILE)
+            : Map.of("address", "0.0.0.0:" + VAULT_PORT, "tls_disable", true);
+    final Map<String, Object> config =
+        Map.of(
+            "storage",
+            Map.of("inmem", Map.of()),
+            "disable_mlock",
+            true,
+            "default_lease_ttl",
+            "168h",
+            "max_lease_ttl",
+            "720h",
+            "listener",
+            Map.of("tcp", tcpListener));
+    return objectMapper.writeValueAsString(config);
   }
 
-  private String tlsEnvConfig() throws IOException, CertificateEncodingException {
-    if (!isTlsEnabled()) {
-      return "\"tls_disable\":\"true\"";
+  private void copyTlsFilesToContainer(final SelfSignedCertificate certificate)
+      throws IOException, GeneralSecurityException {
+    final Path certificateFile = Files.createTempFile("at_dsl_cert", ".crt");
+    final Path privateKeyFile = Files.createTempFile("at_dsl_priv", ".key");
+    certificate.writeCertificateToFile(certificateFile);
+    certificate.writePrivateKeyToFile(privateKeyFile);
+
+    container
+        .withCopyFileToContainer(
+            MountableFile.forHostPath(certificateFile, READABLE_FILE_MODE), CONTAINER_CERT_FILE)
+        .withCopyFileToContainer(
+            MountableFile.forHostPath(privateKeyFile, READABLE_FILE_MODE), CONTAINER_KEY_FILE);
+  }
+
+  private HttpClient createHttpClient() throws IOException, GeneralSecurityException {
+    if (serverTlsCertificate.isEmpty()) {
+      return HttpClient.newHttpClient();
     }
 
-    final Path certificate = Files.createTempFile("at_dsl_cert", ".crt");
-    final Path privateKey = Files.createTempFile("at_dsl_priv", ".key");
-
-    serverTlsCertificate.get().writeCertificateToFile(certificate);
-    serverTlsCertificate.get().writePrivateKeyToFile(privateKey);
-
-    return String.format(
-        "\"tls_min_version\": \"tls12\", \"tls_cert_file\": \"%s\", \"tls_key_file\": \"%s\"",
-        certificate, privateKey);
+    final KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+    trustStore.load(null, null);
+    trustStore.setCertificateEntry("vault", serverTlsCertificate.get().getCertificate());
+    final TrustManagerFactory trustManagerFactory =
+        TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+    trustManagerFactory.init(trustStore);
+    final SSLContext sslContext = SSLContext.getInstance("TLS");
+    sslContext.init(null, trustManagerFactory.getTrustManagers(), null);
+    return HttpClient.newBuilder().sslContext(sslContext).build();
   }
 
-  private boolean isTlsEnabled() {
-    return serverTlsCertificate.isPresent();
-  }
-
-  private String vaultUrl() {
-    return String.format("%s://%s:%d", isTlsEnabled() ? "https" : "http", getHost(), getPort());
-  }
-
-  private HashicorpVaultTokens initVault()
-      throws InterruptedException, TimeoutException, IOException {
+  /** Initializes vault, keeping the root token, and returns the single unseal key. */
+  private String initVault() {
     LOG.info("Initializing Hashicorp vault ...");
-
-    final String commandOutput = executeCommandAndGetOutput(hashicorpVaultCommands.initCommand());
-
-    final String rootToken;
-    final String unsealKey;
-    try {
-      final JsonNode jsonNode = objectMapper.readTree(commandOutput);
-      rootToken = jsonNode.get("root_token").asText();
-      final JsonNode unsealKeyJsonNodeArray = jsonNode.get("unseal_keys_b64");
-      assertThat(unsealKeyJsonNodeArray.isArray()).isTrue();
-      unsealKey = unsealKeyJsonNodeArray.get(0).asText();
-    } catch (IOException e) {
-      throw new RuntimeException("Error in parsing json output from vault unseal command", e);
+    final JsonNode response =
+        sendRequest("PUT", "/v1/sys/init", Map.of("secret_shares", 1, "secret_threshold", 1));
+    vaultToken = response.path("root_token").asText(null);
+    if (vaultToken == null || !response.path("keys_base64").has(0)) {
+      throw new IllegalStateException("Unexpected response initializing vault: " + response);
     }
-    assertThat(rootToken).isNotNull();
-    assertThat(unsealKey).isNotNull();
     LOG.info("Hashicorp vault is initialized");
-
-    this.vaultToken = rootToken;
-    return new HashicorpVaultTokens(unsealKey, rootToken);
+    return response.path("keys_base64").get(0).asText();
   }
 
-  private void unseal(final String unsealKey)
-      throws InterruptedException, TimeoutException, IOException {
+  private void unseal(final String unsealKey) {
     LOG.info("Unseal Hashicorp vault ...");
-    final String commandOutput =
-        executeCommandAndGetOutput(hashicorpVaultCommands.unseal(unsealKey));
-
-    try {
-      final JsonNode jsonNode = objectMapper.readTree(commandOutput);
-      assertThat(jsonNode.get("sealed").asBoolean()).isFalse();
-    } catch (IOException e) {
-      throw new RuntimeException("Error in parsing json output from vault unseal command", e);
+    final JsonNode response = sendRequest("PUT", "/v1/sys/unseal", Map.of("key", unsealKey));
+    if (response.path("sealed").asBoolean(true)) {
+      throw new IllegalStateException("Vault is still sealed: " + response);
     }
-
     LOG.info("Hashicorp vault is unsealed");
   }
 
-  private void enableHashicorpKeyValueV2Engine()
-      throws InterruptedException, TimeoutException, IOException {
+  private void enableHashicorpKeyValueV2Engine() {
     LOG.info("Mounting /secret kv-v2 in Hashicorp vault ...");
-    final String commandOutput =
-        executeCommandAndGetOutput(
-            hashicorpVaultCommands.enableSecretEngineCommand(VAULT_ROOT_PATH));
-    assertThat(commandOutput.contains("Success")).isTrue();
+    sendRequest(
+        "POST",
+        "/v1/sys/mounts/" + VAULT_ROOT_PATH,
+        Map.of("type", "kv", "options", Map.of("version", "2")));
     LOG.info("Hashicorp vault kv-v2 /secret is mounted");
   }
 
-  private String executeCommandAndGetOutput(final String[] command)
-      throws InterruptedException, TimeoutException, IOException {
-    return new ProcessExecutor(command)
-        .readOutput(true)
-        .redirectOutput(Slf4jStream.of(getClass()).asInfo())
-        .environment(getEnvironmentMap())
-        .destroyOnExit()
-        .execute()
-        .outputUTF8();
+  private String vaultUrl() {
+    return String.format(
+        "%s://%s:%d", serverTlsCertificate.isPresent() ? "https" : "http", getHost(), getPort());
   }
 
-  private Map<String, String> getEnvironmentMap() {
-    final Map<String, String> environment = new HashMap<>();
-    environment.put("VAULT_SKIP_VERIFY", "true");
-    if (vaultToken != null) {
-      environment.put("VAULT_TOKEN", vaultToken);
+  private JsonNode sendRequest(final String method, final String path, final Object body) {
+    try {
+      final HttpRequest.Builder request =
+          HttpRequest.newBuilder(URI.create(vaultUrl() + path))
+              .header("Content-Type", "application/json")
+              .method(
+                  method,
+                  HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)));
+      if (vaultToken != null) {
+        request.header("X-Vault-Token", vaultToken);
+      }
+      final HttpResponse<String> response =
+          httpClient.send(request.build(), HttpResponse.BodyHandlers.ofString());
+      if (response.statusCode() / 100 != 2) {
+        throw new IllegalStateException(
+            String.format(
+                "Vault %s %s failed with status %d: %s",
+                method, path, response.statusCode(), response.body()));
+      }
+      return response.body().isEmpty()
+          ? objectMapper.createObjectNode()
+          : objectMapper.readTree(response.body());
+    } catch (final IOException e) {
+      throw new IllegalStateException("Vault " + method + " " + path + " failed", e);
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Interrupted calling vault " + method + " " + path, e);
     }
-    return environment;
   }
 }
