@@ -8,7 +8,7 @@
 ### Breaking Changes
 
 ### CI/Build Enhancements
-- AWS tests run in CI against [MiniStack](https://github.com/ministackorg/ministack), which replaces LocalStack.
+- AWS tests run in CI against [MiniStack](https://github.com/ministackorg/ministack), which replaces LocalStack. [#1276][PR_1276]
 - Trivy scans the published Docker images nightly, for both variants of the `develop` and `latest` tags, and publishes HIGH/CRITICAL findings to GitHub code scanning under one category per image. Findings that have no upstream fix are reported too, and the run fails on findings like dependency-check; accepted findings go in `gradle/trivyignore.txt`. [#1270][PR_1270]
 
 ### Security
@@ -22,6 +22,7 @@
 [PR_1270]: https://github.com/Consensys-Incorporated/web3signer/pull/1270
 [PR_1272]: https://github.com/Consensys-Incorporated/web3signer/pull/1272
 [PR_1273]: https://github.com/Consensys-Incorporated/web3signer/pull/1273
+[PR_1276]: https://github.com/Consensys-Incorporated/web3signer/pull/1276
 
 ---
 ## 26.10.1
