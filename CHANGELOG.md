@@ -8,7 +8,7 @@
 ### Breaking Changes
 
 ### CI/Build Enhancements
-- Hashicorp Vault acceptance tests run against the `hashicorp/vault` 2.2.1 image via Testcontainers instead of a downloaded 1.9.2 binary.
+- Hashicorp Vault acceptance tests run against the `hashicorp/vault` 2.2.1 image via Testcontainers instead of a downloaded 1.9.2 binary. [#1277][PR_1277]
 - Trivy scans the published Docker images nightly, for both variants of the `develop` and `latest` tags, and publishes HIGH/CRITICAL findings to GitHub code scanning under one category per image. Findings that have no upstream fix are reported too, and the run fails on findings like dependency-check; accepted findings go in `gradle/trivyignore.txt`. [#1270][PR_1270]
 
 ### Security
@@ -22,6 +22,7 @@
 [PR_1270]: https://github.com/Consensys-Incorporated/web3signer/pull/1270
 [PR_1272]: https://github.com/Consensys-Incorporated/web3signer/pull/1272
 [PR_1273]: https://github.com/Consensys-Incorporated/web3signer/pull/1273
+[PR_1277]: https://github.com/Consensys-Incorporated/web3signer/pull/1277
 
 ---
 ## 26.10.1
