@@ -22,8 +22,8 @@ import static tech.pegasys.web3signer.dsl.utils.HealthCheckResultUtil.getHealthc
 
 import tech.pegasys.teku.bls.BLSKeyPair;
 import tech.pegasys.web3signer.GcpSecretManagerUtil;
+import tech.pegasys.web3signer.dsl.gcp.GcpSecretManagerEmulator;
 import tech.pegasys.web3signer.dsl.signer.SignerConfigurationBuilder;
-import tech.pegasys.web3signer.keystorage.gcp.GcpSecretManager;
 import tech.pegasys.web3signer.signing.KeyType;
 import tech.pegasys.web3signer.signing.config.GcpSecretManagerParameters;
 import tech.pegasys.web3signer.signing.config.GcpSecretManagerParametersBuilder;
@@ -33,7 +33,9 @@ import java.io.IOException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
+import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
 import io.restassured.http.ContentType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -41,19 +43,22 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-@EnabledIfEnvironmentVariable(
-    named = "GCP_PROJECT_ID",
-    matches = ".+",
-    disabledReason = "GCP_PROJECT_ID env variable is required")
+/**
+ * Runs against a local emulator, see {@link GcpSecretManagerEmulator}, or against real Google Cloud
+ * using application default credentials when {@value #GCP_PROJECT_ID_ENV} is set.
+ */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS) // same instance is shared across test methods
 public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
   private static final Logger LOG = LogManager.getLogger();
-  private static final String GCP_PROJECT_ID = System.getenv("GCP_PROJECT_ID");
+  private static final String GCP_PROJECT_ID_ENV = "GCP_PROJECT_ID";
+  private static final Optional<String> REAL_GCP_PROJECT_ID =
+      Optional.ofNullable(System.getenv(GCP_PROJECT_ID_ENV)).filter(id -> !id.isBlank());
+  private static final String GCP_PROJECT_ID =
+      REAL_GCP_PROJECT_ID.orElse(GcpSecretManagerEmulator.PROJECT_ID);
 
   private GcpSecretManagerUtil gcpSecretManagerUtil;
   private final List<BLSKeyPair> blsKeyPairs = new ArrayList<>();
@@ -61,7 +66,11 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
 
   @BeforeAll
   void setupGcpResources() throws IOException {
-    gcpSecretManagerUtil = new GcpSecretManagerUtil(GCP_PROJECT_ID);
+    final SecretManagerServiceClient client =
+        REAL_GCP_PROJECT_ID.isPresent()
+            ? SecretManagerServiceClient.create()
+            : GcpSecretManagerEmulator.getInstance().createClient();
+    gcpSecretManagerUtil = new GcpSecretManagerUtil(GCP_PROJECT_ID, client);
     final SecureRandom secureRandom = new SecureRandom();
 
     for (int i = 0; i < 4; i++) {
@@ -91,7 +100,7 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
             .build();
 
     final SignerConfigurationBuilder configBuilder =
-        new SignerConfigurationBuilder()
+        signerConfigBuilder()
             .withUseConfigFile(useConfigFile)
             .withMode("eth2")
             .withGcpParameters(gcpSecretManagerParameters);
@@ -118,12 +127,12 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
   }
 
   @Test
-  @DisabledIfEnvironmentVariable(
-      named = GcpSecretManager.EMULATOR_HOST_ENV,
+  @EnabledIfEnvironmentVariable(
+      named = GCP_PROJECT_ID_ENV,
       matches = ".+",
       disabledReason =
-          "The emulator does not model project authorization, so no error is reported for a "
-              + "non-existing project")
+          "Runs against real Google Cloud only: the emulator does not model project authorization, "
+              + "so no error is reported for a non-existing project")
   void healthCheckErrorCountWhenInvalidCredentialsAreUsed() {
     final boolean useConfigFile = false;
     final GcpSecretManagerParameters invalidGcpParams =
@@ -133,7 +142,7 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
             .build();
 
     final SignerConfigurationBuilder configBuilder =
-        new SignerConfigurationBuilder()
+        signerConfigBuilder()
             .withUseConfigFile(useConfigFile)
             .withMode("eth2")
             .withGcpParameters(invalidGcpParams);
@@ -148,6 +157,17 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
     assertThat(keysLoaded).isEqualTo(0);
     assertThat(errorCount).isEqualTo(1);
     assertThat(getHealthcheckStatusValue(healthCheckJsonBody)).isEqualTo("DOWN");
+  }
+
+  private static SignerConfigurationBuilder signerConfigBuilder() {
+    final SignerConfigurationBuilder builder = new SignerConfigurationBuilder();
+    if (REAL_GCP_PROJECT_ID.isEmpty()) {
+      final GcpSecretManagerEmulator emulator = GcpSecretManagerEmulator.getInstance();
+      builder
+          .withOverriddenCA(emulator.getTlsCertificateDefinition())
+          .withEnvironment(emulator.web3SignerEnvironment());
+    }
+    return builder;
   }
 
   @AfterAll

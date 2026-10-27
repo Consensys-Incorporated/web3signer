@@ -11,6 +11,13 @@
  * specific language governing permissions and limitations under the License.
  */
 
+// Docker images used by the acceptance tests, passed to them as system properties.
+ext {
+  azureKeyVaultEmulatorImage = 'ghcr.io/rokeller/azure-keyvault-emulator:v2.3.0-rc1@sha256:013377a594e9453c967b1762e0a595b311aa58349473322f632e9c1733273eb2'
+  gcpSecretManagerEmulatorImage = 'ghcr.io/blackwell-systems/gcp-secret-manager-emulator-dual:1.9.0@sha256:2c9d3bb0453fdff102b29af00b4abd9b2c6fa466031a9d8e6d93a270ba22a6e2'
+  gcpSecretManagerTlsProxyImage = 'nginx:1.30.6-alpine@sha256:47928bf67eb62a1863cb08d9ecb52d3e704304ba614eaee17884204677702951'
+}
+
 // ./gradlew dependencyUpdates --no-parallel` to report outdated dependencies
 dependencyManagement {
   imports {

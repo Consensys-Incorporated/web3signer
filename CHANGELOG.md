@@ -4,13 +4,14 @@
 ### Security
 
 ### Features Added
+- The `GCP_SECRET_MANAGER_ENDPOINT` environment variable overrides the `host:port` Web3Signer uses to reach GCP Secret Manager when bulk loading keys.
 
 ### Bugs Fixed
 
 ### Breaking Changes
 
 ### CI/Build Enhancements
-- GCP Secret Manager acceptance tests run again in CI, against the offline [gcp-secret-manager-emulator](https://github.com/blackwell-systems/gcp-secret-manager-emulator) instead of real Google Cloud.
+- GCP Secret Manager acceptance tests run again in CI, against a Testcontainers instance of the offline [gcp-secret-manager-emulator](https://github.com/blackwell-systems/gcp-secret-manager-emulator) instead of real Google Cloud.
 
 ---
 ## 26.10.2

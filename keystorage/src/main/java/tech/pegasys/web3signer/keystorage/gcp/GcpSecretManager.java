@@ -24,8 +24,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 
-import com.google.api.gax.core.NoCredentialsProvider;
-import com.google.api.gax.grpc.InstantiatingGrpcChannelProvider;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionRequest;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionResponse;
 import com.google.cloud.secretmanager.v1.ListSecretsRequest;
@@ -35,17 +33,16 @@ import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
 import com.google.cloud.secretmanager.v1.SecretManagerServiceSettings;
 import com.google.cloud.secretmanager.v1.SecretPayload;
 import com.google.protobuf.ByteString;
-import io.grpc.ManagedChannelBuilder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 public class GcpSecretManager implements Closeable {
 
   /**
-   * Environment variable holding the {@code host:port} of a Secret Manager emulator to use instead
-   * of Google Cloud. Intended for testing only.
+   * Environment variable holding a {@code host:port} to reach Secret Manager at instead of its
+   * default Google Cloud endpoint. The client still uses TLS and application default credentials.
    */
-  public static final String EMULATOR_HOST_ENV = "GCP_EMULATOR_HOST";
+  public static final String ENDPOINT_ENV = "GCP_SECRET_MANAGER_ENDPOINT";
 
   private static final Logger LOG = LogManager.getLogger();
   private final SecretManagerServiceClient secretManagerServiceClient;
@@ -54,36 +51,16 @@ public class GcpSecretManager implements Closeable {
     secretManagerServiceClient = createClient();
   }
 
-  /**
-   * Creates a Secret Manager client for Google Cloud or, when {@value #EMULATOR_HOST_ENV} is set,
-   * for the emulator at that {@code host:port}, which is connected to over plaintext gRPC without
-   * credentials.
-   */
-  public static SecretManagerServiceClient createClient() throws IOException {
-    final Optional<String> emulatorHost = emulatorHost();
-    if (emulatorHost.isEmpty()) {
-      return SecretManagerServiceClient.create();
-    }
-
-    LOG.warn(
-        "Using GCP Secret Manager emulator at {} from {} without TLS or credentials",
-        emulatorHost.get(),
-        EMULATOR_HOST_ENV);
-    final SecretManagerServiceSettings settings =
-        SecretManagerServiceSettings.newBuilder()
-            .setCredentialsProvider(NoCredentialsProvider.create())
-            .setTransportChannelProvider(
-                InstantiatingGrpcChannelProvider.newBuilder()
-                    .setEndpoint(emulatorHost.get())
-                    .setChannelConfigurator(ManagedChannelBuilder::usePlaintext)
-                    .build())
-            .build();
-    return SecretManagerServiceClient.create(settings);
-  }
-
-  /** The emulator {@code host:port} from {@value #EMULATOR_HOST_ENV}, if set and not blank. */
-  private static Optional<String> emulatorHost() {
-    return Optional.ofNullable(System.getenv(EMULATOR_HOST_ENV)).filter(host -> !host.isBlank());
+  private static SecretManagerServiceClient createClient() throws IOException {
+    final SecretManagerServiceSettings.Builder settings = SecretManagerServiceSettings.newBuilder();
+    Optional.ofNullable(System.getenv(ENDPOINT_ENV))
+        .filter(endpoint -> !endpoint.isBlank())
+        .ifPresent(
+            endpoint -> {
+              LOG.info("Using GCP Secret Manager endpoint {} from {}", endpoint, ENDPOINT_ENV);
+              settings.setEndpoint(endpoint);
+            });
+    return SecretManagerServiceClient.create(settings.build());
   }
 
   @Override

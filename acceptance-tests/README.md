@@ -5,5 +5,28 @@ Following instructions are required to setup environment for running acceptance 
 ### Azure Key Vault
 
 All Azure Key Vault acceptance tests run automatically against a local Testcontainers instance of
-the image pinned by `azureKeyVaultEmulatorImage` in the root `gradle.properties`, requiring no
-manual setup, credentials, or Azure subscription.
+the image pinned by `azureKeyVaultEmulatorImage` in `gradle/versions.gradle`, requiring no manual
+setup, credentials, or Azure subscription.
+
+### GCP Secret Manager
+
+The GCP Secret Manager acceptance tests run automatically against a local Testcontainers instance of
+[gcp-secret-manager-emulator](https://github.com/blackwell-systems/gcp-secret-manager-emulator),
+pinned by `gcpSecretManagerEmulatorImage` in `gradle/versions.gradle`, requiring no manual
+setup, credentials, or GCP project. Web3Signer reaches the emulator through an nginx container
+(`gcpSecretManagerTlsProxyImage`) terminating TLS, configured only with the
+`GCP_SECRET_MANAGER_ENDPOINT` override and a throwaway service-account key.
+
+To run them against real Google Cloud instead, set `GCP_PROJECT_ID` to a project that allows
+creating and deleting secrets, has the Secret Manager API enabled, and is reachable with application
+default credentials, for example:
+
+```bash
+gcloud auth application-default login
+export GCP_PROJECT_ID=<your-gcp-project-id>
+./gradlew :acceptance-tests:acceptanceTest --tests '*GcpSecretManagerAcceptanceTest*'
+```
+
+The tests create secrets named `signers-gcp-integration-<uuid>...` and delete them afterwards.
+`healthCheckErrorCountWhenInvalidCredentialsAreUsed` only runs against real Google Cloud, as the
+emulator does not model project authorization.

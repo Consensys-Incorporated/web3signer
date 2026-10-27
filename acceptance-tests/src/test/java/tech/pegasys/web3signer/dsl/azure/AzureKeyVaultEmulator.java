@@ -70,7 +70,7 @@ public final class AzureKeyVaultEmulator {
 
   private static final Logger LOG = LogManager.getLogger();
 
-  // Automatically set by the gradle acceptanceTest task from gradle.properties'
+  // Automatically set by the gradle acceptanceTest task from gradle/versions.gradle's
   // azureKeyVaultEmulatorImage; a single property covering registry/repo/tag makes it a one-line
   // change to migrate to an upstream image if/when our changes are incorporated there.
   private static final DockerImageName IMAGE = dockerImageName();
