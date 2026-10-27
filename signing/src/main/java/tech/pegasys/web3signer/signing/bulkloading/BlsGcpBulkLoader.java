@@ -32,8 +32,7 @@ public class BlsGcpBulkLoader {
   private static final Logger LOG = LogManager.getLogger();
 
   public MappedResults<ArtifactSigner> load(final GcpSecretManagerParameters parameters) {
-    try (final GcpSecretManager gcpSecretManager =
-        new GcpSecretManager(parameters.getEmulatorHost())) {
+    try (final GcpSecretManager gcpSecretManager = new GcpSecretManager()) {
       return gcpSecretManager.mapSecrets(
           parameters.getProjectId(),
           parameters.getFilter(),

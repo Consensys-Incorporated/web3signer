@@ -23,6 +23,7 @@ import static tech.pegasys.web3signer.dsl.utils.HealthCheckResultUtil.getHealthc
 import tech.pegasys.teku.bls.BLSKeyPair;
 import tech.pegasys.web3signer.GcpSecretManagerUtil;
 import tech.pegasys.web3signer.dsl.signer.SignerConfigurationBuilder;
+import tech.pegasys.web3signer.keystorage.gcp.GcpSecretManager;
 import tech.pegasys.web3signer.signing.KeyType;
 import tech.pegasys.web3signer.signing.config.GcpSecretManagerParameters;
 import tech.pegasys.web3signer.signing.config.GcpSecretManagerParametersBuilder;
@@ -32,7 +33,6 @@ import java.io.IOException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 import io.restassured.http.ContentType;
 import org.apache.logging.log4j.LogManager;
@@ -54,10 +54,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
   private static final Logger LOG = LogManager.getLogger();
   private static final String GCP_PROJECT_ID = System.getenv("GCP_PROJECT_ID");
-  // host:port of a GCP Secret Manager emulator to run against instead of Google Cloud
-  private static final String EMULATOR_HOST_ENV = "GCP_EMULATOR_HOST";
-  private static final Optional<String> EMULATOR_HOST =
-      Optional.ofNullable(System.getenv(EMULATOR_HOST_ENV)).filter(host -> !host.isBlank());
 
   private GcpSecretManagerUtil gcpSecretManagerUtil;
   private final List<BLSKeyPair> blsKeyPairs = new ArrayList<>();
@@ -65,7 +61,7 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
 
   @BeforeAll
   void setupGcpResources() throws IOException {
-    gcpSecretManagerUtil = new GcpSecretManagerUtil(GCP_PROJECT_ID, EMULATOR_HOST);
+    gcpSecretManagerUtil = new GcpSecretManagerUtil(GCP_PROJECT_ID);
     final SecureRandom secureRandom = new SecureRandom();
 
     for (int i = 0; i < 4; i++) {
@@ -92,7 +88,6 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
             // substring of the resource name, while the emulator matches it as a prefix of the
             // secret id, so scope it with the unique prefix of this run's secrets.
             .withFilter("name:" + gcpSecretManagerUtil.getSecretsManagerPrefix() + "Secret")
-            .withEmulatorHost(EMULATOR_HOST)
             .build();
 
     final SignerConfigurationBuilder configBuilder =
@@ -124,7 +119,7 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
 
   @Test
   @DisabledIfEnvironmentVariable(
-      named = EMULATOR_HOST_ENV,
+      named = GcpSecretManager.EMULATOR_HOST_ENV,
       matches = ".+",
       disabledReason =
           "The emulator does not model project authorization, so no error is reported for a "

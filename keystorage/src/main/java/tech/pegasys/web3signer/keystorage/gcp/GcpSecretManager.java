@@ -41,29 +41,34 @@ import org.apache.logging.log4j.Logger;
 
 public class GcpSecretManager implements Closeable {
 
+  /**
+   * Environment variable holding the {@code host:port} of a Secret Manager emulator to use instead
+   * of Google Cloud. Intended for testing only.
+   */
+  public static final String EMULATOR_HOST_ENV = "GCP_EMULATOR_HOST";
+
   private static final Logger LOG = LogManager.getLogger();
   private final SecretManagerServiceClient secretManagerServiceClient;
 
-  /**
-   * @param emulatorHost {@code host:port} of a Secret Manager emulator to use instead of Google
-   *     Cloud. Intended for testing only.
-   */
-  public GcpSecretManager(final Optional<String> emulatorHost) throws IOException {
-    secretManagerServiceClient = createClient(emulatorHost);
+  public GcpSecretManager() throws IOException {
+    secretManagerServiceClient = createClient();
   }
 
   /**
-   * Creates a Secret Manager client for Google Cloud, or for the emulator at the given {@code
-   * host:port}, which is connected to over plaintext gRPC without credentials.
+   * Creates a Secret Manager client for Google Cloud or, when {@value #EMULATOR_HOST_ENV} is set,
+   * for the emulator at that {@code host:port}, which is connected to over plaintext gRPC without
+   * credentials.
    */
-  public static SecretManagerServiceClient createClient(final Optional<String> emulatorHost)
-      throws IOException {
+  public static SecretManagerServiceClient createClient() throws IOException {
+    final Optional<String> emulatorHost = emulatorHost();
     if (emulatorHost.isEmpty()) {
       return SecretManagerServiceClient.create();
     }
 
     LOG.warn(
-        "Using GCP Secret Manager emulator at {} without TLS or credentials", emulatorHost.get());
+        "Using GCP Secret Manager emulator at {} from {} without TLS or credentials",
+        emulatorHost.get(),
+        EMULATOR_HOST_ENV);
     final SecretManagerServiceSettings settings =
         SecretManagerServiceSettings.newBuilder()
             .setCredentialsProvider(NoCredentialsProvider.create())
@@ -74,6 +79,11 @@ public class GcpSecretManager implements Closeable {
                     .build())
             .build();
     return SecretManagerServiceClient.create(settings);
+  }
+
+  /** The emulator {@code host:port} from {@value #EMULATOR_HOST_ENV}, if set and not blank. */
+  private static Optional<String> emulatorHost() {
+    return Optional.ofNullable(System.getenv(EMULATOR_HOST_ENV)).filter(host -> !host.isBlank());
   }
 
   @Override

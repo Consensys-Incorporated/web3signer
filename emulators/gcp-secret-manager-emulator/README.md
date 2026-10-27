@@ -23,10 +23,10 @@ export GCP_PROJECT_ID=web3signer-ci
 export GCP_EMULATOR_HOST=localhost:9090
 ```
 
-`GCP_EMULATOR_HOST` is only read by the acceptance test, which passes it to the Web3Signer under
-test as `--Xgcp-override-emulator-host`. That experimental option makes Web3Signer connect to the
-emulator over plaintext gRPC without credentials, instead of Google Cloud. Leave the variable unset
-to talk to real GCP.
+When `GCP_EMULATOR_HOST` is set, Web3Signer's GCP Secret Manager client connects to the emulator at
+that `host:port` over plaintext gRPC without credentials, instead of Google Cloud. Both the
+acceptance test, which creates the secrets, and the Web3Signer process it starts, which inherits the
+test's environment, read it. Leave the variable unset to talk to real GCP.
 
 To import above in IntelliJ IDEA Run configurations:
 ```

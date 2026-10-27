@@ -22,7 +22,6 @@ public class PicoCliGcpSecretManagerParameters implements GcpSecretManagerParame
   public static final String GCP_SECRETS_ENABLED_OPTION = "--gcp-secrets-enabled";
   public static final String GCP_SECRETS_FILTER_OPTION = "--gcp-secrets-filter";
   public static final String GCP_PROJECT_ID_OPTION = "--gcp-project-id";
-  public static final String GCP_EMULATOR_HOST_OVERRIDE_OPTION = "--Xgcp-override-emulator-host";
 
   @Option(
       names = GCP_SECRETS_ENABLED_OPTION,
@@ -48,15 +47,6 @@ public class PicoCliGcpSecretManagerParameters implements GcpSecretManagerParame
               + "specified project are loaded into the application.")
   private Optional<String> filter = Optional.empty();
 
-  @Option(
-      names = GCP_EMULATOR_HOST_OVERRIDE_OPTION,
-      description =
-          "Use the GCP Secret Manager emulator at the given host:port instead of Google Cloud,"
-              + " over plaintext gRPC and without credentials.",
-      paramLabel = "<HOST:PORT>",
-      hidden = true)
-  private Optional<String> emulatorHost = Optional.empty();
-
   @Override
   public boolean isEnabled() {
     return gcpSecretsEnabledOption;
@@ -70,10 +60,5 @@ public class PicoCliGcpSecretManagerParameters implements GcpSecretManagerParame
   @Override
   public Optional<String> getFilter() {
     return filter;
-  }
-
-  @Override
-  public Optional<String> getEmulatorHost() {
-    return emulatorHost;
   }
 }
