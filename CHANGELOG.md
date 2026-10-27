@@ -8,6 +8,7 @@
 ### Breaking Changes
 
 ### CI/Build Enhancements
+- GCP Secret Manager acceptance tests run again in CI, against the offline [gcp-secret-manager-emulator](https://github.com/blackwell-systems/gcp-secret-manager-emulator) instead of real Google Cloud.
 - Trivy scans the published Docker images nightly, for both variants of the `develop` and `latest` tags, and publishes HIGH/CRITICAL findings to GitHub code scanning under one category per image. Findings that have no upstream fix are reported too, and the run fails on findings like dependency-check; accepted findings go in `gradle/trivyignore.txt`. [#1270][PR_1270]
 
 ### Security

@@ -1,0 +1,7 @@
+services:
+  # see https://github.com/blackwell-systems/gcp-secret-manager-emulator
+  gcp-secret-manager-emulator:
+    image: ghcr.io/blackwell-systems/gcp-secret-manager-emulator-dual:1.9.0
+    ports:
+      - "127.0.0.1:9090:9090"  # gRPC, used by the GCP Secret Manager client
+      - "127.0.0.1:8080:8080"  # REST, for poking at the emulator with curl

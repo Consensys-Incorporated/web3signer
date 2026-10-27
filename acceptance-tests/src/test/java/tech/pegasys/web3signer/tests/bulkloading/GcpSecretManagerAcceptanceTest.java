@@ -32,20 +32,20 @@ import java.io.IOException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import io.restassured.http.ContentType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-@Disabled("Google Secrets Manager acceptance test temporarily disabled")
 @EnabledIfEnvironmentVariable(
     named = "GCP_PROJECT_ID",
     matches = ".+",
@@ -54,6 +54,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
   private static final Logger LOG = LogManager.getLogger();
   private static final String GCP_PROJECT_ID = System.getenv("GCP_PROJECT_ID");
+  // host:port of a GCP Secret Manager emulator to run against instead of Google Cloud
+  private static final String EMULATOR_HOST_ENV = "GCP_EMULATOR_HOST";
+  private static final Optional<String> EMULATOR_HOST =
+      Optional.ofNullable(System.getenv(EMULATOR_HOST_ENV)).filter(host -> !host.isBlank());
 
   private GcpSecretManagerUtil gcpSecretManagerUtil;
   private final List<BLSKeyPair> blsKeyPairs = new ArrayList<>();
@@ -61,14 +65,16 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
 
   @BeforeAll
   void setupGcpResources() throws IOException {
-    gcpSecretManagerUtil = new GcpSecretManagerUtil(GCP_PROJECT_ID);
+    gcpSecretManagerUtil = new GcpSecretManagerUtil(GCP_PROJECT_ID, EMULATOR_HOST);
     final SecureRandom secureRandom = new SecureRandom();
 
     for (int i = 0; i < 4; i++) {
       final BLSKeyPair blsKeyPair = BLSKeyPair.random(secureRandom);
-      String secretName =
+      // Only the first two secrets match the filter used by the tests below.
+      final String secretName =
           gcpSecretManagerUtil.createSecret(
-              "Secret%d-%s".formatted(i, blsKeyPair.getPublicKey().toString()),
+              "%s%d-%s"
+                  .formatted(i < 2 ? "Secret" : "Ignored", i, blsKeyPair.getPublicKey().toString()),
               blsKeyPair.getSecretKey().toBytes().toHexString());
       blsKeyPairs.add(blsKeyPair);
       secretNames.add(secretName);
@@ -82,7 +88,11 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
         GcpSecretManagerParametersBuilder.aGcpParameters()
             .withEnabled(true)
             .withProjectId(GCP_PROJECT_ID)
-            .withFilter("name:Secret0 OR name:Secret1")
+            // The filter has to select only this run's "Secret" secrets. Real GCP matches it as a
+            // substring of the resource name, while the emulator matches it as a prefix of the
+            // secret id, so scope it with the unique prefix of this run's secrets.
+            .withFilter("name:" + gcpSecretManagerUtil.getSecretsManagerPrefix() + "Secret")
+            .withEmulatorHost(EMULATOR_HOST)
             .build();
 
     final SignerConfigurationBuilder configBuilder =
@@ -113,6 +123,12 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
   }
 
   @Test
+  @DisabledIfEnvironmentVariable(
+      named = EMULATOR_HOST_ENV,
+      matches = ".+",
+      disabledReason =
+          "The emulator does not model project authorization, so no error is reported for a "
+              + "non-existing project")
   void healthCheckErrorCountWhenInvalidCredentialsAreUsed() {
     final boolean useConfigFile = false;
     final GcpSecretManagerParameters invalidGcpParams =

@@ -18,6 +18,7 @@ public final class GcpSecretManagerParametersBuilder {
   private boolean enabled;
   private String projectId;
   private Optional<String> filter = Optional.empty();
+  private Optional<String> emulatorHost = Optional.empty();
 
   private GcpSecretManagerParametersBuilder() {}
 
@@ -40,20 +41,27 @@ public final class GcpSecretManagerParametersBuilder {
     return this;
   }
 
+  public GcpSecretManagerParametersBuilder withEmulatorHost(final Optional<String> emulatorHost) {
+    this.emulatorHost = emulatorHost;
+    return this;
+  }
+
   public GcpSecretManagerParameters build() {
-    return new TestGcpSecretManagerParameters(enabled, projectId, filter);
+    return new TestGcpSecretManagerParameters(enabled, projectId, filter, emulatorHost);
   }
 
   private static class TestGcpSecretManagerParameters implements GcpSecretManagerParameters {
     private final boolean enabled;
     private final String projectId;
     private final Optional<String> filter;
+    private final Optional<String> emulatorHost;
 
     private TestGcpSecretManagerParameters(
-        boolean enabled, String projectId, Optional<String> filter) {
+        boolean enabled, String projectId, Optional<String> filter, Optional<String> emulatorHost) {
       this.enabled = enabled;
       this.projectId = projectId;
       this.filter = filter;
+      this.emulatorHost = emulatorHost;
     }
 
     @Override
@@ -69,6 +77,11 @@ public final class GcpSecretManagerParametersBuilder {
     @Override
     public Optional<String> getFilter() {
       return filter;
+    }
+
+    @Override
+    public Optional<String> getEmulatorHost() {
+      return emulatorHost;
     }
   }
 }

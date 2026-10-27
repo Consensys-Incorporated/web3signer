@@ -24,14 +24,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 
+import com.google.api.gax.core.NoCredentialsProvider;
+import com.google.api.gax.grpc.InstantiatingGrpcChannelProvider;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionRequest;
 import com.google.cloud.secretmanager.v1.AccessSecretVersionResponse;
 import com.google.cloud.secretmanager.v1.ListSecretsRequest;
 import com.google.cloud.secretmanager.v1.ProjectName;
 import com.google.cloud.secretmanager.v1.Secret;
 import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
+import com.google.cloud.secretmanager.v1.SecretManagerServiceSettings;
 import com.google.cloud.secretmanager.v1.SecretPayload;
 import com.google.protobuf.ByteString;
+import io.grpc.ManagedChannelBuilder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -40,8 +44,36 @@ public class GcpSecretManager implements Closeable {
   private static final Logger LOG = LogManager.getLogger();
   private final SecretManagerServiceClient secretManagerServiceClient;
 
-  public GcpSecretManager() throws IOException {
-    secretManagerServiceClient = SecretManagerServiceClient.create();
+  /**
+   * @param emulatorHost {@code host:port} of a Secret Manager emulator to use instead of Google
+   *     Cloud. Intended for testing only.
+   */
+  public GcpSecretManager(final Optional<String> emulatorHost) throws IOException {
+    secretManagerServiceClient = createClient(emulatorHost);
+  }
+
+  /**
+   * Creates a Secret Manager client for Google Cloud, or for the emulator at the given {@code
+   * host:port}, which is connected to over plaintext gRPC without credentials.
+   */
+  public static SecretManagerServiceClient createClient(final Optional<String> emulatorHost)
+      throws IOException {
+    if (emulatorHost.isEmpty()) {
+      return SecretManagerServiceClient.create();
+    }
+
+    LOG.warn(
+        "Using GCP Secret Manager emulator at {} without TLS or credentials", emulatorHost.get());
+    final SecretManagerServiceSettings settings =
+        SecretManagerServiceSettings.newBuilder()
+            .setCredentialsProvider(NoCredentialsProvider.create())
+            .setTransportChannelProvider(
+                InstantiatingGrpcChannelProvider.newBuilder()
+                    .setEndpoint(emulatorHost.get())
+                    .setChannelConfigurator(ManagedChannelBuilder::usePlaintext)
+                    .build())
+            .build();
+    return SecretManagerServiceClient.create(settings);
   }
 
   @Override

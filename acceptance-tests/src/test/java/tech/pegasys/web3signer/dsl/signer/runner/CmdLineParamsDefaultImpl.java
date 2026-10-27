@@ -359,6 +359,14 @@ public class CmdLineParamsDefaultImpl implements CmdLineParamsBuilder {
               + "="
               + gcpSecretManagerParameters.getFilter().get());
     }
+    gcpSecretManagerParameters
+        .getEmulatorHost()
+        .ifPresent(
+            host ->
+                params.add(
+                    PicoCliGcpSecretManagerParameters.GCP_EMULATOR_HOST_OVERRIDE_OPTION
+                        + "="
+                        + host));
     return params;
   }
 

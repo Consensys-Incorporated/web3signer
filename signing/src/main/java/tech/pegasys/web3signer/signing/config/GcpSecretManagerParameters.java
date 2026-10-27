@@ -22,4 +22,8 @@ public interface GcpSecretManagerParameters {
   default Optional<String> getFilter() {
     return Optional.empty();
   }
+
+  default Optional<String> getEmulatorHost() {
+    return Optional.empty();
+  }
 }

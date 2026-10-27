@@ -12,7 +12,10 @@
  */
 package tech.pegasys.web3signer;
 
+import tech.pegasys.web3signer.keystorage.gcp.GcpSecretManager;
+
 import java.io.IOException;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.google.cloud.secretmanager.v1.AddSecretVersionRequest;
@@ -31,10 +34,11 @@ public class GcpSecretManagerUtil {
   private final String secretNamePrefix;
   private final String projectId;
 
-  public GcpSecretManagerUtil(final String projectId) throws IOException {
+  public GcpSecretManagerUtil(final String projectId, final Optional<String> emulatorHost)
+      throws IOException {
     this.secretNamePrefix = SECRET_MANAGER_PREFIX + UUID.randomUUID();
     this.projectId = projectId;
-    this.secretManagerServiceClient = SecretManagerServiceClient.create();
+    this.secretManagerServiceClient = GcpSecretManager.createClient(emulatorHost);
   }
 
   public String getSecretsManagerPrefix() {
