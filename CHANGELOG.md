@@ -1,20 +1,14 @@
 # Changelog
 
-## Unreleased
-### Features Added
-
-### Bugs Fixed
-
-### Breaking Changes
-
-### CI/Build Enhancements
-- Trivy scans the published Docker images nightly, for both variants of the `develop` and `latest` tags, and publishes HIGH/CRITICAL findings to GitHub code scanning under one category per image. Findings that have no upstream fix are reported too, and the run fails on findings like dependency-check; accepted findings go in `gradle/trivyignore.txt`. [#1270][PR_1270]
-
+## 26.10.2
 ### Security
 - Docker images now ship Eclipse Temurin JRE 25.0.5+8 to mitigate the eMudhra CA compromise ([adoptium/temurin#317](https://github.com/adoptium/temurin/issues/317)); base image digests re-pinned. [#1267][PR_1267]
 - Vert.x upgraded to 5.2.2 and Netty to 4.2.19.Final to fix CVE-2026-102479, CVE-2026-102467 and CVE-2026-102476. [#1268][PR_1268]
 - Jackson 3 (`tools.jackson`) upgraded to 3.1.7 to fix CVE-2026-91777. [#1272][PR_1272]
 - The default (non-distroless) Docker image no longer ships Pebble, the unused service manager bundled with the Ubuntu base image, removing its Go stdlib CVE-2026-78667, CVE-2026-78669, CVE-2026-97031 and CVE-2026-111943. [#1273][PR_1273]
+
+### CI/Build Enhancements
+- Trivy scans the published Docker images nightly, for both variants of the `develop` and `latest` tags, and publishes HIGH/CRITICAL findings to GitHub code scanning under one category per image. Findings that have no upstream fix are reported too, and the run fails on findings like dependency-check; accepted findings go in `gradle/trivyignore.txt`. [#1270][PR_1270]
 
 [PR_1267]: https://github.com/Consensys-Incorporated/web3signer/pull/1267
 [PR_1268]: https://github.com/Consensys-Incorporated/web3signer/pull/1268
@@ -27,30 +21,14 @@
 ### Features Added
 - Unscheduled the Gloas (Glamsterdam) fork for the Hoodi network, which was previously scheduled at epoch 132352 (26 Oct 2026 17:42:48 UTC). Teku libraries updated to 26.10.2. Required update for the Hoodi network.
 
-### Bugs Fixed
-
-### Breaking Changes
-
-### CI/Build Enhancements
-
-### Security
-
-
 ---
-## 26.10.0
+## 26.10.0 (Deprecated)
 ### Features Added
 - Teku libraries updated to 26.10.1, which schedules the Gloas (Glamsterdam) fork for the Hoodi network at epoch 132352 (26 Oct 2026 17:42:48 UTC). Required update for the Hoodi Glamsterdam fork.
-
-### Bugs Fixed
-
-### Breaking Changes
 
 ### CI/Build Enhancements
 - Gradle wrapper upgraded to 9.8.1 and Gradle build plugins updated. [#1257][PR_1257]
 - Project version calculation needs the `git` executable on `PATH`; without it the version is `UNKNOWN+develop`. [#1257][PR_1257]
-
-### Security
-
 
 ---
 ## 26.9.0
