@@ -1,0 +1,6 @@
+services:
+  # see https://github.com/ministackorg/ministack
+  ministack:
+    image: ministackorg/ministack:1.5.33
+    ports:
+      - "127.0.0.1:4566:4566"  # AWS services gateway (Secrets Manager, KMS)

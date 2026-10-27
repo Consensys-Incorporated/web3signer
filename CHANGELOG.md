@@ -8,6 +8,7 @@
 ### Breaking Changes
 
 ### CI/Build Enhancements
+- AWS tests run in CI against [MiniStack](https://github.com/ministackorg/ministack), which replaces LocalStack.
 - Trivy scans the published Docker images nightly, for both variants of the `develop` and `latest` tags, and publishes HIGH/CRITICAL findings to GitHub code scanning under one category per image. Findings that have no upstream fix are reported too, and the run fails on findings like dependency-check; accepted findings go in `gradle/trivyignore.txt`. [#1270][PR_1270]
 
 ### Security
