@@ -10,7 +10,7 @@
 ### Breaking Changes
 
 ### CI/Build Enhancements
-- Compiler warnings fail the build again. The `subprojects` compiler configuration replaced the root compiler arguments, silently dropping `-Werror` and the `-Xlint` checks; it now appends to them, and the existing warnings are fixed. [#1283][PR_1283]
+- Compiler warnings fail the build again. [#1283][PR_1283]
 
 [PR_1283]: https://github.com/Consensys-Incorporated/web3signer/pull/1283
 
