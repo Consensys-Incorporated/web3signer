@@ -65,6 +65,10 @@ public class ValueTransferAcceptanceTest extends Eth1RpcAcceptanceTestBase {
 
   @Test
   public void valueTransferFrontier() {
+    transferFrontier();
+  }
+
+  private void transferFrontier() {
     final BigInteger transferAmountWei = Convert.toWei("1.75", Unit.ETHER).toBigIntegerExact();
     final BigInteger startBalance = besu.accounts().balance(RECIPIENT);
     final Transaction frontierTransaction =
@@ -224,7 +228,7 @@ public class ValueTransferAcceptanceTest extends Eth1RpcAcceptanceTestBase {
 
   @Test
   public void valueTransferNonceTooLow() {
-    valueTransferFrontier(); // call this test to increment the nonce
+    transferFrontier(); // increments the nonce
     final BigInteger transferAmountWei = Convert.toWei("15.5", Unit.ETHER).toBigIntegerExact();
     final Transaction transaction =
         Transaction.createEtherTransaction(

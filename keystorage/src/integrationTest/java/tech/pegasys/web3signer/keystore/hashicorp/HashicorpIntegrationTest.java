@@ -34,6 +34,7 @@ import javax.net.ssl.HttpsURLConnection;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockserver.configuration.Configuration;
 import org.mockserver.integration.ClientAndServer;
 import org.mockserver.logging.MockServerLogger;
 import org.mockserver.socket.tls.KeyStoreFactory;
@@ -86,7 +87,8 @@ class HashicorpIntegrationTest {
   @Test
   void hashicorpVaultReturnsEncryptionKeyOverTls() {
 
-    KeyStoreFactory keyStoreFactory = new KeyStoreFactory(new MockServerLogger());
+    KeyStoreFactory keyStoreFactory =
+        new KeyStoreFactory(Configuration.configuration(), new MockServerLogger());
     keyStoreFactory.loadOrCreateKeyStore();
     HttpsURLConnection.setDefaultSSLSocketFactory(keyStoreFactory.sslContext().getSocketFactory());
 

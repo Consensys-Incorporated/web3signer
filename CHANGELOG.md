@@ -10,6 +10,7 @@
 ### Breaking Changes
 
 ### CI/Build Enhancements
+- Compiler warnings fail the build again. The `subprojects` compiler configuration replaced the root compiler arguments, silently dropping `-Werror` and the `-Xlint` checks; it now appends to them, and the existing warnings are fixed.
 
 
 ---

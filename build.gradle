@@ -275,7 +275,7 @@ subprojects {
   tasks.withType(JavaCompile).configureEach {
     options.fork = true
     options.incremental = true
-    options.compilerArgs = ['-Xlint:deprecation']
+    options.compilerArgs += ['-Xlint:deprecation']
   }
 
   sourceSets {

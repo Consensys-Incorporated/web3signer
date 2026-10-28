@@ -64,12 +64,12 @@ public class PruningIntegrationTest extends IntegrationTestBase {
         allAttestations.subList(expectedLowestPopulatedEpoch, size);
     final List<SignedAttestation> attestationsInDatabase = fetchAttestations(1);
     assertThat(attestationsInDatabase)
-        .usingFieldByFieldElementComparator()
+        .usingRecursiveFieldByFieldElementComparator()
         .isEqualTo(expectedAttestations);
 
     final List<SignedBlock> expectedBlocks = allBlocks.subList(expectedLowestPopulatedSlot, size);
     final List<SignedBlock> blocks = fetchBlocks(1);
-    assertThat(blocks).usingFieldByFieldElementComparator().isEqualTo(expectedBlocks);
+    assertThat(blocks).usingRecursiveFieldByFieldElementComparator().isEqualTo(expectedBlocks);
 
     assertThat(getWatermark(1))
         .usingRecursiveComparison()
