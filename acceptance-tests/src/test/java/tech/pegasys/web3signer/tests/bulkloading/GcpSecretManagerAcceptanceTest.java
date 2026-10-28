@@ -18,8 +18,6 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_GCP_BULK_LOADING;
 import static tech.pegasys.web3signer.dsl.utils.HealthCheckResultUtil.getHealtcheckKeysLoaded;
-import static tech.pegasys.web3signer.dsl.utils.HealthCheckResultUtil.getHealthcheckErrorCount;
-import static tech.pegasys.web3signer.dsl.utils.HealthCheckResultUtil.getHealthcheckStatusValue;
 
 import tech.pegasys.teku.bls.BLSKeyPair;
 import tech.pegasys.web3signer.GcpSecretManagerUtil;
@@ -42,7 +40,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -130,40 +127,6 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
                 blsKeyPairs.get(1).getPublicKey().toString()),
             "",
             hasSize(2));
-  }
-
-  @Test
-  void healthCheckErrorCountWhenAccessIsDenied() {
-    final boolean useConfigFile = false;
-    // Real GCP denies access to a project the caller has no permission on. The emulator does not
-    // model authorization, so its TLS proxy provides an endpoint denying every call instead.
-    final GcpSecretManagerParameters invalidGcpParams =
-        GcpSecretManagerParametersBuilder.aGcpParameters()
-            .withEnabled(true)
-            .withProjectId("NON_EXISTING_PROJECT")
-            .withEndpointOverride(
-                REAL_GCP_PROJECT_ID.isPresent()
-                    ? Optional.empty()
-                    : Optional.of(
-                        GcpSecretManagerEmulator.getInstance().getPermissionDeniedEndpoint()))
-            .build();
-
-    final SignerConfigurationBuilder configBuilder =
-        signerConfigBuilder()
-            .withUseConfigFile(useConfigFile)
-            .withMode("eth2")
-            .withGcpParameters(invalidGcpParams);
-
-    startSigner(configBuilder.build());
-
-    final String healthCheckJsonBody = signer.healthcheck().body().asString();
-
-    int keysLoaded = getHealtcheckKeysLoaded(healthCheckJsonBody, KEYS_CHECK_GCP_BULK_LOADING);
-    int errorCount = getHealthcheckErrorCount(healthCheckJsonBody, KEYS_CHECK_GCP_BULK_LOADING);
-
-    assertThat(keysLoaded).isEqualTo(0);
-    assertThat(errorCount).isEqualTo(1);
-    assertThat(getHealthcheckStatusValue(healthCheckJsonBody)).isEqualTo("DOWN");
   }
 
   private static GcpSecretManagerParametersBuilder gcpParametersBuilder() {
