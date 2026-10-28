@@ -48,6 +48,7 @@ public enum JsonRpcError {
   INVALID_TRANSACTION_SIGNATURE(-32002, "Invalid signature"),
   INTRINSIC_GAS_EXCEEDS_LIMIT(-32003, "Intrinsic gas exceeds gas limit"),
   TRANSACTION_UPFRONT_COST_EXCEEDS_BALANCE(-32004, "Upfront cost exceeds account balance"),
+  INSUFFICIENT_FUNDS_FOR_TRANSFER(-32004, "Insufficient funds for transfer"),
   EXCEEDS_BLOCK_GAS_LIMIT(-32005, "Transaction gas limit exceeds block gas limit"),
   INCORRECT_NONCE(-32006, "Incorrect nonce"),
   TX_SENDER_NOT_AUTHORIZED(-32007, "Sender account not authorized to send transactions"),
