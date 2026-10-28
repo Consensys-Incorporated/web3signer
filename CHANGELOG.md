@@ -4,7 +4,6 @@
 ### Security
 
 ### Features Added
-- The unstable `eth2` option `--Xgcp-endpoint-override=<HOST:PORT>` overrides the endpoint Web3Signer uses to reach GCP Secret Manager when bulk loading keys.
 
 ### Bugs Fixed
 
