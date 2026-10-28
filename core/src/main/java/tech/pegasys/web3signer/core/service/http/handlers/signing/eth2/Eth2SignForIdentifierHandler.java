@@ -233,16 +233,16 @@ public class Eth2SignForIdentifierHandler implements Handler<RoutingContext> {
   }
 
   private Bytes computeSigningRoot(final Eth2SigningRequestBody body) {
-    switch (body.type()) {
+    return switch (body.type()) {
       case BLOCK -> {
         checkArgument(body.block() != null, "block must be specified");
-        return signingRootUtil.signingRootForSignBlock(
+        yield signingRootUtil.signingRootForSignBlock(
             body.block().asInternalBeaconBlock(eth2Spec), body.forkInfo().asInternalForkInfo());
       }
       case BLOCK_V2 -> {
         checkArgument(body.blockRequest() != null, "beacon_block must be specified");
 
-        return switch (body.blockRequest().getVersion()) {
+        yield switch (body.blockRequest().getVersion()) {
           case PHASE0, ALTAIR ->
               signingRootUtil.signingRootForSignBlock(
                   body.blockRequest().getBeaconBlock().asInternalBeaconBlock(eth2Spec),
@@ -255,41 +255,41 @@ public class Eth2SignForIdentifierHandler implements Handler<RoutingContext> {
       }
       case ATTESTATION -> {
         checkArgument(body.attestation() != null, "attestation must be specified");
-        return signingRootUtil.signingRootForSignAttestationData(
+        yield signingRootUtil.signingRootForSignAttestationData(
             body.attestation().asInternalAttestationData(), body.forkInfo().asInternalForkInfo());
       }
       case AGGREGATE_AND_PROOF, AGGREGATE_AND_PROOF_V2 -> {
         checkArgument(body.aggregateAndProofV2() != null, "aggregateAndProof must be specified");
-        return signingRootUtil.signingRootForSignAggregateAndProof(
+        yield signingRootUtil.signingRootForSignAggregateAndProof(
             body.aggregateAndProofV2().data().asInternalAggregateAndProof(eth2Spec),
             body.forkInfo().asInternalForkInfo());
       }
       case AGGREGATION_SLOT -> {
         checkArgument(body.aggregationSlot() != null, "aggregationSlot must be specified");
-        return signingRootUtil.signingRootForSignAggregationSlot(
+        yield signingRootUtil.signingRootForSignAggregationSlot(
             body.aggregationSlot().getSlot(), body.forkInfo().asInternalForkInfo());
       }
       case RANDAO_REVEAL -> {
         checkArgument(body.randaoReveal() != null, "randaoReveal must be specified");
-        return signingRootUtil.signingRootForRandaoReveal(
+        yield signingRootUtil.signingRootForRandaoReveal(
             body.randaoReveal().getEpoch(), body.forkInfo().asInternalForkInfo());
       }
       case VOLUNTARY_EXIT -> {
         checkArgument(body.voluntaryExit() != null, "voluntaryExit must be specified");
-        return signingRootUtil.signingRootForSignVoluntaryExit(
+        yield signingRootUtil.signingRootForSignVoluntaryExit(
             body.voluntaryExit().asInternalVoluntaryExit(), body.forkInfo().asInternalForkInfo());
       }
       case DEPOSIT -> {
         checkArgument(body.deposit() != null, "deposit must be specified");
         final Bytes32 depositDomain =
             computeDomain(Domain.DEPOSIT, body.deposit().getGenesisForkVersion(), Bytes32.ZERO);
-        return DepositSigningRootUtil.computeSigningRoot(
+        yield DepositSigningRootUtil.computeSigningRoot(
             body.deposit().asInternalDepositMessage(), depositDomain);
       }
       case SYNC_COMMITTEE_MESSAGE -> {
         final SyncCommitteeMessage syncCommitteeMessage = body.syncCommitteeMessage();
         checkArgument(syncCommitteeMessage != null, "SyncCommitteeMessage must be specified");
-        return signingRootFromSyncCommitteeUtils(
+        yield signingRootFromSyncCommitteeUtils(
             syncCommitteeMessage.getSlot(),
             utils ->
                 utils.getSyncCommitteeMessageSigningRoot(
@@ -302,7 +302,7 @@ public class Eth2SignForIdentifierHandler implements Handler<RoutingContext> {
             body.syncAggregatorSelectionData();
         checkArgument(
             syncAggregatorSelectionData != null, "SyncAggregatorSelectionData is required");
-        return signingRootFromSyncCommitteeUtils(
+        yield signingRootFromSyncCommitteeUtils(
             syncAggregatorSelectionData.getSlot(),
             utils ->
                 utils.getSyncAggregatorSelectionDataSigningRoot(
@@ -312,7 +312,7 @@ public class Eth2SignForIdentifierHandler implements Handler<RoutingContext> {
       case SYNC_COMMITTEE_CONTRIBUTION_AND_PROOF -> {
         final ContributionAndProof contributionAndProof = body.contributionAndProof();
         checkArgument(contributionAndProof != null, "ContributionAndProof is required");
-        return signingRootFromSyncCommitteeUtils(
+        yield signingRootFromSyncCommitteeUtils(
             contributionAndProof.contribution.slot,
             utils ->
                 utils.getContributionAndProofSigningRoot(
@@ -322,46 +322,46 @@ public class Eth2SignForIdentifierHandler implements Handler<RoutingContext> {
       case VALIDATOR_REGISTRATION -> {
         final ValidatorRegistration validatorRegistration = body.validatorRegistration();
         checkArgument(validatorRegistration != null, "ValidatorRegistration is required");
-        return signingRootUtil.signingRootForValidatorRegistration(
+        yield signingRootUtil.signingRootForValidatorRegistration(
             validatorRegistration.asInternalValidatorRegistration());
       }
       case EXECUTION_PAYLOAD_BID -> {
         final VersionedRequest<ExecutionPayloadBid> request = body.executionPayloadBid();
         final SpecVersion specVersion = specVersionFor(request, "execution_payload_bid");
-        return signingRootUtil.signingRootForSignExecutionPayloadBid(
+        yield signingRootUtil.signingRootForSignExecutionPayloadBid(
             request.data().asInternalExecutionPayloadBid(specVersion),
             body.forkInfo().asInternalForkInfo());
       }
       case EXECUTION_PAYLOAD_ENVELOPE -> {
         final VersionedRequest<ExecutionPayloadEnvelope> request = body.executionPayloadEnvelope();
         final SpecVersion specVersion = specVersionFor(request, "execution_payload_envelope");
-        return signingRootUtil.signingRootForSignExecutionPayloadEnvelope(
+        yield signingRootUtil.signingRootForSignExecutionPayloadEnvelope(
             request.data().asInternalExecutionPayloadEnvelope(specVersion),
             body.forkInfo().asInternalForkInfo());
       }
       case PAYLOAD_ATTESTATION_MESSAGE -> {
         final VersionedRequest<PayloadAttestationData> request = body.payloadAttestationMessage();
         final SpecVersion specVersion = specVersionFor(request, "payload_attestation_message");
-        return signingRootUtil.signingRootForSignPayloadAttestationData(
+        yield signingRootUtil.signingRootForSignPayloadAttestationData(
             request.data().asInternalPayloadAttestationData(specVersion),
             body.forkInfo().asInternalForkInfo());
       }
       case PROPOSER_PREFERENCES -> {
         final VersionedRequest<ProposerPreferences> request = body.proposerPreferences();
         final SpecVersion specVersion = specVersionFor(request, "proposer_preferences");
-        return signingRootUtil.signingRootForSignProposerPreferences(
+        yield signingRootUtil.signingRootForSignProposerPreferences(
             request.data().asInternalProposerPreferences(specVersion),
             body.forkInfo().asInternalForkInfo());
       }
       case BUILDER_REQUEST_AUTH -> {
         final VersionedRequest<BuilderRequestAuth> request = body.builderRequestAuth();
         specVersionFor(request, "builder_request_auth");
-        return signingRootUtil.signingRootForSignBuilderRequestAuth(
+        yield signingRootUtil.signingRootForSignBuilderRequestAuth(
             request.data().asInternalBuilderRequestAuth());
       }
       default ->
           throw new IllegalStateException("Signing root unimplemented for type " + body.type());
-    }
+    };
   }
 
   /**
