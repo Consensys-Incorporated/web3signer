@@ -34,13 +34,12 @@ class BlsKeystoreBulkLoaderTest {
   private static final BLSKeyPair KEY_PAIR_2 = BLSTestUtil.randomKeyPair(1);
   private static final String KEYSTORE_PASSWORD_1 = "password1";
   private static final String KEYSTORE_PASSWORD_2 = "password2";
-  private final BlsKeystoreBulkLoader loader = new BlsKeystoreBulkLoader();
 
   @Test
   void loadingEmptyKeystoreDirReturnsNoSigners(
       final @TempDir Path keystoreDir, final @TempDir Path passwordDir) {
     MappedResults<ArtifactSigner> result =
-        loader.loadKeystoresUsingPasswordDir(keystoreDir, passwordDir);
+        BlsKeystoreBulkLoader.loadKeystoresUsingPasswordDir(keystoreDir, passwordDir);
     assertThat(result.getValues()).isEmpty();
     assertThat(result.getErrorCount()).isEqualTo(0);
   }
@@ -50,7 +49,7 @@ class BlsKeystoreBulkLoaderTest {
     KeystoreUtil.createKeystore(KEY_PAIR_1, keystoreDir, passwordDir, "password1");
     KeystoreUtil.createKeystore(KEY_PAIR_2, keystoreDir, passwordDir, KEYSTORE_PASSWORD_2);
     final MappedResults<ArtifactSigner> result =
-        loader.loadKeystoresUsingPasswordDir(keystoreDir, passwordDir);
+        BlsKeystoreBulkLoader.loadKeystoresUsingPasswordDir(keystoreDir, passwordDir);
     final Collection<ArtifactSigner> signers = result.getValues();
 
     assertThat(signers).hasSize(2);
@@ -71,7 +70,7 @@ class BlsKeystoreBulkLoaderTest {
     Files.writeString(passwordFile, KEYSTORE_PASSWORD_1);
 
     final MappedResults<ArtifactSigner> result =
-        loader.loadKeystoresUsingPasswordFile(keystoreDir, passwordFile);
+        BlsKeystoreBulkLoader.loadKeystoresUsingPasswordFile(keystoreDir, passwordFile);
     final Collection<ArtifactSigner> signers = result.getValues();
     assertThat(signers).hasSize(2);
     assertThatSignerHasPublicKey(signers, KEY_PAIR_1);
@@ -92,7 +91,7 @@ class BlsKeystoreBulkLoaderTest {
     Files.move(sourcePath, targetPath);
 
     final MappedResults<ArtifactSigner> result =
-        loader.loadKeystoresUsingPasswordDir(keystoreDir, passwordDir);
+        BlsKeystoreBulkLoader.loadKeystoresUsingPasswordDir(keystoreDir, passwordDir);
     final Collection<ArtifactSigner> signers = result.getValues();
     assertThat(signers).hasSize(1);
     assertThatSignerHasPublicKey(signers, KEY_PAIR_2);
@@ -107,7 +106,7 @@ class BlsKeystoreBulkLoaderTest {
     KeystoreUtil.createKeystore(KEY_PAIR_2, keystoreDir, passwordDir, KEYSTORE_PASSWORD_2);
 
     final MappedResults<ArtifactSigner> result =
-        loader.loadKeystoresUsingPasswordDir(keystoreDir, passwordDir);
+        BlsKeystoreBulkLoader.loadKeystoresUsingPasswordDir(keystoreDir, passwordDir);
     final Collection<ArtifactSigner> signers = result.getValues();
     assertThat(signers).hasSize(1);
     assertThatSignerHasPublicKey(signers, KEY_PAIR_2);
@@ -123,7 +122,7 @@ class BlsKeystoreBulkLoaderTest {
     KeystoreUtil.createKeystore(KEY_PAIR_2, keystoreDir, passwordDir, KEYSTORE_PASSWORD_2);
 
     final MappedResults<ArtifactSigner> result =
-        loader.loadKeystoresUsingPasswordDir(keystoreDir, passwordDir);
+        BlsKeystoreBulkLoader.loadKeystoresUsingPasswordDir(keystoreDir, passwordDir);
     final Collection<ArtifactSigner> signers = result.getValues();
     assertThat(signers).hasSize(1);
     assertThatSignerHasPublicKey(signers, KEY_PAIR_2);
@@ -135,7 +134,7 @@ class BlsKeystoreBulkLoaderTest {
   void invalidKeystoreDirectoryReturnsErrorCount(
       final @TempDir Path keystoreDir, final @TempDir Path passwordDir) {
     final MappedResults<ArtifactSigner> result =
-        loader.loadKeystoresUsingPasswordDir(
+        BlsKeystoreBulkLoader.loadKeystoresUsingPasswordDir(
             keystoreDir.resolve("invalidKeystorePath"), passwordDir);
     assertThat(result.getValues()).isEmpty();
     assertThat(result.getErrorCount()).isEqualTo(1);
@@ -148,7 +147,7 @@ class BlsKeystoreBulkLoaderTest {
     Files.createDirectory(keystoreDir);
 
     final MappedResults<ArtifactSigner> result =
-        loader.loadKeystoresUsingPasswordFile(
+        BlsKeystoreBulkLoader.loadKeystoresUsingPasswordFile(
             keystoreDir, tempDir.resolve("invalidPasswordFilePath"));
     assertThat(result.getValues()).isEmpty();
     assertThat(result.getErrorCount()).isEqualTo(1);

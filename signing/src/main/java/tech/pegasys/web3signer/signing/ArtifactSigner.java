@@ -18,7 +18,7 @@ public interface ArtifactSigner {
 
   String getIdentifier();
 
-  ArtifactSignature sign(final Bytes message);
+  ArtifactSignature<?> sign(final Bytes message);
 
   KeyType getKeyType();
 }

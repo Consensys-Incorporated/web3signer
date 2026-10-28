@@ -78,8 +78,7 @@ public class PruningRunnerIntegrationTest extends IntegrationTestBase {
   @Test
   void prunesValidatorsForExecuteHandlesErrors() {
     final TestSlashingProtectionPruner testSlashingProtectionPruner =
-        new TestSlashingProtectionPruner(
-            pruningSlashingProtectionContext.getPruner(), createPrunerRunnerThatFailsOnFirstRun());
+        new TestSlashingProtectionPruner(createPrunerRunnerThatFailsOnFirstRun());
     final DbPrunerRunner dbPrunerRunner =
         new DbPrunerRunner(
             slashingProtectionParameters, testSlashingProtectionPruner, scheduledExecutorService);
@@ -120,8 +119,7 @@ public class PruningRunnerIntegrationTest extends IntegrationTestBase {
     final SlashingProtectionParameters slashingProtectionParameters =
         new TestSlashingProtectionParameters(databaseUrl, USERNAME, PASSWORD, 5, 1, 1);
     final TestSlashingProtectionPruner testSlashingProtectionPruner =
-        new TestSlashingProtectionPruner(
-            pruningSlashingProtectionContext.getPruner(), createPrunerRunnerThatFailsOnFirstRun());
+        new TestSlashingProtectionPruner(createPrunerRunnerThatFailsOnFirstRun());
     final DbPrunerRunner dbPrunerRunner =
         new DbPrunerRunner(
             slashingProtectionParameters, testSlashingProtectionPruner, scheduledExecutorService);
@@ -180,11 +178,11 @@ public class PruningRunnerIntegrationTest extends IntegrationTestBase {
     private final Runnable pruningRunner;
     private final List<PruningStat> pruningStats = new ArrayList<>();
 
-    public TestSlashingProtectionPruner(final SlashingProtectionPruner pruner) {
+    TestSlashingProtectionPruner(final SlashingProtectionPruner pruner) {
       this.pruningRunner = pruner::prune;
     }
 
-    public TestSlashingProtectionPruner(final SlashingProtectionPruner pruner, Runnable runnable) {
+    TestSlashingProtectionPruner(final Runnable runnable) {
       this.pruningRunner = runnable;
     }
 
@@ -196,7 +194,7 @@ public class PruningRunnerIntegrationTest extends IntegrationTestBase {
       pruningRunner.run();
     }
 
-    public List<PruningStat> getPruningStats() {
+    List<PruningStat> getPruningStats() {
       return pruningStats;
     }
   }
@@ -205,16 +203,16 @@ public class PruningRunnerIntegrationTest extends IntegrationTestBase {
     private final Thread thread;
     private final LocalDateTime startTime;
 
-    public PruningStat(final Thread thread, final LocalDateTime startTime) {
+    PruningStat(final Thread thread, final LocalDateTime startTime) {
       this.thread = thread;
       this.startTime = startTime;
     }
 
-    public Thread getThread() {
+    Thread getThread() {
       return thread;
     }
 
-    public LocalDateTime getStartTime() {
+    LocalDateTime getStartTime() {
       return startTime;
     }
   }
