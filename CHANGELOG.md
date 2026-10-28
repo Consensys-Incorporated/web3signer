@@ -2,7 +2,7 @@
 
 ## Unreleased
 ### Security
-- Guava upgraded to 33.7.2-jre to fix CVE-2026-102554, and snappy-java pinned to 1.1.10.9 to fix CVE-2026-93451 and CVE-2026-108106 (transitive via besu and teku).
+- Guava upgraded to 33.7.2-jre to fix CVE-2026-102554, and snappy-java pinned to 1.1.10.9 to fix CVE-2026-93451 and CVE-2026-108106 (transitive via besu and teku). [#1285][PR_1285]
 
 ### Features Added
 
@@ -11,7 +11,9 @@
 ### Breaking Changes
 
 ### CI/Build Enhancements
-- Besu upgraded to 26.10.2.
+- Besu upgraded to 26.10.2. [#1285][PR_1285]
+
+[PR_1285]: https://github.com/Consensys-Incorporated/web3signer/pull/1285
 
 
 ---
