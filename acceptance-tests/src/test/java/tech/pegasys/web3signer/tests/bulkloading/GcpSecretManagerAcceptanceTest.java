@@ -43,7 +43,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -127,16 +126,20 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
   }
 
   @Test
-  @EnabledIfEnvironmentVariable(
-      named = GCP_PROJECT_ID_ENV,
-      matches = ".+",
-      disabledReason =
-          "Runs against real Google Cloud only: the emulator does not model project authorization, "
-              + "so no error is reported for a non-existing project")
-  void healthCheckErrorCountWhenInvalidCredentialsAreUsed() {
+  void healthCheckErrorCountWhenAccessIsDenied() {
     final boolean useConfigFile = false;
+    // Real GCP denies access to a project the caller has no permission on. The emulator does not
+    // model authorization, so its TLS proxy provides an endpoint denying every call instead.
     final GcpSecretManagerParameters invalidGcpParams =
-        gcpParametersBuilder().withEnabled(true).withProjectId("NON_EXISTING_PROJECT").build();
+        GcpSecretManagerParametersBuilder.aGcpParameters()
+            .withEnabled(true)
+            .withProjectId("NON_EXISTING_PROJECT")
+            .withEndpointOverride(
+                REAL_GCP_PROJECT_ID.isPresent()
+                    ? Optional.empty()
+                    : Optional.of(
+                        GcpSecretManagerEmulator.getInstance().getPermissionDeniedEndpoint()))
+            .build();
 
     final SignerConfigurationBuilder configBuilder =
         signerConfigBuilder()
