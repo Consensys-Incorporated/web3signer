@@ -42,7 +42,14 @@ dependencyManagement {
 
     dependency 'tech.pegasys.tools.epchecks:errorprone-checks:1.1.1'
 
-    dependency 'com.google.guava:guava:33.7.1-jre'
+    // Guava is used directly by our modules (declared without a version), so keep this entry.
+    // CVE-2026-102554: fixed in 33.7.2; bump to the latest 33.x when a new fix is released.
+    dependency 'com.google.guava:guava:33.7.2-jre'
+
+    // CVE-2026-93451, CVE-2026-108106: fixed in 1.1.10.9. Pulled in transitively via besu
+    // (besu-util, besu-ethereum-core; constrained to 1.1.10.7 by the besu BOM) and teku (serializer/spec).
+    // Remove this pin once besu/teku ship snappy-java >= 1.1.10.9.
+    dependency 'org.xerial.snappy:snappy-java:1.1.10.9'
     dependency 'com.github.ben-manes.caffeine:caffeine:3.3.0'
 
     dependency 'commons-cli:commons-cli:1.11.0'
