@@ -24,6 +24,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    environment: dev
     outputs:
       publish-version: ${{ steps.project-version.outputs.publish-version }}
     services:
