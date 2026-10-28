@@ -15,7 +15,6 @@ package tech.pegasys.web3signer.tests.eth1rpc.signing;
 import static io.netty.handler.codec.http.HttpResponseStatus.BAD_REQUEST;
 import static org.assertj.core.api.Assertions.assertThat;
 import static tech.pegasys.web3signer.core.service.jsonrpc.response.JsonRpcError.SIGNING_FROM_IS_NOT_AN_UNLOCKED_ACCOUNT;
-import static tech.pegasys.web3signer.dsl.utils.WaitUtils.waitFor;
 
 import tech.pegasys.web3signer.core.service.jsonrpc.handlers.signing.ConfigurationChainId;
 import tech.pegasys.web3signer.core.service.jsonrpc.response.JsonRpcError;
@@ -27,7 +26,6 @@ import tech.pegasys.web3signer.dsl.signer.SignerResponse;
 import tech.pegasys.web3signer.signing.secp256k1.util.AddressUtil;
 import tech.pegasys.web3signer.tests.eth1rpc.Eth1RpcAcceptanceTestBase;
 
-import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
@@ -65,6 +63,10 @@ public class ValueTransferAcceptanceTest extends Eth1RpcAcceptanceTestBase {
 
   @Test
   public void valueTransferFrontier() {
+    transferFrontier();
+  }
+
+  private void transferFrontier() {
     final BigInteger transferAmountWei = Convert.toWei("1.75", Unit.ETHER).toBigIntegerExact();
     final BigInteger startBalance = besu.accounts().balance(RECIPIENT);
     final Transaction frontierTransaction =
@@ -139,7 +141,7 @@ public class ValueTransferAcceptanceTest extends Eth1RpcAcceptanceTestBase {
   }
 
   @Test
-  public void valueTransferFromAccountWithInsufficientFunds() throws IOException {
+  public void valueTransferFromAccountWithInsufficientFunds() {
     final String recipientAddress = "0x1b11ba11ca11bb11aa11bc11be11ac11ca11da11";
     final BigInteger senderStartBalance = besu.accounts().balance(richBenefactor());
     final BigInteger recipientStartBalance = besu.accounts().balance(recipientAddress);
@@ -153,15 +155,10 @@ public class ValueTransferAcceptanceTest extends Eth1RpcAcceptanceTestBase {
             recipientAddress,
             transferAmountWei);
 
-    final BigInteger blockNumberBeforeSubmission =
-        besu.jsonRpc().ethBlockNumber().send().getBlockNumber();
-    final String hash = signer.transactions().submit(transaction);
-
-    waitFor(
-        () ->
-            assertThat(besu.jsonRpc().ethBlockNumber().send().getBlockNumber())
-                .isGreaterThanOrEqualTo(blockNumberBeforeSubmission.add(BigInteger.TWO)));
-    assertThat(besu.transactions().getTransactionReceipt(hash)).isEmpty();
+    final SignerResponse<JsonRpcErrorResponse> signerResponse =
+        signer.transactions().submitExceptional(transaction);
+    assertThat(signerResponse.jsonRpc().getError())
+        .isEqualTo(JsonRpcError.INSUFFICIENT_FUNDS_FOR_TRANSFER);
 
     final BigInteger senderEndBalance = besu.accounts().balance(richBenefactor());
     final BigInteger recipientEndBalance = besu.accounts().balance(recipientAddress);
@@ -224,7 +221,7 @@ public class ValueTransferAcceptanceTest extends Eth1RpcAcceptanceTestBase {
 
   @Test
   public void valueTransferNonceTooLow() {
-    valueTransferFrontier(); // call this test to increment the nonce
+    transferFrontier(); // increments the nonce
     final BigInteger transferAmountWei = Convert.toWei("15.5", Unit.ETHER).toBigIntegerExact();
     final Transaction transaction =
         Transaction.createEtherTransaction(

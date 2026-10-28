@@ -33,7 +33,7 @@ class K256ArtifactSignerTest {
   void signCreatesVerifiableSignature() {
     // generate using K256ArtifactSigner
     final K256ArtifactSigner k256ArtifactSigner = new K256ArtifactSigner(EC_KEY_PAIR);
-    final ArtifactSignature artifactSignature = k256ArtifactSigner.sign(OBJECT_ROOT);
+    final ArtifactSignature<?> artifactSignature = k256ArtifactSigner.sign(OBJECT_ROOT);
     final byte[] signature = Bytes.fromHexString(artifactSignature.asHex()).toArray();
 
     // Verify the signature against public key
