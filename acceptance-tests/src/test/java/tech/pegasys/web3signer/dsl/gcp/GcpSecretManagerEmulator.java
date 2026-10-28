@@ -32,7 +32,6 @@ import com.google.api.gax.core.NoCredentialsProvider;
 import com.google.api.gax.grpc.InstantiatingGrpcChannelProvider;
 import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
 import com.google.cloud.secretmanager.v1.SecretManagerServiceSettings;
-import io.grpc.ManagedChannelBuilder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.testcontainers.containers.GenericContainer;
@@ -193,8 +192,10 @@ public final class GcpSecretManagerEmulator {
 
   /**
    * Environment for the Web3Signer process: the throwaway service-account key as application
-   * default credentials. Web3Signer also has to trust {@link #getTlsCertificateDefinition()} and
-   * reach Secret Manager at {@link #getTlsEndpoint()}.
+   * default credentials. Only a Web3Signer subprocess ({@code acctests.runWeb3SignerAsProcess})
+   * receives it; in-process, google-auth reads the test JVM's own environment. Web3Signer also has
+   * to trust {@link #getTlsCertificateDefinition()} and reach Secret Manager at {@link
+   * #getTlsEndpoint()}.
    */
   public Map<String, String> web3SignerEnvironment() {
     return Map.of(
@@ -228,7 +229,7 @@ public final class GcpSecretManagerEmulator {
             .setTransportChannelProvider(
                 InstantiatingGrpcChannelProvider.newBuilder()
                     .setEndpoint(host() + ":" + emulator.getMappedPort(EMULATOR_GRPC_PORT))
-                    .setChannelConfigurator(ManagedChannelBuilder::usePlaintext)
+                    .setChannelConfigurator(channelBuilder -> channelBuilder.usePlaintext())
                     .build())
             .build());
   }

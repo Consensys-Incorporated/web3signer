@@ -15,6 +15,7 @@ package tech.pegasys.web3signer.tests.bulkloading;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_GCP_BULK_LOADING;
 import static tech.pegasys.web3signer.dsl.utils.HealthCheckResultUtil.getHealtcheckKeysLoaded;
 import static tech.pegasys.web3signer.dsl.utils.HealthCheckResultUtil.getHealthcheckErrorCount;
@@ -54,6 +55,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
   private static final Logger LOG = LogManager.getLogger();
   private static final String GCP_PROJECT_ID_ENV = "GCP_PROJECT_ID";
+  private static final String RUN_AS_PROCESS_PROPERTY = "acctests.runWeb3SignerAsProcess";
   private static final Optional<String> REAL_GCP_PROJECT_ID =
       Optional.ofNullable(System.getenv(GCP_PROJECT_ID_ENV)).filter(id -> !id.isBlank());
   private static final String GCP_PROJECT_ID =
@@ -65,6 +67,11 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
 
   @BeforeAll
   void setupGcpResources() throws IOException {
+    // The emulator's throwaway credentials reach Web3Signer as an environment variable, which only
+    // a Web3Signer subprocess receives. In-process, google-auth would use the developer's real ADC.
+    assumeTrue(
+        REAL_GCP_PROJECT_ID.isPresent() || Boolean.getBoolean(RUN_AS_PROCESS_PROPERTY),
+        "Running against the emulator requires -D" + RUN_AS_PROCESS_PROPERTY + "=true");
     final SecretManagerServiceClient client =
         REAL_GCP_PROJECT_ID.isPresent()
             ? SecretManagerServiceClient.create()

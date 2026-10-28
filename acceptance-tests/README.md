@@ -16,8 +16,15 @@ pinned by `gcpSecretManagerEmulatorImage` in `gradle/versions.gradle`, requiring
 setup, credentials, or GCP project. Web3Signer reaches the emulator through an nginx container
 (`gcpSecretManagerTlsProxyImage`) terminating TLS, configured only with the
 `--Xgcp-endpoint-override` option and a throwaway service-account key. As the emulator does not
-model authorization, the same nginx container also serves an endpoint answering every call with
-HTTP 403 (gRPC `PERMISSION_DENIED`), standing in for real Google Cloud denying access to a project.
+model authorization without a separate IAM emulator, the same nginx container also serves an
+endpoint answering every call with HTTP 403 (gRPC `PERMISSION_DENIED`), standing in for real Google
+Cloud denying access to a project.
+
+The throwaway key reaches Web3Signer through the `GOOGLE_APPLICATION_CREDENTIALS` environment
+variable, which only a Web3Signer subprocess receives. The `acceptanceTest` Gradle task sets
+`acctests.runWeb3SignerAsProcess=true`; when running from an IDE, set
+`-Dacctests.runWeb3SignerAsProcess=true` too, otherwise the tests are skipped rather than letting
+Web3Signer fall back to your real application default credentials.
 
 To run them against real Google Cloud instead, set `GCP_PROJECT_ID` to a project that allows
 creating and deleting secrets, has the Secret Manager API enabled, and is reachable with application
