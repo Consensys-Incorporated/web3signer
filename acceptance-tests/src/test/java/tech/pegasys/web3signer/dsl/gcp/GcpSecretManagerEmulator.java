@@ -14,8 +14,8 @@ package tech.pegasys.web3signer.dsl.gcp;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
 
+import tech.pegasys.web3signer.commandline.PicoCliGcpSecretManagerParameters;
 import tech.pegasys.web3signer.dsl.tls.TlsCertificateDefinition;
-import tech.pegasys.web3signer.keystorage.gcp.GcpSecretManager;
 import tech.pegasys.web3signer.keystore.dsl.certificates.CertificateHelpers;
 import tech.pegasys.web3signer.keystore.dsl.certificates.SelfSignedCertificate;
 
@@ -149,7 +149,7 @@ public final class GcpSecretManagerEmulator {
           EMULATOR_IMAGE.asCanonicalNameString(),
           TLS_PROXY_IMAGE.asCanonicalNameString());
       tlsProxy.start();
-      LOG.info("GCP Secret Manager emulator listening at {} over TLS", tlsEndpoint());
+      LOG.info("GCP Secret Manager emulator listening at {} over TLS", getTlsEndpoint());
     } catch (final Exception e) {
       throw new IllegalStateException("Unable to start GCP Secret Manager emulator", e);
     }
@@ -184,20 +184,25 @@ public final class GcpSecretManagerEmulator {
   }
 
   /**
-   * Environment for the Web3Signer process: the TLS proxy as Secret Manager endpoint and the
-   * throwaway service-account key as application default credentials. Web3Signer also has to trust
-   * {@link #getTlsCertificateDefinition()}.
+   * Environment for the Web3Signer process: the throwaway service-account key as application
+   * default credentials. Web3Signer also has to trust {@link #getTlsCertificateDefinition()} and
+   * reach Secret Manager at {@link #getTlsEndpoint()}.
    */
   public Map<String, String> web3SignerEnvironment() {
     return Map.of(
-        GcpSecretManager.ENDPOINT_ENV,
-        tlsEndpoint(),
-        "GOOGLE_APPLICATION_CREDENTIALS",
-        serviceAccountKeyFile.toAbsolutePath().toString());
+        "GOOGLE_APPLICATION_CREDENTIALS", serviceAccountKeyFile.toAbsolutePath().toString());
   }
 
   public TlsCertificateDefinition getTlsCertificateDefinition() {
     return tlsCertificateDefinition;
+  }
+
+  /**
+   * {@code host:port} of the TLS proxy, for Web3Signer's {@value
+   * PicoCliGcpSecretManagerParameters#GCP_ENDPOINT_OVERRIDE_OPTION}.
+   */
+  public String getTlsEndpoint() {
+    return host() + ":" + tlsProxy.getMappedPort(TLS_PROXY_PORT);
   }
 
   /**
@@ -213,10 +218,6 @@ public final class GcpSecretManagerEmulator {
                     .setChannelConfigurator(ManagedChannelBuilder::usePlaintext)
                     .build())
             .build());
-  }
-
-  private String tlsEndpoint() {
-    return host() + ":" + tlsProxy.getMappedPort(TLS_PROXY_PORT);
   }
 
   private String host() {

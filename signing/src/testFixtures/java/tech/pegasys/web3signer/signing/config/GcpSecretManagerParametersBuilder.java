@@ -18,6 +18,7 @@ public final class GcpSecretManagerParametersBuilder {
   private boolean enabled;
   private String projectId;
   private Optional<String> filter = Optional.empty();
+  private Optional<String> endpointOverride = Optional.empty();
 
   private GcpSecretManagerParametersBuilder() {}
 
@@ -40,20 +41,31 @@ public final class GcpSecretManagerParametersBuilder {
     return this;
   }
 
+  public GcpSecretManagerParametersBuilder withEndpointOverride(
+      final Optional<String> endpointOverride) {
+    this.endpointOverride = endpointOverride;
+    return this;
+  }
+
   public GcpSecretManagerParameters build() {
-    return new TestGcpSecretManagerParameters(enabled, projectId, filter);
+    return new TestGcpSecretManagerParameters(enabled, projectId, filter, endpointOverride);
   }
 
   private static class TestGcpSecretManagerParameters implements GcpSecretManagerParameters {
     private final boolean enabled;
     private final String projectId;
     private final Optional<String> filter;
+    private final Optional<String> endpointOverride;
 
     private TestGcpSecretManagerParameters(
-        boolean enabled, String projectId, Optional<String> filter) {
+        boolean enabled,
+        String projectId,
+        Optional<String> filter,
+        Optional<String> endpointOverride) {
       this.enabled = enabled;
       this.projectId = projectId;
       this.filter = filter;
+      this.endpointOverride = endpointOverride;
     }
 
     @Override
@@ -69,6 +81,11 @@ public final class GcpSecretManagerParametersBuilder {
     @Override
     public Optional<String> getFilter() {
       return filter;
+    }
+
+    @Override
+    public Optional<String> getEndpointOverride() {
+      return endpointOverride;
     }
   }
 }

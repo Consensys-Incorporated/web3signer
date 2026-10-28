@@ -38,29 +38,21 @@ import org.apache.logging.log4j.Logger;
 
 public class GcpSecretManager implements Closeable {
 
-  /**
-   * Environment variable holding a {@code host:port} to reach Secret Manager at instead of its
-   * default Google Cloud endpoint. The client still uses TLS and application default credentials.
-   */
-  public static final String ENDPOINT_ENV = "GCP_SECRET_MANAGER_ENDPOINT";
-
   private static final Logger LOG = LogManager.getLogger();
   private final SecretManagerServiceClient secretManagerServiceClient;
 
-  public GcpSecretManager() throws IOException {
-    secretManagerServiceClient = createClient();
-  }
-
-  private static SecretManagerServiceClient createClient() throws IOException {
+  /**
+   * @param endpointOverride {@code host:port} to reach Secret Manager at instead of its default
+   *     Google Cloud endpoint. The client still uses TLS and application default credentials.
+   */
+  public GcpSecretManager(final Optional<String> endpointOverride) throws IOException {
     final SecretManagerServiceSettings.Builder settings = SecretManagerServiceSettings.newBuilder();
-    Optional.ofNullable(System.getenv(ENDPOINT_ENV))
-        .filter(endpoint -> !endpoint.isBlank())
-        .ifPresent(
-            endpoint -> {
-              LOG.info("Using GCP Secret Manager endpoint {} from {}", endpoint, ENDPOINT_ENV);
-              settings.setEndpoint(endpoint);
-            });
-    return SecretManagerServiceClient.create(settings.build());
+    endpointOverride.ifPresent(
+        endpoint -> {
+          LOG.info("Using GCP Secret Manager endpoint override {}", endpoint);
+          settings.setEndpoint(endpoint);
+        });
+    secretManagerServiceClient = SecretManagerServiceClient.create(settings.build());
   }
 
   @Override

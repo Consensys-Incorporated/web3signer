@@ -4,7 +4,7 @@
 ### Security
 
 ### Features Added
-- The `GCP_SECRET_MANAGER_ENDPOINT` environment variable overrides the `host:port` Web3Signer uses to reach GCP Secret Manager when bulk loading keys.
+- The unstable `eth2` option `--Xgcp-endpoint-override=<HOST:PORT>` overrides the endpoint Web3Signer uses to reach GCP Secret Manager when bulk loading keys.
 
 ### Bugs Fixed
 

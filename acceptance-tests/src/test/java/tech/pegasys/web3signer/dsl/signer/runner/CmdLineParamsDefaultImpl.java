@@ -359,6 +359,13 @@ public class CmdLineParamsDefaultImpl implements CmdLineParamsBuilder {
               + "="
               + gcpSecretManagerParameters.getFilter().get());
     }
+    gcpSecretManagerParameters
+        .getEndpointOverride()
+        .ifPresent(
+            endpoint -> {
+              params.add(PicoCliGcpSecretManagerParameters.GCP_ENDPOINT_OVERRIDE_OPTION);
+              params.add(endpoint);
+            });
     return params;
   }
 

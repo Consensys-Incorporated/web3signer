@@ -15,7 +15,7 @@ The GCP Secret Manager acceptance tests run automatically against a local Testco
 pinned by `gcpSecretManagerEmulatorImage` in `gradle/versions.gradle`, requiring no manual
 setup, credentials, or GCP project. Web3Signer reaches the emulator through an nginx container
 (`gcpSecretManagerTlsProxyImage`) terminating TLS, configured only with the
-`GCP_SECRET_MANAGER_ENDPOINT` override and a throwaway service-account key.
+`--Xgcp-endpoint-override` option and a throwaway service-account key.
 
 To run them against real Google Cloud instead, set `GCP_PROJECT_ID` to a project that allows
 creating and deleting secrets, has the Secret Manager API enabled, and is reachable with application

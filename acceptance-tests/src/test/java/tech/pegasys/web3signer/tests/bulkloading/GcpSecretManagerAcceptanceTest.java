@@ -90,7 +90,7 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
   @ValueSource(booleans = {true, false})
   void secretsAreLoadedFromGCPSecretManagerAndReportedByPublicApi(final boolean useConfigFile) {
     final GcpSecretManagerParameters gcpSecretManagerParameters =
-        GcpSecretManagerParametersBuilder.aGcpParameters()
+        gcpParametersBuilder()
             .withEnabled(true)
             .withProjectId(GCP_PROJECT_ID)
             // The filter has to select only this run's "Secret" secrets. Real GCP matches it as a
@@ -136,10 +136,7 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
   void healthCheckErrorCountWhenInvalidCredentialsAreUsed() {
     final boolean useConfigFile = false;
     final GcpSecretManagerParameters invalidGcpParams =
-        GcpSecretManagerParametersBuilder.aGcpParameters()
-            .withEnabled(true)
-            .withProjectId("NON_EXISTING_PROJECT")
-            .build();
+        gcpParametersBuilder().withEnabled(true).withProjectId("NON_EXISTING_PROJECT").build();
 
     final SignerConfigurationBuilder configBuilder =
         signerConfigBuilder()
@@ -157,6 +154,14 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
     assertThat(keysLoaded).isEqualTo(0);
     assertThat(errorCount).isEqualTo(1);
     assertThat(getHealthcheckStatusValue(healthCheckJsonBody)).isEqualTo("DOWN");
+  }
+
+  private static GcpSecretManagerParametersBuilder gcpParametersBuilder() {
+    return GcpSecretManagerParametersBuilder.aGcpParameters()
+        .withEndpointOverride(
+            REAL_GCP_PROJECT_ID.isPresent()
+                ? Optional.empty()
+                : Optional.of(GcpSecretManagerEmulator.getInstance().getTlsEndpoint()));
   }
 
   private static SignerConfigurationBuilder signerConfigBuilder() {
