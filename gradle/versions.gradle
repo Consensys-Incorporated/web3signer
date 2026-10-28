@@ -93,7 +93,7 @@ dependencyManagement {
       entry 'bcprov-jdk18on'
     }
 
-    dependency 'org.mock-server:mockserver-netty:8.0.0'
+    dependency 'org.mock-server:mockserver-netty:9.1.0'
 
     dependencySet(group: 'org.mockito', version: '5.23.0') {
       entry 'mockito-core'
