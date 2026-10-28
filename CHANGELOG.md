@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+### Security
+
+### Features Added
+
+### Bugs Fixed
+
+### Breaking Changes
+
+### CI/Build Enhancements
+
+
+---
 ## 26.10.2
 ### Security
 - Docker images now ship Eclipse Temurin JRE 25.0.5+8 to mitigate the eMudhra CA compromise ([adoptium/temurin#317](https://github.com/adoptium/temurin/issues/317)); base image digests re-pinned. [#1267][PR_1267]
