@@ -67,6 +67,7 @@ dependencies {
   testImplementation 'com.azure:azure-identity'
   testImplementation 'com.azure:azure-security-keyvault-keys'
   testImplementation 'com.azure:azure-security-keyvault-secrets'
+  testImplementation 'com.google.cloud:google-cloud-secretmanager'
   testImplementation 'org.testcontainers:testcontainers'
   testImplementation 'org.wiremock:wiremock'
   testImplementation 'software.amazon.awssdk:auth'
@@ -176,6 +177,8 @@ tasks.register('acceptanceTest', Test) {
   systemProperty 'besuInstallDir', layout.buildDirectory.dir("besu").get().asFile.absolutePath
   systemProperty 'vaultBinary', vaultBinary()
   systemProperty 'azureKeyVaultEmulatorImage', azureKeyVaultEmulatorImage
+  systemProperty 'gcpSecretManagerEmulatorImage', gcpSecretManagerEmulatorImage
+  systemProperty 'gcpSecretManagerTlsProxyImage', gcpSecretManagerTlsProxyImage
   // embedded pg initdb needs following
   environment "LC_CTYPE", "en_US.UTF-8"
   environment "LC_ALL", "en_US.UTF-8"

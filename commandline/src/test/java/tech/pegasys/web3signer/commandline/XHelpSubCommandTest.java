@@ -55,6 +55,7 @@ public class XHelpSubCommandTest {
           "--Xazure-endpoint-override",
           "--Xazure-authority-host-override",
           "--Xazure-trust-certificate-override",
+          "--Xgcp-endpoint-override",
           "--Xkey-manager-skip-keystore-storage");
 
   /** The only unstable options on the eth1 subtree. */
