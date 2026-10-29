@@ -48,7 +48,7 @@ import org.testcontainers.utility.DockerImageName;
  * with a self-signed certificate is added, and that listener is what {@link #getPort()} returns, so
  * the code under test only ever talks TLS.
  */
-public class HashicorpNode {
+public class HashicorpNode implements AutoCloseable {
   private static final Logger LOG = LogManager.getLogger();
   private static final org.slf4j.Logger VAULT_PROCESS_LOG =
       LoggerFactory.getLogger(HashicorpNode.class.getName() + ".VaultServer");
@@ -97,7 +97,7 @@ public class HashicorpNode {
     } catch (final Exception e) {
       // the caller never receives the node, so nobody else can stop a container that did start
       if (hashicorpNode != null) {
-        hashicorpNode.shutdown();
+        hashicorpNode.close();
       }
       throw new RuntimeException("Failed to create Hashicorp Node.", e);
     }
@@ -126,7 +126,9 @@ public class HashicorpNode {
     container.start();
   }
 
-  public void shutdown() {
+  /** Stops and removes the container. Safe to call more than once. */
+  @Override
+  public void close() {
     LOG.info("Shutting down Vault server container...");
     container.stop();
   }

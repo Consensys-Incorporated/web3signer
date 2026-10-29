@@ -126,8 +126,7 @@ public class SecpSigningAcceptanceTest extends SigningAcceptanceTestBase {
 
   @Test
   public void signDataWithKeyFromHashicorp() {
-    final HashicorpNode hashicorpNode = HashicorpNode.createAndStartHashicorp(true);
-    try {
+    try (final HashicorpNode hashicorpNode = HashicorpNode.createAndStartHashicorp(true)) {
       final String secretPath = "acceptanceTestSecretPath";
       final String secretName = "secretName";
       hashicorpNode.addSecretsToVault(singletonMap(secretName, PRIVATE_KEY), secretPath);
@@ -141,8 +140,6 @@ public class SecpSigningAcceptanceTest extends SigningAcceptanceTestBase {
           Optional.empty());
 
       signAndVerifySignature();
-    } finally {
-      hashicorpNode.shutdown();
     }
   }
 

@@ -63,8 +63,4 @@ public class HashicorpSigningParams {
   public KeyType getKeyType() {
     return keyType;
   }
-
-  public void shutdown() {
-    hashicorpNode.shutdown();
-  }
 }

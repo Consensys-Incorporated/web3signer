@@ -122,8 +122,7 @@ public class BlsSigningAcceptanceTest extends SigningAcceptanceTestBase {
   @Test
   public void ableToSignUsingHashicorp() throws JsonProcessingException {
     final String configFilename = KEY_PAIR.getPublicKey().toString().substring(2);
-    final HashicorpNode hashicorpNode = HashicorpNode.createAndStartHashicorp(true);
-    try {
+    try (final HashicorpNode hashicorpNode = HashicorpNode.createAndStartHashicorp(true)) {
       final String secretPath = "acceptanceTestSecretPath";
       final String secretName = "secretName";
 
@@ -136,8 +135,6 @@ public class BlsSigningAcceptanceTest extends SigningAcceptanceTestBase {
           Optional.empty());
 
       signAndVerifySignature(ArtifactType.BLOCK);
-    } finally {
-      hashicorpNode.shutdown();
     }
   }
 
@@ -146,8 +143,7 @@ public class BlsSigningAcceptanceTest extends SigningAcceptanceTestBase {
   public void ableToSignUsingHashicorpWithHttpProtocolOverride(
       final String httpProtocolVersion, boolean withTLS) throws JsonProcessingException {
     final String configFilename = KEY_PAIR.getPublicKey().toString().substring(2);
-    final HashicorpNode hashicorpNode = HashicorpNode.createAndStartHashicorp(withTLS);
-    try {
+    try (final HashicorpNode hashicorpNode = HashicorpNode.createAndStartHashicorp(withTLS)) {
       final String secretPath = "acceptanceTestSecretPath";
       final String secretName = "secretName";
 
@@ -160,8 +156,6 @@ public class BlsSigningAcceptanceTest extends SigningAcceptanceTestBase {
           Optional.ofNullable(httpProtocolVersion));
 
       signAndVerifySignature(ArtifactType.BLOCK);
-    } finally {
-      hashicorpNode.shutdown();
     }
   }
 

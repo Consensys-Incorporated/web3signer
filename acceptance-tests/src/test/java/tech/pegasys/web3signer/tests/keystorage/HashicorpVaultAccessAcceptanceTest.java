@@ -49,7 +49,7 @@ public class HashicorpVaultAccessAcceptanceTest {
   void cleanup() {
     try {
       if (hashicorpNode != null) {
-        hashicorpNode.shutdown();
+        hashicorpNode.close();
         hashicorpNode = null;
       }
     } catch (final Exception e) {
