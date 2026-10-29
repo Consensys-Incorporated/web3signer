@@ -13,10 +13,12 @@
 ### CI/Build Enhancements
 - Besu upgraded to 26.10.2. [#1285][PR_1285]
 - Compiler warnings fail the build again. [#1283][PR_1283]
+- Removed the Cloudsmith and jitpack Maven repositories; `errorprone-checks` now resolves from Maven Central (`io.consensys.protocols:errorprone-checks:1.1.2`) and the unused `java-cid` dependency was dropped. [#1288][PR_1288]
 
 <!-- Link references for the entries above; not changelog entries. -->
 [PR_1283]: https://github.com/Consensys-Incorporated/web3signer/pull/1283
 [PR_1285]: https://github.com/Consensys-Incorporated/web3signer/pull/1285
+[PR_1288]: https://github.com/Consensys-Incorporated/web3signer/pull/1288
 
 
 ---
