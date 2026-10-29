@@ -23,8 +23,6 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      id-token: write
-    environment: dev
     outputs:
       publish-version: ${{ steps.project-version.outputs.publish-version }}
     steps:
@@ -66,19 +64,9 @@ jobs:
             exit 1
           fi
 
-      # v3
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
-        if: (github.ref == 'refs/heads/master' && github.event_name != 'pull_request') || startsWith(github.ref, 'refs/tags/')
-        with:
-          credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
-
       - name: Build and Test
         id: build-test
         uses: ./.github/actions/build-test
-        env:
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         with:
           disable-test: 'false'
 

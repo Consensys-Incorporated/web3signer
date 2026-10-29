@@ -29,6 +29,7 @@ import static tech.pegasys.web3signer.commandline.PicoCliAwsSecretsManagerParame
 import static tech.pegasys.web3signer.commandline.PicoCliAzureKeyVaultParameters.AZURE_AUTHORITY_HOST_OVERRIDE_OPTION;
 import static tech.pegasys.web3signer.commandline.PicoCliAzureKeyVaultParameters.AZURE_ENDPOINT_OVERRIDE_OPTION;
 import static tech.pegasys.web3signer.commandline.PicoCliAzureKeyVaultParameters.AZURE_TRUST_CERTIFICATE_OVERRIDE_OPTION;
+import static tech.pegasys.web3signer.commandline.PicoCliGcpSecretManagerParameters.GCP_ENDPOINT_OVERRIDE_OPTION;
 import static tech.pegasys.web3signer.commandline.PicoCliGcpSecretManagerParameters.GCP_PROJECT_ID_OPTION;
 import static tech.pegasys.web3signer.commandline.PicoCliGcpSecretManagerParameters.GCP_SECRETS_ENABLED_OPTION;
 import static tech.pegasys.web3signer.commandline.PicoCliGcpSecretManagerParameters.GCP_SECRETS_FILTER_OPTION;
@@ -529,6 +530,12 @@ public class CmdLineParamsConfigFileImpl implements CmdLineParamsBuilder {
           "eth2." + PrefixUtil.stripPrefix(GCP_SECRETS_FILTER_OPTION),
           gcpSecretManagerParameters.getFilter().get());
     }
+    gcpSecretManagerParameters
+        .getEndpointOverride()
+        .ifPresent(
+            endpoint ->
+                yamlConfigMap.put(
+                    "eth2." + PrefixUtil.stripPrefix(GCP_ENDPOINT_OVERRIDE_OPTION), endpoint));
     return yamlConfigMap;
   }
 
