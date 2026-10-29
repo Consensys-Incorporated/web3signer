@@ -76,7 +76,7 @@ public class AwsKmsAcceptanceTest extends AcceptanceTestBase {
   private static final String AWS_REGION =
       Optional.ofNullable(System.getenv("AWS_REGION")).orElse("us-east-2");
 
-  // can be pointed to localstack
+  // can be pointed to an AWS emulator
   private final Optional<URI> awsEndpointOverride =
       System.getenv("AWS_ENDPOINT_OVERRIDE") != null
           ? Optional.of(URI.create(System.getenv("AWS_ENDPOINT_OVERRIDE")))

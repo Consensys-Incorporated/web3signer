@@ -55,7 +55,7 @@ class AwsSecretsManagerProviderTest {
       System.getenv("AWS_SECRET_ACCESS_KEY_TEST2");
   private final String DIFFERENT_AWS_REGION = "us-east-1";
 
-  // can be pointed to localstack
+  // can be pointed to an AWS emulator
   private final Optional<URI> awsEndpointOverride =
       System.getenv("AWS_ENDPOINT_OVERRIDE") != null
           ? Optional.of(URI.create(System.getenv("AWS_ENDPOINT_OVERRIDE")))

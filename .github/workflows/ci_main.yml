@@ -25,6 +25,13 @@ jobs:
       contents: read
     outputs:
       publish-version: ${{ steps.project-version.outputs.publish-version }}
+    services:
+      # Serves the AWS Secrets Manager and KMS tests without AWS credentials. The image's own
+      # healthcheck gates the job until the gateway answers.
+      ministack:
+        image: ministackorg/ministack:1.5.33@sha256:b58186186515a372798ccf0ca9975c295db219b5a811975337d6967b968e07b4
+        ports:
+          - 4566:4566
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -67,6 +74,17 @@ jobs:
       - name: Build and Test
         id: build-test
         uses: ./.github/actions/build-test
+        env:
+          # Any credentials work against ministack. RW_ and the default ones stand in for the
+          # read-write and read-only AWS users, _TEST2 for a second key pair.
+          RW_AWS_ACCESS_KEY_ID: test
+          RW_AWS_SECRET_ACCESS_KEY: test
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_ACCESS_KEY_ID_TEST2: test2
+          AWS_SECRET_ACCESS_KEY_TEST2: test2
+          AWS_REGION: us-east-2
+          AWS_ENDPOINT_OVERRIDE: http://localhost:4566
         with:
           disable-test: 'false'
 

@@ -47,7 +47,7 @@ public class AwsSecretsManagerUtil {
         SecretsManagerClient.builder()
             .credentialsProvider(credentialsProvider)
             .region(Region.of(region));
-    // useful for testing against localstack
+    // useful for testing against an AWS emulator
     awsEndpointOverride.ifPresent(builder::endpointOverride);
     secretsManagerClient = builder.build();
 

@@ -212,7 +212,7 @@ public class SecpSigningAcceptanceTest extends SigningAcceptanceTestBase {
         Optional.ofNullable(System.getenv("AWS_SESSION_TOKEN"));
     // default region to us-east-2 if environment variable is not defined.
     final String region = Optional.ofNullable(System.getenv("AWS_REGION")).orElse("us-east-2");
-    // can be pointed to localstack
+    // can be pointed to an AWS emulator
     final Optional<URI> awsEndpointOverride =
         Optional.ofNullable(System.getenv("AWS_ENDPOINT_OVERRIDE")).map(URI::create);
 
