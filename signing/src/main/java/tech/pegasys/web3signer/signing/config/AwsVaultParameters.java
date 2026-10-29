@@ -42,7 +42,7 @@ public interface AwsVaultParameters {
   Map<String, String> getTags();
 
   /**
-   * Can be used to override AWS endpoint to localstack
+   * Can be used to override AWS endpoint to an AWS emulator
    *
    * @return optional URI
    */

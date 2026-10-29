@@ -79,7 +79,7 @@ class AwsSecretsManagerTest {
   private static final String AWS_REGION =
       Optional.ofNullable(System.getenv("AWS_REGION")).orElse("us-east-2");
 
-  // can be pointed to localstack
+  // can be pointed to an AWS emulator
   private final Optional<URI> awsEndpointOverride =
       System.getenv("AWS_ENDPOINT_OVERRIDE") != null
           ? Optional.of(URI.create(System.getenv("AWS_ENDPOINT_OVERRIDE")))
@@ -330,7 +330,7 @@ class AwsSecretsManagerTest {
         AwsSecretsManager.createAwsSecretsManager(
             RO_AWS_ACCESS_KEY_ID, RO_AWS_SECRET_ACCESS_KEY, AWS_REGION, awsEndpointOverride);
 
-    // don't override endpoint for invalid credentials as localstack doesn't perform authentication
+    // don't override endpoint for invalid credentials as the emulator doesn't authenticate
     awsSecretsManagerInvalidCredentials =
         AwsSecretsManager.createAwsSecretsManager(
             "invalid", "invalid", AWS_REGION, Optional.empty());
