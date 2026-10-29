@@ -110,15 +110,12 @@ allprojects {
   repositories {
     // mavenLocal() //for local testing only, uncomment while testing locally build signers.
     mavenCentral()
-    maven { url = "https://artifacts.consensys.net/public/maven/maven/" }
-    maven { url = "https://artifacts.consensys.net/public/teku/maven/" }
     maven { url = "https://hyperledger.jfrog.io/artifactory/besu-maven" }
-    maven { url = "https://jitpack.io" }
   }
 
   dependencies {
     errorprone("com.google.errorprone:error_prone_core")
-    errorprone("tech.pegasys.tools.epchecks:errorprone-checks")
+    errorprone("io.consensys.protocols:errorprone-checks")
   }
 
   apply plugin: 'com.diffplug.spotless'
