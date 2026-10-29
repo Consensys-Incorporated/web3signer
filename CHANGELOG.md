@@ -14,12 +14,13 @@
 - Besu upgraded to 26.10.2. [#1285][PR_1285]
 - Compiler warnings fail the build again. [#1283][PR_1283]
 - Hashicorp Vault acceptance tests run against the `hashicorp/vault` 2.2.1 image via Testcontainers instead of a downloaded 1.9.2 binary. [#1277][PR_1277]
+- GCP Secret Manager acceptance tests run again in CI, against a Testcontainers instance of the offline [gcp-secret-manager-emulator](https://github.com/blackwell-systems/gcp-secret-manager-emulator) instead of real Google Cloud. [#1275][PR_1275]
 
 <!-- Link references for the entries above; not changelog entries. -->
 [PR_1277]: https://github.com/Consensys-Incorporated/web3signer/pull/1277
 [PR_1283]: https://github.com/Consensys-Incorporated/web3signer/pull/1283
 [PR_1285]: https://github.com/Consensys-Incorporated/web3signer/pull/1285
-
+[PR_1275]: https://github.com/Consensys-Incorporated/web3signer/pull/1275
 
 ---
 ## 26.10.2

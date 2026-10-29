@@ -30,6 +30,7 @@ import com.google.cloud.secretmanager.v1.ListSecretsRequest;
 import com.google.cloud.secretmanager.v1.ProjectName;
 import com.google.cloud.secretmanager.v1.Secret;
 import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
+import com.google.cloud.secretmanager.v1.SecretManagerServiceSettings;
 import com.google.cloud.secretmanager.v1.SecretPayload;
 import com.google.protobuf.ByteString;
 import org.apache.logging.log4j.LogManager;
@@ -40,8 +41,18 @@ public class GcpSecretManager implements Closeable {
   private static final Logger LOG = LogManager.getLogger();
   private final SecretManagerServiceClient secretManagerServiceClient;
 
-  public GcpSecretManager() throws IOException {
-    secretManagerServiceClient = SecretManagerServiceClient.create();
+  /**
+   * @param endpointOverride {@code host:port} to reach Secret Manager at instead of its default
+   *     Google Cloud endpoint. The client still uses TLS and application default credentials.
+   */
+  public GcpSecretManager(final Optional<String> endpointOverride) throws IOException {
+    final SecretManagerServiceSettings.Builder settings = SecretManagerServiceSettings.newBuilder();
+    endpointOverride.ifPresent(
+        endpoint -> {
+          LOG.info("Using GCP Secret Manager endpoint override {}", endpoint);
+          settings.setEndpoint(endpoint);
+        });
+    secretManagerServiceClient = SecretManagerServiceClient.create(settings.build());
   }
 
   @Override

@@ -22,4 +22,9 @@ public interface GcpSecretManagerParameters {
   default Optional<String> getFilter() {
     return Optional.empty();
   }
+
+  /** {@code host:port} to reach Secret Manager at instead of its default Google Cloud endpoint. */
+  default Optional<String> getEndpointOverride() {
+    return Optional.empty();
+  }
 }

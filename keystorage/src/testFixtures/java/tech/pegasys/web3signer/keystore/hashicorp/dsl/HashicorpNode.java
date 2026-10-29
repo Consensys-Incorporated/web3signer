@@ -49,7 +49,7 @@ public class HashicorpNode {
   private static final org.slf4j.Logger VAULT_PROCESS_LOG =
       LoggerFactory.getLogger(HashicorpNode.class.getName() + ".VaultServer");
 
-  // Automatically set by the gradle acceptanceTest task from gradle.properties'
+  // Automatically set by the gradle acceptanceTest task from gradle/versions.gradle's
   // hashicorpVaultImage.
   // Should be set manually in IDE if not using gradle.
   private static final String IMAGE_PROPERTY = "hashicorpVaultImage";

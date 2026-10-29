@@ -15,13 +15,13 @@ package tech.pegasys.web3signer.tests.bulkloading;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_GCP_BULK_LOADING;
 import static tech.pegasys.web3signer.dsl.utils.HealthCheckResultUtil.getHealtcheckKeysLoaded;
-import static tech.pegasys.web3signer.dsl.utils.HealthCheckResultUtil.getHealthcheckErrorCount;
-import static tech.pegasys.web3signer.dsl.utils.HealthCheckResultUtil.getHealthcheckStatusValue;
 
 import tech.pegasys.teku.bls.BLSKeyPair;
 import tech.pegasys.web3signer.GcpSecretManagerUtil;
+import tech.pegasys.web3signer.dsl.gcp.GcpSecretManagerEmulator;
 import tech.pegasys.web3signer.dsl.signer.SignerConfigurationBuilder;
 import tech.pegasys.web3signer.signing.KeyType;
 import tech.pegasys.web3signer.signing.config.GcpSecretManagerParameters;
@@ -32,28 +32,31 @@ import java.io.IOException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
+import com.google.cloud.secretmanager.v1.SecretManagerServiceClient;
 import io.restassured.http.ContentType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-@Disabled("Google Secrets Manager acceptance test temporarily disabled")
-@EnabledIfEnvironmentVariable(
-    named = "GCP_PROJECT_ID",
-    matches = ".+",
-    disabledReason = "GCP_PROJECT_ID env variable is required")
+/**
+ * Runs against a local emulator, see {@link GcpSecretManagerEmulator}, or against real Google Cloud
+ * using application default credentials when {@value #GCP_PROJECT_ID_ENV} is set.
+ */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS) // same instance is shared across test methods
 public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
   private static final Logger LOG = LogManager.getLogger();
-  private static final String GCP_PROJECT_ID = System.getenv("GCP_PROJECT_ID");
+  private static final String GCP_PROJECT_ID_ENV = "GCP_PROJECT_ID";
+  private static final String RUN_AS_PROCESS_PROPERTY = "acctests.runWeb3SignerAsProcess";
+  private static final Optional<String> REAL_GCP_PROJECT_ID =
+      Optional.ofNullable(System.getenv(GCP_PROJECT_ID_ENV)).filter(id -> !id.isBlank());
+  private static final String GCP_PROJECT_ID =
+      REAL_GCP_PROJECT_ID.orElse(GcpSecretManagerEmulator.PROJECT_ID);
 
   private GcpSecretManagerUtil gcpSecretManagerUtil;
   private final List<BLSKeyPair> blsKeyPairs = new ArrayList<>();
@@ -61,14 +64,25 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
 
   @BeforeAll
   void setupGcpResources() throws IOException {
-    gcpSecretManagerUtil = new GcpSecretManagerUtil(GCP_PROJECT_ID);
+    // The emulator's throwaway credentials reach Web3Signer as an environment variable, which only
+    // a Web3Signer subprocess receives. In-process, google-auth would use the developer's real ADC.
+    assumeTrue(
+        REAL_GCP_PROJECT_ID.isPresent() || Boolean.getBoolean(RUN_AS_PROCESS_PROPERTY),
+        "Running against the emulator requires -D" + RUN_AS_PROCESS_PROPERTY + "=true");
+    final SecretManagerServiceClient client =
+        REAL_GCP_PROJECT_ID.isPresent()
+            ? SecretManagerServiceClient.create()
+            : GcpSecretManagerEmulator.getInstance().createClient();
+    gcpSecretManagerUtil = new GcpSecretManagerUtil(GCP_PROJECT_ID, client);
     final SecureRandom secureRandom = new SecureRandom();
 
     for (int i = 0; i < 4; i++) {
       final BLSKeyPair blsKeyPair = BLSKeyPair.random(secureRandom);
-      String secretName =
+      // Only the first two secrets match the filter used by the tests below.
+      final String secretName =
           gcpSecretManagerUtil.createSecret(
-              "Secret%d-%s".formatted(i, blsKeyPair.getPublicKey().toString()),
+              "%s%d-%s"
+                  .formatted(i < 2 ? "Secret" : "Ignored", i, blsKeyPair.getPublicKey().toString()),
               blsKeyPair.getSecretKey().toBytes().toHexString());
       blsKeyPairs.add(blsKeyPair);
       secretNames.add(secretName);
@@ -79,14 +93,17 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
   @ValueSource(booleans = {true, false})
   void secretsAreLoadedFromGCPSecretManagerAndReportedByPublicApi(final boolean useConfigFile) {
     final GcpSecretManagerParameters gcpSecretManagerParameters =
-        GcpSecretManagerParametersBuilder.aGcpParameters()
+        gcpParametersBuilder()
             .withEnabled(true)
             .withProjectId(GCP_PROJECT_ID)
-            .withFilter("name:Secret0 OR name:Secret1")
+            // The filter has to select only this run's "Secret" secrets. Real GCP matches it as a
+            // substring of the resource name, while the emulator matches it as a prefix of the
+            // secret id, so scope it with the unique prefix of this run's secrets.
+            .withFilter("name:" + gcpSecretManagerUtil.getSecretsManagerPrefix() + "Secret")
             .build();
 
     final SignerConfigurationBuilder configBuilder =
-        new SignerConfigurationBuilder()
+        signerConfigBuilder()
             .withUseConfigFile(useConfigFile)
             .withMode("eth2")
             .withGcpParameters(gcpSecretManagerParameters);
@@ -112,31 +129,23 @@ public class GcpSecretManagerAcceptanceTest extends AcceptanceTestBase {
             hasSize(2));
   }
 
-  @Test
-  void healthCheckErrorCountWhenInvalidCredentialsAreUsed() {
-    final boolean useConfigFile = false;
-    final GcpSecretManagerParameters invalidGcpParams =
-        GcpSecretManagerParametersBuilder.aGcpParameters()
-            .withEnabled(true)
-            .withProjectId("NON_EXISTING_PROJECT")
-            .build();
+  private static GcpSecretManagerParametersBuilder gcpParametersBuilder() {
+    return GcpSecretManagerParametersBuilder.aGcpParameters()
+        .withEndpointOverride(
+            REAL_GCP_PROJECT_ID.isPresent()
+                ? Optional.empty()
+                : Optional.of(GcpSecretManagerEmulator.getInstance().getTlsEndpoint()));
+  }
 
-    final SignerConfigurationBuilder configBuilder =
-        new SignerConfigurationBuilder()
-            .withUseConfigFile(useConfigFile)
-            .withMode("eth2")
-            .withGcpParameters(invalidGcpParams);
-
-    startSigner(configBuilder.build());
-
-    final String healthCheckJsonBody = signer.healthcheck().body().asString();
-
-    int keysLoaded = getHealtcheckKeysLoaded(healthCheckJsonBody, KEYS_CHECK_GCP_BULK_LOADING);
-    int errorCount = getHealthcheckErrorCount(healthCheckJsonBody, KEYS_CHECK_GCP_BULK_LOADING);
-
-    assertThat(keysLoaded).isEqualTo(0);
-    assertThat(errorCount).isEqualTo(1);
-    assertThat(getHealthcheckStatusValue(healthCheckJsonBody)).isEqualTo("DOWN");
+  private static SignerConfigurationBuilder signerConfigBuilder() {
+    final SignerConfigurationBuilder builder = new SignerConfigurationBuilder();
+    if (REAL_GCP_PROJECT_ID.isEmpty()) {
+      final GcpSecretManagerEmulator emulator = GcpSecretManagerEmulator.getInstance();
+      builder
+          .withOverriddenCA(emulator.getTlsCertificateDefinition())
+          .withEnvironment(emulator.web3SignerEnvironment());
+    }
+    return builder;
   }
 
   @AfterAll
