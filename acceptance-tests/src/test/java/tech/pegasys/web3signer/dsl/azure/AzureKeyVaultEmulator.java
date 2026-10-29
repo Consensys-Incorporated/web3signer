@@ -13,6 +13,7 @@
 package tech.pegasys.web3signer.dsl.azure;
 
 import tech.pegasys.web3signer.dsl.tls.TlsCertificateDefinition;
+import tech.pegasys.web3signer.keystore.dsl.ContainerHosts;
 import tech.pegasys.web3signer.keystore.dsl.certificates.CertificateHelpers;
 import tech.pegasys.web3signer.keystore.dsl.certificates.SelfSignedCertificate;
 import tech.pegasys.web3signer.signing.secp256k1.EthPublicKeyUtils;
@@ -195,12 +196,10 @@ public final class AzureKeyVaultEmulator {
   }
 
   public String getVaultUrl() {
-    // Docker Desktop's published-port userland proxy commonly only forwards the IPv4 loopback
-    // address; "localhost" can resolve to the IPv6 loopback first and fail with connection
-    // refused even though the port is reachable over IPv4. Pin to 127.0.0.1 in that case.
-    final String host = container.getHost();
-    final String resolvedHost = "localhost".equals(host) ? "127.0.0.1" : host;
-    return "https://" + resolvedHost + ":" + container.getMappedPort(EMULATOR_PORT);
+    return "https://"
+        + ContainerHosts.reachableHost(container.getHost())
+        + ":"
+        + container.getMappedPort(EMULATOR_PORT);
   }
 
   public TlsCertificateDefinition getTlsCertificateDefinition() {

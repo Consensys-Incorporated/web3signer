@@ -16,6 +16,7 @@ import static java.nio.charset.StandardCharsets.US_ASCII;
 
 import tech.pegasys.web3signer.commandline.PicoCliGcpSecretManagerParameters;
 import tech.pegasys.web3signer.dsl.tls.TlsCertificateDefinition;
+import tech.pegasys.web3signer.keystore.dsl.ContainerHosts;
 import tech.pegasys.web3signer.keystore.dsl.certificates.CertificateHelpers;
 import tech.pegasys.web3signer.keystore.dsl.certificates.SelfSignedCertificate;
 
@@ -222,10 +223,6 @@ public final class GcpSecretManagerEmulator {
   }
 
   private String host() {
-    // Docker Desktop's published-port userland proxy commonly only forwards the IPv4 loopback
-    // address; "localhost" can resolve to the IPv6 loopback first. The self-signed certificate
-    // covers 127.0.0.1.
-    final String host = tlsProxy.getHost();
-    return "localhost".equals(host) ? "127.0.0.1" : host;
+    return ContainerHosts.reachableHost(tlsProxy.getHost());
   }
 }

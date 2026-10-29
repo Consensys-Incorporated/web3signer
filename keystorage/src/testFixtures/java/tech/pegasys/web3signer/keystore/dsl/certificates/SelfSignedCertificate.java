@@ -14,8 +14,8 @@ package tech.pegasys.web3signer.keystore.dsl.certificates;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
+import java.io.StringWriter;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -144,17 +144,29 @@ public class SelfSignedCertificate {
   }
 
   public void writePrivateKeyToFile(final Path outputFile) throws IOException {
-    try (final BufferedWriter writer = Files.newBufferedWriter(outputFile, UTF_8);
-        final PemWriter pemWriter = new PemWriter(writer)) {
-      pemWriter.writeObject(new PemObject("PRIVATE KEY", keyPair.getPrivate().getEncoded()));
-    }
+    Files.writeString(outputFile, privateKeyPem(), UTF_8);
   }
 
   public void writeCertificateToFile(final Path pemFile)
       throws IOException, CertificateEncodingException {
-    try (final BufferedWriter writer = Files.newBufferedWriter(pemFile, UTF_8);
-        final PemWriter pemWriter = new PemWriter(writer)) {
-      pemWriter.writeObject(new PemObject("CERTIFICATE", certificate.getEncoded()));
+    Files.writeString(pemFile, certificatePem(), UTF_8);
+  }
+
+  /** The PKCS#8 private key, PEM encoded. */
+  public String privateKeyPem() throws IOException {
+    return toPem("PRIVATE KEY", keyPair.getPrivate().getEncoded());
+  }
+
+  /** The X.509 certificate, PEM encoded. */
+  public String certificatePem() throws IOException, CertificateEncodingException {
+    return toPem("CERTIFICATE", certificate.getEncoded());
+  }
+
+  private static String toPem(final String type, final byte[] der) throws IOException {
+    final StringWriter stringWriter = new StringWriter();
+    try (final PemWriter pemWriter = new PemWriter(stringWriter)) {
+      pemWriter.writeObject(new PemObject(type, der));
     }
+    return stringWriter.toString();
   }
 }
