@@ -20,6 +20,7 @@ import static org.web3j.protocol.core.DefaultBlockParameterName.LATEST;
 import static tech.pegasys.web3signer.dsl.tls.support.CertificateHelpers.populateFingerprintFile;
 
 import tech.pegasys.web3signer.core.config.KeyStoreOptions;
+import tech.pegasys.web3signer.core.config.TrustStoreOptions;
 import tech.pegasys.web3signer.core.config.client.ClientTlsOptions;
 import tech.pegasys.web3signer.core.service.jsonrpc.handlers.signing.ConfigurationChainId;
 import tech.pegasys.web3signer.dsl.signer.SignerConfigurationBuilder;
@@ -28,6 +29,8 @@ import tech.pegasys.web3signer.dsl.tls.client.BasicClientTlsOptions;
 import tech.pegasys.web3signer.dsl.tls.client.BasicKeyStoreOptions;
 import tech.pegasys.web3signer.dsl.tls.support.TlsEnabledHttpServerFactory;
 import tech.pegasys.web3signer.dsl.utils.MockBalanceReporter;
+import tech.pegasys.web3signer.keystore.dsl.certificates.CertificateHelpers;
+import tech.pegasys.web3signer.keystore.dsl.certificates.SelfSignedCertificate;
 
 import java.io.IOException;
 import java.math.BigInteger;
@@ -187,5 +190,77 @@ class EthRpcDownstreamTlsAcceptanceTest extends Eth1RpcAcceptanceTestBase {
     assertThatThrownBy(() -> signer.jsonRpc().ethGetBalance("0x123456", LATEST).send())
         .isInstanceOf(ClientConnectionException.class)
         .hasMessageContaining(String.valueOf(INTERNAL_SERVER_ERROR.code()));
+  }
+
+  @Test
+  void connectsToServerInTrustStore(@TempDir Path workDir) throws Exception {
+    final TlsCertificateDefinition serverCert = generateCertificate(workDir, "server");
+    final TlsCertificateDefinition web3SignerCert =
+        TlsCertificateDefinition.loadFromResource("tls/cert2.pfx", "password2");
+
+    final HttpServer web3ProviderHttpServer =
+        serverFactory.create(serverCert, web3SignerCert, workDir);
+
+    startSignerWithTrustStore(
+        web3SignerCert, serverCert, web3ProviderHttpServer.actualPort(), workDir);
+
+    assertThat(signer.jsonRpc().ethGetBalance("0x123456", LATEST).send().getBalance())
+        .isEqualTo(BigInteger.valueOf(MockBalanceReporter.REPORTED_BALANCE));
+  }
+
+  @Test
+  void doesNotConnectToServerMissingFromTrustStore(@TempDir Path workDir) throws Exception {
+    final TlsCertificateDefinition serverCert = generateCertificate(workDir, "server");
+    final TlsCertificateDefinition otherCert = generateCertificate(workDir, "other");
+    final TlsCertificateDefinition web3SignerCert =
+        TlsCertificateDefinition.loadFromResource("tls/cert2.pfx", "password2");
+
+    final HttpServer web3ProviderHttpServer =
+        serverFactory.create(serverCert, web3SignerCert, workDir);
+
+    startSignerWithTrustStore(
+        web3SignerCert, otherCert, web3ProviderHttpServer.actualPort(), workDir);
+
+    assertThatThrownBy(() -> signer.jsonRpc().ethGetBalance("0x123456", LATEST).send())
+        .isInstanceOf(ClientConnectionException.class)
+        .hasMessageContaining(String.valueOf(BAD_GATEWAY.code()));
+  }
+
+  private void startSignerWithTrustStore(
+      final TlsCertificateDefinition presentedCert,
+      final TlsCertificateDefinition trustedServerCert,
+      final int downstreamWeb3Port,
+      final Path workDir)
+      throws IOException {
+    final Path clientPasswordFile =
+        Files.writeString(workDir.resolve("clientKeystorePassword"), presentedCert.getPassword());
+    final Path trustStorePasswordFile =
+        Files.writeString(workDir.resolve("truststorePassword"), trustedServerCert.getPassword());
+
+    final ClientTlsOptions clientTlsOptions =
+        new BasicClientTlsOptions(
+            new BasicKeyStoreOptions(presentedCert.getPkcs12File().toPath(), clientPasswordFile),
+            new TrustStoreOptions(
+                trustedServerCert.getPkcs12File().toPath(), Optional.of(trustStorePasswordFile)));
+
+    startSigner(
+        new SignerConfigurationBuilder()
+            .withKeyStoreDirectory(keyFileTempDir)
+            .withMode("eth1")
+            .withChainIdProvider(new ConfigurationChainId(DEFAULT_CHAIN_ID))
+            .withDownstreamTlsOptions(clientTlsOptions)
+            .withDownstreamHttpPort(downstreamWeb3Port)
+            .build());
+  }
+
+  private static TlsCertificateDefinition generateCertificate(final Path workDir, final String name)
+      throws IOException {
+    final String password = name + "-password";
+    final Path keyStore =
+        CertificateHelpers.createPkcs12TrustStore(
+            Files.createDirectories(workDir.resolve(name)),
+            SelfSignedCertificate.generate(),
+            password);
+    return new TlsCertificateDefinition(keyStore.toFile(), password);
   }
 }

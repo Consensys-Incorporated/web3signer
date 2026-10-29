@@ -44,8 +44,9 @@ public class PicoCliTlsServerOptions implements TlsOptions {
   @Option(
       names = "--tls-allow-any-client",
       description =
-          "If set to true, any client may connect, regardless of presented certificate. This cannot "
-              + "be set to true if either a known clients file is specified or CA clients have been enabled. (Default: false)",
+          "If set to true, disables TLS client authentication; client certificates are not "
+              + "requested. Cannot be used with --tls-truststore-file, --tls-known-clients-file or "
+              + "--tls-allow-ca-clients. (Default: false)",
       paramLabel = BOOL_FORMAT_HELP,
       arity = "1")
   Boolean tlsAllowAnyClient = false; // package level access for validator

@@ -16,6 +16,7 @@ import static tech.pegasys.web3signer.commandline.DefaultCommandValues.BOOL_FORM
 import static tech.pegasys.web3signer.commandline.DefaultCommandValues.FILE_FORMAT_HELP;
 
 import tech.pegasys.web3signer.core.config.KeyStoreOptions;
+import tech.pegasys.web3signer.core.config.TrustStoreOptions;
 import tech.pegasys.web3signer.core.config.client.ClientTlsOptions;
 
 import java.nio.file.Path;
@@ -38,17 +39,35 @@ public class PicoCliClientTlsOptions implements ClientTlsOptions {
   @Option(
       names = "--downstream-http-tls-known-servers-file",
       description =
-          "Path to a file containing the hostname, port and certificate fingerprints of web3 providers to trust. Must be specified if CA auth is disabled.",
+          "Deprecated, use --downstream-http-tls-truststore-file. File of trusted web3 provider "
+              + "hostnames, ports and certificate fingerprints.",
       paramLabel = FILE_FORMAT_HELP,
       arity = "1")
   private Path knownServersFile;
 
   @Option(
+      names = "--downstream-http-tls-truststore-file",
+      description =
+          "Truststore of trusted web3 provider certificates or their CAs (PKCS#12, JKS or PEM). "
+              + "Replaces the JVM's default CAs.",
+      paramLabel = FILE_FORMAT_HELP,
+      arity = "1")
+  private Path trustStoreFile;
+
+  @Option(
+      names = "--downstream-http-tls-truststore-password-file",
+      description = "File containing the truststore password (not needed for PEM).",
+      paramLabel = FILE_FORMAT_HELP,
+      arity = "1")
+  private Path trustStorePasswordFile;
+
+  @Option(
       names = "--downstream-http-tls-ca-auth-enabled",
       description =
-          "If set, will use the system's CA to validate received server certificates. Defaults to enabled.",
+          "Deprecated, only applies to --downstream-http-tls-known-servers-file. If set, also "
+              + "trusts the JVM's default CAs. Defaults to enabled.",
       arity = "1")
-  private boolean caAuthEnabled = true;
+  private Boolean caAuthEnabled = null;
 
   @Override
   public Optional<KeyStoreOptions> getKeyStoreOptions() {
@@ -58,14 +77,36 @@ public class PicoCliClientTlsOptions implements ClientTlsOptions {
     return Optional.of(keyStoreOptions);
   }
 
+  @SuppressWarnings("removal") // overrides the deprecated interface method
+  @Deprecated(forRemoval = true)
   @Override
   public boolean isCaAuthEnabled() {
-    return caAuthEnabled;
+    return caAuthEnabled == null || caAuthEnabled;
   }
 
+  @Deprecated(forRemoval = true)
+  public boolean isCaAuthEnabledSpecified() {
+    return caAuthEnabled != null;
+  }
+
+  @SuppressWarnings("removal") // overrides the deprecated interface method
+  @Deprecated(forRemoval = true)
   @Override
   public Optional<Path> getKnownServersFile() {
     return Optional.ofNullable(knownServersFile);
+  }
+
+  @Override
+  public Optional<TrustStoreOptions> getTrustStoreOptions() {
+    if (trustStoreFile == null) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        new TrustStoreOptions(trustStoreFile, Optional.ofNullable(trustStorePasswordFile)));
+  }
+
+  public Path getTrustStorePasswordFile() {
+    return trustStorePasswordFile;
   }
 
   public boolean isTlsEnabled() {

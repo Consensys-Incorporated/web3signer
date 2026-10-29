@@ -16,8 +16,10 @@ import static tech.pegasys.web3signer.commandline.DefaultCommandValues.BOOL_FORM
 import static tech.pegasys.web3signer.commandline.DefaultCommandValues.FILE_FORMAT_HELP;
 
 import tech.pegasys.web3signer.core.config.ClientAuthConstraints;
+import tech.pegasys.web3signer.core.config.TrustStoreOptions;
 
 import java.io.File;
+import java.nio.file.Path;
 import java.util.Optional;
 
 import picocli.CommandLine.Option;
@@ -26,24 +28,58 @@ public class PicoCliClientAuthConstraints implements ClientAuthConstraints {
 
   @Option(
       names = "--tls-known-clients-file",
-      description = "Path to a file containing the fingerprints of authorized clients.",
+      description =
+          "Deprecated, use --tls-truststore-file. File of authorized client certificate fingerprints.",
       paramLabel = FILE_FORMAT_HELP,
       arity = "1")
   private File tlsKnownClientsFile = null;
 
   @Option(
+      names = "--tls-truststore-file",
+      description =
+          "Truststore of authorized client certificates or their CAs (PKCS#12, JKS or PEM).",
+      paramLabel = FILE_FORMAT_HELP,
+      arity = "1")
+  private Path tlsTrustStoreFile = null;
+
+  @Option(
+      names = "--tls-truststore-password-file",
+      description = "File containing the truststore password (not needed for PEM).",
+      paramLabel = FILE_FORMAT_HELP,
+      arity = "1")
+  private Path tlsTrustStorePasswordFile = null;
+
+  @Option(
       names = "--tls-allow-ca-clients",
       description =
-          "If set to true, allows clients authorized by the CA to connect to Web3Signer. (Default: false)",
+          "Deprecated, use --tls-truststore-file. If set to true, allows clients signed by the "
+              + "JVM's default CAs. (Default: false)",
       paramLabel = BOOL_FORMAT_HELP,
       arity = "1")
   private Boolean tlsAllowCaClients = false;
 
+  @SuppressWarnings("removal") // overrides the deprecated interface method
+  @Deprecated(forRemoval = true)
   @Override
   public Optional<File> getKnownClientsFile() {
     return Optional.ofNullable(tlsKnownClientsFile);
   }
 
+  @Override
+  public Optional<TrustStoreOptions> getTrustStoreOptions() {
+    if (tlsTrustStoreFile == null) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        new TrustStoreOptions(tlsTrustStoreFile, Optional.ofNullable(tlsTrustStorePasswordFile)));
+  }
+
+  Path getTrustStorePasswordFile() {
+    return tlsTrustStorePasswordFile;
+  }
+
+  @SuppressWarnings("removal") // overrides the deprecated interface method
+  @Deprecated(forRemoval = true)
   @Override
   public boolean isCaAuthorizedClientAllowed() {
     return tlsAllowCaClients;

@@ -16,6 +16,7 @@ import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import tech.pegasys.web3signer.keystorage.azure.AzureKeyVault;
+import tech.pegasys.web3signer.keystorage.common.TrustStoreLoader;
 import tech.pegasys.web3signer.keystorage.hashicorp.HashicorpConnection;
 import tech.pegasys.web3signer.keystorage.hashicorp.HashicorpConnectionFactory;
 import tech.pegasys.web3signer.keystorage.hashicorp.HashicorpException;
@@ -32,11 +33,16 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.google.common.io.Files;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
 
 public abstract class AbstractArtifactSignerFactory implements ArtifactSignerFactory {
+  private static final Logger LOG = LogManager.getLogger();
+  private static final AtomicBoolean KNOWN_SERVERS_DEPRECATION_LOGGED = new AtomicBoolean();
 
   final HashicorpConnectionFactory hashicorpConnectionFactory;
   final Path configsDirectory;
@@ -113,23 +119,68 @@ public abstract class AbstractArtifactSignerFactory implements ArtifactSignerFac
     }
   }
 
+  @SuppressWarnings("removal") // deprecated tlsKnownServersPath
   private Optional<TlsOptions> buildTlsOptions(final HashicorpSigningMetadata metadata) {
-    if (metadata.getTlsEnabled()) {
-      final Path knownServerFile = metadata.getTlsKnownServerFile();
-      if (knownServerFile == null) {
-        return Optional.of(new TlsOptions(Optional.empty(), null, null)); // use CA Auth
-      } else {
-        final Path configRelativeKnownServerPath = makeRelativePathAbsolute(knownServerFile);
-        if (!configRelativeKnownServerPath.toFile().exists()) {
-          throw new SigningMetadataException(
-              String.format(
-                  "Known servers file (%s) does not exist.", configRelativeKnownServerPath));
-        }
-        return Optional.of(
-            new TlsOptions(Optional.of(TrustStoreType.WHITELIST), knownServerFile, null));
-      }
+    if (!metadata.getTlsEnabled()) {
+      return Optional.empty();
     }
-    return Optional.empty();
+
+    final Path trustStoreFile = metadata.getTlsTruststoreFile();
+    final Path trustStorePasswordFile = metadata.getTlsTruststorePasswordFile();
+    final Path knownServerFile = metadata.getTlsKnownServerFile();
+
+    if (trustStoreFile == null && trustStorePasswordFile != null) {
+      throw new SigningMetadataException("tlsTruststorePasswordFile requires tlsTruststoreFile");
+    }
+
+    if (trustStoreFile != null) {
+      if (knownServerFile != null) {
+        throw new SigningMetadataException(
+            "tlsTruststoreFile cannot be specified together with the deprecated tlsKnownServersPath");
+      }
+      return Optional.of(buildTrustStoreTlsOptions(trustStoreFile, trustStorePasswordFile));
+    }
+
+    if (knownServerFile == null) {
+      return Optional.of(new TlsOptions(Optional.empty(), null, null)); // use CA Auth
+    }
+
+    if (KNOWN_SERVERS_DEPRECATION_LOGGED.compareAndSet(false, true)) {
+      LOG.warn(
+          "Hashicorp signing metadata 'tlsKnownServersPath' is deprecated and will be removed in a "
+              + "future release. Use 'tlsTruststoreFile' and 'tlsTruststorePasswordFile' instead.");
+    }
+    final Path configRelativeKnownServerPath = makeRelativePathAbsolute(knownServerFile);
+    if (!configRelativeKnownServerPath.toFile().exists()) {
+      throw new SigningMetadataException(
+          String.format("Known servers file (%s) does not exist.", configRelativeKnownServerPath));
+    }
+    return Optional.of(
+        new TlsOptions(Optional.of(TrustStoreType.WHITELIST), knownServerFile, null));
+  }
+
+  private TlsOptions buildTrustStoreTlsOptions(
+      final Path trustStoreFile, final Path trustStorePasswordFile) {
+    final Path trustStorePath = makeRelativePathAbsolute(trustStoreFile);
+    final boolean pem;
+    try {
+      pem = TrustStoreLoader.isPem(trustStorePath);
+    } catch (final IOException e) {
+      throw new SigningMetadataException("Unable to read truststore file: " + trustStorePath, e);
+    }
+
+    if (pem) {
+      return new TlsOptions(Optional.of(TrustStoreType.PEM), trustStorePath, null);
+    }
+    if (trustStorePasswordFile == null) {
+      throw new SigningMetadataException(
+          "tlsTruststorePasswordFile must be specified for a PKCS#12 or JKS truststore");
+    }
+    // PKCS12 marks a password-protected keystore; TrustStoreLoader detects PKCS#12 or JKS
+    return new TlsOptions(
+        Optional.of(TrustStoreType.PKCS12),
+        trustStorePath,
+        loadPassword(makeRelativePathAbsolute(trustStorePasswordFile)));
   }
 
   protected String loadPassword(final Path passwordFile) {

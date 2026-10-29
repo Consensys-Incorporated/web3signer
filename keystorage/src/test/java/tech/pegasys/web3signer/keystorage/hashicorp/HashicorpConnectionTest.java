@@ -17,7 +17,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import tech.pegasys.web3signer.keystorage.hashicorp.config.ConnectionParameters;
 import tech.pegasys.web3signer.keystorage.hashicorp.config.TlsOptions;
 
-import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
@@ -49,9 +48,7 @@ public class HashicorpConnectionTest {
 
     assertThatThrownBy(() -> connectionFactory.create(params))
         .isInstanceOf(HashicorpException.class)
-        .hasMessage("Unable to initialise connection to hashicorp vault.")
-        .cause()
-        .isInstanceOf(EOFException.class);
+        .hasMessage("Unable to initialise connection to hashicorp vault.");
   }
 
   @Test

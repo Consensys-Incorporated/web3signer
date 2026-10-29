@@ -4,7 +4,17 @@
 ### Security
 - Guava upgraded to 33.7.2-jre to fix CVE-2026-102554, and snappy-java pinned to 1.1.10.9 to fix CVE-2026-93451 and CVE-2026-108106 (transitive via besu and teku). [#1285][PR_1285]
 
+### Upcoming Breaking Changes
+The following options are deprecated, log a warning when used, and will be removed in a future release. A truststore can hold CA certificates as well as client or server certificates. [#1282][PR_1282]
+- `--tls-known-clients-file` and `--tls-allow-ca-clients`: use `--tls-truststore-file` and `--tls-truststore-password-file`.
+- `--downstream-http-tls-known-servers-file` and `--downstream-http-tls-ca-auth-enabled`: use `--downstream-http-tls-truststore-file` and `--downstream-http-tls-truststore-password-file`.
+- Hashicorp signing metadata `tlsKnownServersPath`: use `tlsTruststoreFile` and `tlsTruststorePasswordFile`.
+
 ### Features Added
+- TLS trust can be configured with a truststore instead of certificate fingerprint files: PKCS#12 (preferred), JKS or PEM certificates, detected from the file content. A password file is required for PKCS#12 and JKS, and not used for PEM. The truststore holds the trusted certificates or their issuing CAs and, like `javax.net.ssl.trustStore`, replaces the JVM's default CAs [#1282][PR_1282]:
+  - Inbound client authentication: `--tls-truststore-file` and `--tls-truststore-password-file` (cannot be combined with `--tls-allow-ca-clients`).
+  - Eth1 downstream web3 provider: `--downstream-http-tls-truststore-file` and `--downstream-http-tls-truststore-password-file`.
+  - Hashicorp Vault signing metadata: `tlsTruststoreFile` and `tlsTruststorePasswordFile`; relative paths resolve against the key config directory.
 
 ### Bugs Fixed
 
@@ -18,6 +28,7 @@
 [PR_1283]: https://github.com/Consensys-Incorporated/web3signer/pull/1283
 [PR_1285]: https://github.com/Consensys-Incorporated/web3signer/pull/1285
 
+[PR_1282]: https://github.com/Consensys-Incorporated/web3signer/pull/1282
 
 ---
 ## 26.10.2

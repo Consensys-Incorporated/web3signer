@@ -41,6 +41,8 @@ import java.net.URISyntaxException;
 import java.time.Duration;
 import java.util.Optional;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.HelpCommand;
@@ -53,6 +55,7 @@ import picocli.CommandLine.HelpCommand;
     mixinStandardHelpOptions = true,
     footer = "Unstable options are omitted from this help. Run 'web3signer eth1 -X' to list them.")
 public class Eth1SubCommand extends ModeSubCommand implements Eth1Config {
+  private static final Logger LOG = LogManager.getLogger();
 
   public static final String COMMAND_NAME = "eth1";
 
@@ -173,6 +176,43 @@ public class Eth1SubCommand extends ModeSubCommand implements Eth1Config {
   protected void validateArgs() {
     checkIfRequiredOptionsAreInitialized(this);
     validateV3KeystoresBulkloadingParameters();
+    validateDownstreamTlsTrustOptions();
+  }
+
+  @SuppressWarnings("removal") // validates the deprecated known servers file and CA auth
+  private void validateDownstreamTlsTrustOptions() {
+    final boolean trustStoreSpecified = clientTlsOptions.getTrustStoreOptions().isPresent();
+    if (!trustStoreSpecified && clientTlsOptions.getTrustStorePasswordFile() != null) {
+      throw new CommandLine.ParameterException(
+          spec.commandLine(),
+          "--downstream-http-tls-truststore-password-file requires --downstream-http-tls-truststore-file");
+    }
+
+    final boolean knownServersFileSpecified = clientTlsOptions.getKnownServersFile().isPresent();
+    if (trustStoreSpecified && knownServersFileSpecified) {
+      throw new CommandLine.ParameterException(
+          spec.commandLine(),
+          "--downstream-http-tls-truststore-file cannot be specified together with the deprecated --downstream-http-tls-known-servers-file");
+    }
+
+    if (trustStoreSpecified && clientTlsOptions.isCaAuthEnabledSpecified()) {
+      throw new CommandLine.ParameterException(
+          spec.commandLine(),
+          "--downstream-http-tls-ca-auth-enabled cannot be specified together with --downstream-http-tls-truststore-file; the truststore replaces the JVM's default CAs");
+    }
+
+    if (knownServersFileSpecified) {
+      LOG.warn(
+          "--downstream-http-tls-known-servers-file is deprecated and will be removed in a future "
+              + "release. Use --downstream-http-tls-truststore-file and "
+              + "--downstream-http-tls-truststore-password-file instead.");
+    }
+    if (clientTlsOptions.isCaAuthEnabledSpecified()) {
+      LOG.warn(
+          "--downstream-http-tls-ca-auth-enabled is deprecated and will be removed in a future "
+              + "release. The JVM's default CAs are used unless "
+              + "--downstream-http-tls-truststore-file is set.");
+    }
   }
 
   private void validateV3KeystoresBulkloadingParameters() {

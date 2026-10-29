@@ -81,6 +81,7 @@ public class HashicorpVaultAccessAcceptanceTest {
   }
 
   @Test
+  @SuppressWarnings("removal") // deprecated WHITELIST truststore type
   void keyCanBeExtractedFromVaultOverTlsUsingWhitelist(@TempDir final Path testDir)
       throws IOException, CertificateEncodingException {
     hashicorpNode = HashicorpNode.createAndStartHashicorp(true);

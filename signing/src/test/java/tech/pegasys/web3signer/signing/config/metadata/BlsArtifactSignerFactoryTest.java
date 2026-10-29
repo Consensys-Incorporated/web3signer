@@ -33,9 +33,11 @@ import tech.pegasys.web3signer.bls.keystore.model.SCryptParam;
 import tech.pegasys.web3signer.keystorage.aws.AwsSecretsManagerProvider;
 import tech.pegasys.web3signer.keystorage.hashicorp.HashicorpConnection;
 import tech.pegasys.web3signer.keystorage.hashicorp.HashicorpConnectionFactory;
+import tech.pegasys.web3signer.keystorage.hashicorp.TrustStoreType;
 import tech.pegasys.web3signer.keystorage.hashicorp.VaultAuthMethod;
 import tech.pegasys.web3signer.keystorage.hashicorp.config.ConnectionParameters;
 import tech.pegasys.web3signer.keystorage.hashicorp.config.KubernetesAuthOptions;
+import tech.pegasys.web3signer.keystorage.hashicorp.config.TlsOptions;
 import tech.pegasys.web3signer.signing.ArtifactSigner;
 import tech.pegasys.web3signer.signing.BlsArtifactSigner;
 import tech.pegasys.web3signer.signing.KeyType;
@@ -186,6 +188,7 @@ class BlsArtifactSignerFactoryTest {
   }
 
   @Test
+  @SuppressWarnings("removal") // deprecated tlsKnownServersPath
   void malformedKnownServersFileShowsSuitableError() throws IOException {
 
     final Path malformedknownServers = configDir.resolve("malformedKnownServers");
@@ -200,6 +203,99 @@ class BlsArtifactSignerFactoryTest {
     assertThatThrownBy(() -> artifactSignerFactory.create(metaData))
         .isInstanceOf(SigningMetadataException.class)
         .hasMessage("Unable to initialise connection to hashicorp vault.");
+  }
+
+  @Test
+  void relativePkcs12TruststorePathsAreResolvedAgainstConfigDirectory() throws IOException {
+    Files.write(configDir.resolve("truststore.p12"), new byte[] {0x30, (byte) 0x82});
+    Files.writeString(configDir.resolve("truststore.pass"), "trustPassword");
+    final HashicorpSigningMetadata metaData = tlsMetadata(Path.of("truststore.p12"));
+    metaData.setTlsTruststorePasswordFile(Path.of("truststore.pass"));
+
+    final TlsOptions tlsOptions = captureTlsOptions(metaData);
+
+    assertThat(tlsOptions.getTrustStoreType()).contains(TrustStoreType.PKCS12);
+    assertThat(tlsOptions.getTrustStorePath()).isEqualTo(configDir.resolve("truststore.p12"));
+    assertThat(tlsOptions.getTrustStorePassword()).isEqualTo("trustPassword");
+  }
+
+  @Test
+  void pemTruststoreIsDetectedAndNeedsNoPassword() throws IOException {
+    Files.writeString(
+        configDir.resolve("truststore.pem"),
+        "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n");
+    final HashicorpSigningMetadata metaData = tlsMetadata(Path.of("truststore.pem"));
+
+    final TlsOptions tlsOptions = captureTlsOptions(metaData);
+
+    assertThat(tlsOptions.getTrustStoreType()).contains(TrustStoreType.PEM);
+    assertThat(tlsOptions.getTrustStorePath()).isEqualTo(configDir.resolve("truststore.pem"));
+    assertThat(tlsOptions.getTrustStorePassword()).isNull();
+  }
+
+  @Test
+  void pkcs12TruststoreWithoutPasswordFileShowsSuitableError() throws IOException {
+    Files.write(configDir.resolve("truststore.p12"), new byte[] {0x30, (byte) 0x82});
+    final HashicorpSigningMetadata metaData = tlsMetadata(configDir.resolve("truststore.p12"));
+
+    assertThatThrownBy(() -> artifactSignerFactory.create(metaData))
+        .isInstanceOf(SigningMetadataException.class)
+        .hasMessage("tlsTruststorePasswordFile must be specified for a PKCS#12 or JKS truststore");
+  }
+
+  @Test
+  void truststorePasswordFileWithoutTruststoreShowsSuitableError() {
+    final HashicorpSigningMetadata metaData = tlsMetadata(null);
+    metaData.setTlsTruststorePasswordFile(configDir.resolve("truststore.pass"));
+
+    assertThatThrownBy(() -> artifactSignerFactory.create(metaData))
+        .isInstanceOf(SigningMetadataException.class)
+        .hasMessage("tlsTruststorePasswordFile requires tlsTruststoreFile");
+  }
+
+  private static HashicorpSigningMetadata tlsMetadata(final Path trustStoreFile) {
+    final HashicorpSigningMetadata metaData =
+        new HashicorpSigningMetadata("localhost", "keyPath", KeyType.BLS);
+    metaData.setToken("token");
+    metaData.setTlsEnabled(true);
+    metaData.setTlsTruststoreFile(trustStoreFile);
+    return metaData;
+  }
+
+  private TlsOptions captureTlsOptions(final HashicorpSigningMetadata metaData) {
+    final AtomicReference<TlsOptions> capturedTlsOptions = new AtomicReference<>();
+    final HashicorpConnectionFactory connectionFactory =
+        new HashicorpConnectionFactory() {
+          @Override
+          public HashicorpConnection create(final ConnectionParameters connectionParameters) {
+            capturedTlsOptions.set(connectionParameters.getTlsOptions().orElseThrow());
+            throw new SigningMetadataException("Connection intercepted");
+          }
+        };
+    final ArtifactSignerFactory customFactory =
+        new BlsArtifactSignerFactory(
+            configDir,
+            new NoOpMetricsSystem(),
+            connectionFactory,
+            awsSecretsManagerProvider,
+            (args) -> new BlsArtifactSigner(args.getKeyPair(), args.getOrigin()),
+            azureKeyVaultFactory);
+
+    assertThatThrownBy(() -> customFactory.create(metaData)).hasMessage("Connection intercepted");
+    return capturedTlsOptions.get();
+  }
+
+  @Test
+  @SuppressWarnings("removal") // deprecated tlsKnownServersPath
+  void truststoreWithKnownServersFileShowsSuitableError() {
+    final HashicorpSigningMetadata metaData = tlsMetadata(configDir.resolve("truststore.p12"));
+    metaData.setTlsTruststorePasswordFile(configDir.resolve("truststore.pass"));
+    metaData.setTlsKnownServersPath(configDir.resolve("knownServers"));
+
+    assertThatThrownBy(() -> artifactSignerFactory.create(metaData))
+        .isInstanceOf(SigningMetadataException.class)
+        .hasMessage(
+            "tlsTruststoreFile cannot be specified together with the deprecated tlsKnownServersPath");
   }
 
   @Test

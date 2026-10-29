@@ -20,6 +20,7 @@ import static tech.pegasys.web3signer.signing.config.KeystoresParameters.KEYSTOR
 
 import tech.pegasys.web3signer.commandline.subcommands.Eth1SubCommand;
 import tech.pegasys.web3signer.core.Runner;
+import tech.pegasys.web3signer.core.config.TrustStoreOptions;
 import tech.pegasys.web3signer.signing.config.KeystoresParameters;
 
 import java.io.IOException;
@@ -29,10 +30,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class CommandlineParserEth1Test {
   private StringWriter commandOutput;
@@ -155,6 +159,71 @@ class CommandlineParserEth1Test {
             "Error parsing parameters: Either %s or %s must be specified",
             KEYSTORES_PASSWORD_FILE, KEYSTORES_PASSWORDS_PATH);
     assertThat(commandError.toString()).contains(expectedError);
+  }
+
+  @Test
+  void downstreamTrustStoreIsParsed() {
+    final String cmdline =
+        validBaseCommandOptions()
+            + " eth1 --chain-id 1337 --downstream-http-tls-enabled"
+            + " --downstream-http-tls-truststore-file=./truststore.p12"
+            + " --downstream-http-tls-truststore-password-file=./truststore.pass";
+    final int retCode = parser.parseCommandLine(cmdline.split("\\s+"));
+
+    assertThat(retCode).isZero();
+    assertThat(eth1SubCommand.getClientTlsOptions().orElseThrow().getTrustStoreOptions())
+        .contains(
+            new TrustStoreOptions(
+                Path.of("./truststore.p12"), Optional.of(Path.of("./truststore.pass"))));
+  }
+
+  @Test
+  void downstreamTrustStoreWithoutPasswordFileIsParsed() {
+    final String cmdline =
+        validBaseCommandOptions()
+            + " eth1 --chain-id 1337 --downstream-http-tls-enabled"
+            + " --downstream-http-tls-truststore-file=./truststore.pem";
+    final int retCode = parser.parseCommandLine(cmdline.split("\\s+"));
+
+    assertThat(retCode).isZero();
+    assertThat(eth1SubCommand.getClientTlsOptions().orElseThrow().getTrustStoreOptions())
+        .contains(new TrustStoreOptions(Path.of("./truststore.pem"), Optional.empty()));
+  }
+
+  @Test
+  void downstreamTrustStorePasswordFileWithoutTrustStoreCausesParsingError() {
+    final String cmdline =
+        validBaseCommandOptions()
+            + " eth1 --chain-id 1337 --downstream-http-tls-enabled"
+            + " --downstream-http-tls-truststore-password-file=./truststore.pass";
+    final int retCode = parser.parseCommandLine(cmdline.split("\\s+"));
+
+    assertThat(retCode).isNotZero();
+    assertThat(commandError.toString())
+        .contains(
+            "Error parsing parameters: --downstream-http-tls-truststore-password-file requires --downstream-http-tls-truststore-file");
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      value = {
+        "--downstream-http-tls-known-servers-file=./known_servers|--downstream-http-tls-truststore-file cannot be specified together with the deprecated --downstream-http-tls-known-servers-file",
+        "--downstream-http-tls-ca-auth-enabled=false|--downstream-http-tls-ca-auth-enabled cannot be specified together with --downstream-http-tls-truststore-file",
+        "--downstream-http-tls-ca-auth-enabled=true|--downstream-http-tls-ca-auth-enabled cannot be specified together with --downstream-http-tls-truststore-file"
+      })
+  void downstreamTrustStoreWithDeprecatedTrustOptionCausesParsingError(
+      final String deprecatedOption, final String expectedError) {
+    final String cmdline =
+        validBaseCommandOptions()
+            + " eth1 --chain-id 1337 --downstream-http-tls-enabled"
+            + " --downstream-http-tls-truststore-file=./truststore.p12"
+            + " --downstream-http-tls-truststore-password-file=./truststore.pass "
+            + deprecatedOption;
+    final int retCode = parser.parseCommandLine(cmdline.split("\\s+"));
+
+    assertThat(retCode).isNotZero();
+    assertThat(commandError.toString()).contains("Error parsing parameters: " + expectedError);
   }
 
   public static class MockEth1SubCommand extends Eth1SubCommand {

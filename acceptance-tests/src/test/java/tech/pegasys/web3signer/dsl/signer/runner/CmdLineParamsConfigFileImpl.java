@@ -316,6 +316,7 @@ public class CmdLineParamsConfigFileImpl implements CmdLineParamsBuilder {
     return slashingProtectionDbUrl;
   }
 
+  @SuppressWarnings("removal") // deprecated known clients file and CA clients
   private Map<String, Object> createServerTlsArgs() {
     var yamlConfigMap = new HashMap<String, Object>();
 
@@ -333,6 +334,18 @@ public class CmdLineParamsConfigFileImpl implements CmdLineParamsBuilder {
           yamlConfigMap.put(
               "tls-known-clients-file", constraints.getKnownClientsFile().get().getPath());
         }
+        constraints
+            .getTrustStoreOptions()
+            .ifPresent(
+                trustStore -> {
+                  yamlConfigMap.put("tls-truststore-file", trustStore.trustStoreFile().toString());
+                  trustStore
+                      .passwordFile()
+                      .ifPresent(
+                          passwordFile ->
+                              yamlConfigMap.put(
+                                  "tls-truststore-password-file", passwordFile.toString()));
+                });
         if (constraints.isCaAuthorizedClientAllowed()) {
           yamlConfigMap.put("tls-allow-ca-clients", true);
         }
@@ -341,6 +354,7 @@ public class CmdLineParamsConfigFileImpl implements CmdLineParamsBuilder {
     return yamlConfigMap;
   }
 
+  @SuppressWarnings("removal") // deprecated known servers file and CA auth
   private Map<String, Object> createDownstreamTlsArgs() {
     final Optional<ClientTlsOptions> optionalClientTlsOptions =
         signerConfig.getDownstreamTlsOptions();
@@ -369,6 +383,21 @@ public class CmdLineParamsConfigFileImpl implements CmdLineParamsBuilder {
           "eth1.downstream-http-tls-known-servers-file",
           clientTlsOptions.getKnownServersFile().get().toAbsolutePath());
     }
+    clientTlsOptions
+        .getTrustStoreOptions()
+        .ifPresent(
+            trustStore -> {
+              yamlConfigMap.put(
+                  "eth1.downstream-http-tls-truststore-file",
+                  trustStore.trustStoreFile().toAbsolutePath().toString());
+              trustStore
+                  .passwordFile()
+                  .ifPresent(
+                      passwordFile ->
+                          yamlConfigMap.put(
+                              "eth1.downstream-http-tls-truststore-password-file",
+                              passwordFile.toAbsolutePath().toString()));
+            });
     if (!clientTlsOptions.isCaAuthEnabled()) {
       yamlConfigMap.put("eth1.downstream-http-tls-ca-auth-enabled", false);
     }

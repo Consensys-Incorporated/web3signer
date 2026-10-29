@@ -37,6 +37,7 @@ public class HashicorpConnectionFactoryTest {
   final String CONFIGURED_HOST = "Host";
 
   @Test
+  @SuppressWarnings("removal") // deprecated WHITELIST truststore type
   void invalidWhiteListFileCausesConnectionToThrowHashicorpException() throws IOException {
     final File invalidWhitelist = File.createTempFile("invalid", ".whitelist");
     Files.writeString(invalidWhitelist.toPath(), "Invalid Whitelist content");
@@ -57,6 +58,7 @@ public class HashicorpConnectionFactoryTest {
   }
 
   @Test
+  @SuppressWarnings("removal") // deprecated WHITELIST truststore type
   void missingAndUncreatableWhiteListThrowsHashicorpException() {
     final Path invalidFile = Path.of("/missingUnCreatable.whitelist");
 

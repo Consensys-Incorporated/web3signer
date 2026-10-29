@@ -12,10 +12,10 @@
  */
 package tech.pegasys.web3signer.commandline.config;
 
-import tech.pegasys.web3signer.core.config.ClientAuthConstraints;
-
 import java.io.File;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import picocli.CommandLine;
 
 /**
@@ -23,6 +23,7 @@ import picocli.CommandLine;
  * due to limitations of config file/environment value provider).
  */
 public class PicoCliTlsServerOptionsValidator {
+  private static final Logger LOG = LogManager.getLogger();
   private final CommandLine.Model.CommandSpec spec;
   private final PicoCliTlsServerOptions picoCliTlsServerOptions;
 
@@ -33,6 +34,7 @@ public class PicoCliTlsServerOptionsValidator {
     this.picoCliTlsServerOptions = picoCliTlsServerOptions;
   }
 
+  @SuppressWarnings("removal") // validates the deprecated known clients file and CA clients
   public void validate() throws CommandLine.ParameterException {
     final File keyStoreFile = picoCliTlsServerOptions.getKeyStoreFile();
     final File keyStorePasswordFile = picoCliTlsServerOptions.getKeyStorePasswordFile();
@@ -49,22 +51,55 @@ public class PicoCliTlsServerOptionsValidator {
           "--tls-keystore-file must be specified together with --tls-keystore-password-file");
     }
 
-    final ClientAuthConstraints picoCliClientAuthConstraints =
+    final PicoCliClientAuthConstraints clientAuthConstraints =
         picoCliTlsServerOptions.clientAuthConstraints;
-    if (picoCliTlsServerOptions.tlsAllowAnyClient
-        && (picoCliClientAuthConstraints.getKnownClientsFile().isPresent()
-            || picoCliClientAuthConstraints.isCaAuthorizedClientAllowed())) {
+    final boolean trustStoreSpecified = clientAuthConstraints.getTrustStoreOptions().isPresent();
+    final boolean knownClientsFileSpecified =
+        clientAuthConstraints.getKnownClientsFile().isPresent();
+    final boolean caClientsAllowed = clientAuthConstraints.isCaAuthorizedClientAllowed();
+
+    if (!trustStoreSpecified && clientAuthConstraints.getTrustStorePasswordFile() != null) {
+      throw new CommandLine.ParameterException(
+          spec.commandLine(), "--tls-truststore-password-file requires --tls-truststore-file");
+    }
+
+    if (trustStoreSpecified && knownClientsFileSpecified) {
       throw new CommandLine.ParameterException(
           spec.commandLine(),
-          "--tls-allow-any-client cannot be set to true when --tls-known-clients-file is specified or --tls-allow-ca-clients is set to true");
+          "--tls-truststore-file cannot be specified together with the deprecated --tls-known-clients-file");
+    }
+
+    if (trustStoreSpecified && caClientsAllowed) {
+      throw new CommandLine.ParameterException(
+          spec.commandLine(),
+          "--tls-truststore-file cannot be specified when --tls-allow-ca-clients is set to true; add the CA certificates to the truststore instead");
+    }
+
+    if (picoCliTlsServerOptions.tlsAllowAnyClient
+        && (trustStoreSpecified || knownClientsFileSpecified || caClientsAllowed)) {
+      throw new CommandLine.ParameterException(
+          spec.commandLine(),
+          "--tls-allow-any-client cannot be set to true when --tls-truststore-file or --tls-known-clients-file is specified or --tls-allow-ca-clients is set to true");
     }
 
     if (!picoCliTlsServerOptions.tlsAllowAnyClient
-        && picoCliClientAuthConstraints.getKnownClientsFile().isEmpty()
-        && !picoCliClientAuthConstraints.isCaAuthorizedClientAllowed()) {
+        && !trustStoreSpecified
+        && !knownClientsFileSpecified
+        && !caClientsAllowed) {
       throw new CommandLine.ParameterException(
           spec.commandLine(),
-          "--tls-known-clients-file must be specified if both --tls-allow-any-client and --tls-allow-ca-clients are set to false");
+          "--tls-truststore-file must be specified if both --tls-allow-any-client and --tls-allow-ca-clients are set to false");
+    }
+
+    if (knownClientsFileSpecified) {
+      LOG.warn(
+          "--tls-known-clients-file is deprecated and will be removed in a future release. "
+              + "Use --tls-truststore-file and --tls-truststore-password-file instead.");
+    }
+    if (caClientsAllowed) {
+      LOG.warn(
+          "--tls-allow-ca-clients is deprecated and will be removed in a future release. "
+              + "Add the client CA certificates to --tls-truststore-file instead.");
     }
   }
 
