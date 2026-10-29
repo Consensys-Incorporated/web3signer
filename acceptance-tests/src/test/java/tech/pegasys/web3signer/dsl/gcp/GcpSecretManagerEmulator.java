@@ -68,7 +68,6 @@ public final class GcpSecretManagerEmulator {
   private static final int EMULATOR_GRPC_PORT = 9090;
   private static final int EMULATOR_HTTP_PORT = 8080;
   private static final int TLS_PROXY_PORT = 443;
-  private static final int DENYING_PROXY_PORT = 8443;
   private static final String CERT_PASSWORD = "emulator";
   private static final String NGINX_CONF =
       """
@@ -83,16 +82,9 @@ public final class GcpSecretManagerEmulator {
             grpc_pass grpc://%s:%d;
           }
         }
-        server {
-          listen %d ssl;
-          http2 on;
-          location / {
-            return 403;
-          }
-        }
       }
       """
-          .formatted(TLS_PROXY_PORT, EMULATOR_HOST, EMULATOR_GRPC_PORT, DENYING_PROXY_PORT);
+          .formatted(TLS_PROXY_PORT, EMULATOR_HOST, EMULATOR_GRPC_PORT);
 
   private static final class Holder {
     private static final GcpSecretManagerEmulator INSTANCE = new GcpSecretManagerEmulator();
@@ -149,7 +141,7 @@ public final class GcpSecretManagerEmulator {
                   MountableFile.forHostPath(certificateFile), "/etc/nginx/tls/tls.crt")
               .withCopyFileToContainer(
                   MountableFile.forHostPath(privateKeyFile), "/etc/nginx/tls/tls.key")
-              .withExposedPorts(TLS_PROXY_PORT, DENYING_PROXY_PORT)
+              .withExposedPorts(TLS_PROXY_PORT)
               .waitingFor(Wait.forListeningPort());
       LOG.info(
           "Starting GCP Secret Manager emulator ({}) behind TLS proxy ({})...",
@@ -212,11 +204,6 @@ public final class GcpSecretManagerEmulator {
    */
   public String getTlsEndpoint() {
     return host() + ":" + tlsProxy.getMappedPort(TLS_PROXY_PORT);
-  }
-
-  /** {@code host:port} answering every call with HTTP 403, which gRPC maps to PERMISSION_DENIED. */
-  public String getPermissionDeniedEndpoint() {
-    return host() + ":" + tlsProxy.getMappedPort(DENYING_PROXY_PORT);
   }
 
   /**
