@@ -44,7 +44,7 @@ jobs:
       # Unfixed findings are reported too. linux/amd64 only: arm64 uses the same digest-pinned bases and ships
       # identical package versions (the build-time apt upgrade is the only thing that could race between the arches).
       - name: Scan consensys/web3signer:${{ matrix.tag }}
-        uses: docker://aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222
+        uses: docker://aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
         with:
           args: >-
             image
@@ -63,7 +63,7 @@ jobs:
 
       - name: Upload results to GitHub code scanning
         if: ${{ !cancelled() && hashFiles('trivy-results.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy-results.sarif
           category: trivy-${{ matrix.tag }}
