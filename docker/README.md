@@ -11,7 +11,9 @@ Pick the distroless variant when you want a smaller attack surface (no shell, no
 
 ## Building locally
 
-From the root of the project:
+### From a pre-built distribution (recommended)
+
+From the root of the project (this is how CI builds the published images):
 
 ```sh
 ./gradlew distTar
@@ -28,6 +30,56 @@ docker build --no-cache --pull \
 
 docker run --rm -it web3signer:develop --version
 docker run --rm -it web3signer:develop-distroless --version
+```
+
+### Docker only (no local Java)
+
+Omit `TAR_FILE` and the Dockerfile builds the distribution inside Docker with `./gradlew distTar` (Temurin JDK build stage; the Gradle cache is kept in a BuildKit cache mount). This requires BuildKit (the default since Docker 23) and network access to Maven Central and the Gradle plugin portal. Build from a git checkout so the version is correct; without `.git` the version reports `UNKNOWN+develop`.
+
+```sh
+docker build -f ./docker/Dockerfile -t web3signer:local .
+docker build -f ./docker/Dockerfile.distroless -t web3signer:local-distroless .
+docker run --rm web3signer:local --version
+```
+
+With Docker Compose:
+
+```yaml
+services:
+  web3signer:
+    build:
+      context: .            # repository root
+      dockerfile: docker/Dockerfile   # or docker/Dockerfile.distroless
+    image: web3signer:local
+    ports:
+      - "9000:9000"
+    command: ["eth2", "--slashing-protection-enabled=false"]
+```
+
+Then run `docker compose up --build`.
+
+#### Building straight from GitHub (no clone)
+
+The build context can be a remote git URL. The URL must end in `.git` before the `#<ref>` fragment, and the ref must contain the Dockerfile change that makes `TAR_FILE` optional. Set `BUILDKIT_CONTEXT_KEEP_GIT_DIR=1` so `.git` is kept and the version comes from `git describe --tags`: a release tag reports the tag (e.g. `26.9.0`), any other ref reports the nearest tag plus commit suffix (e.g. `26.9.0+3-gabc1234`), or `UNKNOWN+g<hash>` if no tag is reachable. Without the argument it reports `UNKNOWN+develop`. Prefer a release tag.
+
+```sh
+docker build --build-arg BUILDKIT_CONTEXT_KEEP_GIT_DIR=1 \
+  -f docker/Dockerfile -t web3signer:local \
+  'https://github.com/Consensys-Incorporated/web3signer.git#<release-tag>'
+```
+
+```yaml
+services:
+  web3signer:
+    build:
+      context: https://github.com/Consensys-Incorporated/web3signer.git#<release-tag>   # or #master
+      dockerfile: docker/Dockerfile   # or docker/Dockerfile.distroless
+      args:
+        BUILDKIT_CONTEXT_KEEP_GIT_DIR: "1"
+    image: web3signer:local
+    ports:
+      - "9000:9000"
+    command: ["eth2", "--slashing-protection-enabled=false"]
 ```
 
 ## Running the distroless image

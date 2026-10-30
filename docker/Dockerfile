@@ -1,35 +1,45 @@
 # syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
-# Stage 1: Validate and extract application
-FROM alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS app-extract
+# Distribution source selection.
+# - TAR_FILE set (preferred, used by CI): copy the pre-built distribution from the build context.
+# - TAR_FILE unset/empty: build the distribution inside Docker with ./gradlew distTar (no local Java needed).
+# DIST_FROM_TAR/DIST_SOURCE are derived internally; do not set them.
 ARG TAR_FILE
-RUN test -n "$TAR_FILE" || (echo "ERROR: TAR_FILE build argument is required" && exit 1)
-COPY ${TAR_FILE} /tmp/web3signer.tar.gz
-RUN gzip -t /tmp/web3signer.tar.gz || (echo "ERROR: TAR_FILE is not a valid gzip archive" && exit 1) && \
+ARG DIST_FROM_TAR=${TAR_FILE:+tar}
+ARG DIST_SOURCE=${DIST_FROM_TAR:-gradle}
+
+# Build the distribution from source. Runs on the build host's platform: the
+# distribution is architecture-independent (jblst ships natives for all arches).
+# The source tree is bind-mounted (not copied) so it never lands in a layer; .git
+# must be in the build context for correct version information, and the version
+# calculation runs the git CLI, which the JDK image does not ship.
+FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk@sha256:83f4a7fc27df94dcc7b8de04d14cbbba8da14406f921e966969c3b09000aa507 AS dist-gradle
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+RUN --mount=type=bind,target=/src,rw \
+    --mount=type=cache,id=web3signer-gradle,target=/root/.gradle,sharing=locked \
+    ./gradlew --no-daemon distTar && \
+    mkdir -p /dist && \
+    cp build/distributions/web3signer-*.tar.gz /dist/web3signer.tar.gz
+
+# Use a pre-built distribution from the build context.
+FROM alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS dist-tar
+ARG TAR_FILE
+COPY ${TAR_FILE} /dist/web3signer.tar.gz
+
+FROM dist-${DIST_SOURCE} AS dist
+
+# Validate and extract the distribution
+FROM alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS app-extract
+COPY --from=dist /dist/web3signer.tar.gz /tmp/web3signer.tar.gz
+RUN gzip -t /tmp/web3signer.tar.gz || (echo "ERROR: web3signer distribution is not a valid gzip archive" && exit 1) && \
     mkdir -p /opt/web3signer && \
     tar -xzf /tmp/web3signer.tar.gz -C /opt/web3signer --strip-components=1 && \
     rm /tmp/web3signer.tar.gz
 
-# Stage 2: Fetch the Eclipse Temurin JRE release tarball and verify it against
-# the SHA-256 published by Adoptium for that release. The official
-# eclipse-temurin Docker image lags the binary release, so the JRE is pulled
-# straight from the Adoptium GitHub release instead of an eclipse-temurin tag.
-FROM alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS jre-fetch
-ARG TARGETARCH
-RUN set -eu; \
-    case "$TARGETARCH" in \
-      amd64) JRE_ARCH=x64;     JRE_SHA256=6fac98f0c8202efc3135a9e9e42aa61963ec42d1c5cbb40caf231e7b14a24ef6 ;; \
-      arm64) JRE_ARCH=aarch64; JRE_SHA256=963931723891302ebb2687178532c3d793d71e2577cd058061c7efb396140a86 ;; \
-      *) echo "Unsupported TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
-    esac; \
-    wget -q -O /tmp/jre.tar.gz \
-      "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jre_${JRE_ARCH}_linux_hotspot_25.0.5_8.tar.gz"; \
-    echo "${JRE_SHA256}  /tmp/jre.tar.gz" | sha256sum -c -; \
-    mkdir -p /opt/java/openjdk; \
-    tar -xzof /tmp/jre.tar.gz -C /opt/java/openjdk --strip-components=1; \
-    rm /tmp/jre.tar.gz
-
-# Stage 3: Final image with Ubuntu base for latest security patches
+# Final image with Ubuntu base for latest security patches
 FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
 
 ARG BUILD_DATE
@@ -65,8 +75,8 @@ RUN apt-get update && \
     rm -rf /usr/bin/pebble /var/lib/pebble && \
     useradd --system --no-create-home --shell /bin/false web3signer
 
-# Copy full Eclipse Temurin JRE 25.0.5+8 (no module complexity, all features available)
-COPY --from=jre-fetch /opt/java/openjdk /opt/java/openjdk
+# Copy full JRE from Eclipse Temurin (no module complexity, all features available)
+COPY --from=eclipse-temurin:25-jre@sha256:ecdc0adb37bde1a281c4d245a3cd535004b1fc8322d560f5b09463b248c81df0 /opt/java/openjdk /opt/java/openjdk
 COPY --from=app-extract --chown=web3signer:web3signer /opt/web3signer /opt/web3signer
 
 USER web3signer
