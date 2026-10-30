@@ -7,6 +7,8 @@
 ### Features Added
 
 ### Bugs Fixed
+- `POST /reload` no longer removes keys, or disables them in slashing protection, when their keystore source fails to load; only deleted keys are removed. This includes keys imported through the Key Manager API, which are kept while their key config file fails to load. [#1251][PR_1251]
+- `POST /reload` no longer removes keys imported through the Key Manager API with `--Xkey-manager-skip-keystore-storage`, or disables them in slashing protection; they stay until deleted through the Key Manager API or Web3Signer restarts. [#1251][PR_1251]
 
 ### Breaking Changes
 
@@ -27,6 +29,7 @@
 [PR_1288]: https://github.com/Consensys-Incorporated/web3signer/pull/1288
 [PR_1287]: https://github.com/Consensys-Incorporated/web3signer/pull/1287
 [PR_1275]: https://github.com/Consensys-Incorporated/web3signer/pull/1275
+[PR_1251]: https://github.com/Consensys-Incorporated/web3signer/pull/1251
 
 ---
 ## 26.10.2
@@ -38,7 +41,6 @@
 
 ### CI/Build Enhancements
 - Trivy scans the published Docker images nightly, for both variants of the `develop` and `latest` tags, and publishes HIGH/CRITICAL findings to GitHub code scanning under one category per image. Findings that have no upstream fix are reported too, and the run fails on findings like dependency-check; accepted findings go in `gradle/trivyignore.txt`. [#1270][PR_1270]
-
 [PR_1267]: https://github.com/Consensys-Incorporated/web3signer/pull/1267
 [PR_1268]: https://github.com/Consensys-Incorporated/web3signer/pull/1268
 [PR_1270]: https://github.com/Consensys-Incorporated/web3signer/pull/1270

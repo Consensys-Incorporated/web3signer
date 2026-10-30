@@ -16,6 +16,7 @@ import tech.pegasys.web3signer.core.service.http.handlers.commitboost.json.Commi
 import tech.pegasys.web3signer.signing.ArtifactSigner;
 import tech.pegasys.web3signer.signing.ArtifactSignerProvider;
 
+import java.nio.file.Path;
 import java.util.Optional;
 
 import org.apache.tuweni.bytes.Bytes32;
@@ -74,8 +75,10 @@ public class CommitBoostSignerProvider {
    *
    * @param proxySigner The proxy signer to add
    * @param consensusPubKey The consensus public key to associate with the proxy signer
+   * @param keystoreFile The proxy keystore file written for the proxy signer
    */
-  public void addProxySigner(final ArtifactSigner proxySigner, final String consensusPubKey) {
-    artifactSignerProvider.addProxySigner(proxySigner, consensusPubKey);
+  public void addProxySigner(
+      final ArtifactSigner proxySigner, final String consensusPubKey, final Path keystoreFile) {
+    artifactSignerProvider.addProxySigner(proxySigner, consensusPubKey, keystoreFile);
   }
 }

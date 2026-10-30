@@ -55,6 +55,9 @@ public class ProxyKeysGenerator {
   private static final ObjectMapper JSON_MAPPER = SigningObjectMapperFactory.createObjectMapper();
   private final KeystoresParameters commitBoostParameters;
 
+  /** A generated proxy key and the encrypted keystore file written for it. */
+  public record GeneratedProxyKey(ArtifactSigner signer, Path keystoreFile) {}
+
   public ProxyKeysGenerator(final KeystoresParameters commitBoostParameters) {
     this.commitBoostParameters = commitBoostParameters;
   }
@@ -64,14 +67,14 @@ public class ProxyKeysGenerator {
    *
    * @param consensusPubKey the public key of the consensus signer for which the proxy key is being
    *     generated
-   * @return an instance of K256ArtifactSigner representing the generated proxy key
+   * @return a K256ArtifactSigner representing the generated proxy key, and its keystore file
    */
-  public ArtifactSigner generateECProxyKey(final String consensusPubKey) {
+  public GeneratedProxyKey generateECProxyKey(final String consensusPubKey) {
     final ECKeyPair ecKeyPair = ECKeyPair.create(EthPublicKeyUtils.generateK256KeyPair());
     final Path ecWalletFile = createECWalletFile(ecKeyPair, consensusPubKey);
     LOG.debug(
         "Created proxy EC wallet file {} for consensus key: {}", ecWalletFile, consensusPubKey);
-    return new K256ArtifactSigner(ecKeyPair);
+    return new GeneratedProxyKey(new K256ArtifactSigner(ecKeyPair), ecWalletFile);
   }
 
   /**
@@ -79,16 +82,17 @@ public class ProxyKeysGenerator {
    *
    * @param consensusPubKey the public key of the consensus signer for which the proxy key is being
    *     generated
-   * @return as instance of BlsArtifactSigner representing the generated proxy key
+   * @return a BlsArtifactSigner representing the generated proxy key, and its keystore file
    */
-  public ArtifactSigner generateBLSProxyKey(final String consensusPubKey) {
+  public GeneratedProxyKey generateBLSProxyKey(final String consensusPubKey) {
     final BLSKeyPair blsKeyPair = BLSKeyPair.random(SecureRandomProvider.getSecureRandom());
     final Path blsKeystoreFile = createBLSKeystoreFile(blsKeyPair, consensusPubKey);
     LOG.debug(
         "Created proxy BLS keystore file {} for consensus key: {}",
         blsKeystoreFile,
         consensusPubKey);
-    return new BlsArtifactSigner(blsKeyPair, SignerOrigin.FILE_KEYSTORE);
+    return new GeneratedProxyKey(
+        new BlsArtifactSigner(blsKeyPair, SignerOrigin.FILE_KEYSTORE), blsKeystoreFile);
   }
 
   private Path createBLSKeystoreFile(final BLSKeyPair keyPair, final String consensusPubKey) {

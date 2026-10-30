@@ -337,6 +337,10 @@ public class CmdLineParamsDefaultImpl implements CmdLineParamsBuilder {
       params.add(Boolean.toString(signerConfig.isKeyManagerApiEnabled()));
     }
 
+    if (signerConfig.isKeyManagerSkipKeystoreStorage()) {
+      params.add("--Xkey-manager-skip-keystore-storage=true");
+    }
+
     return params;
   }
 

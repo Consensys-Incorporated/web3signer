@@ -64,7 +64,7 @@ docker run --read-only -p 9000:9000 \
   eth2 --key-manager-api-enabled=true --Xkey-manager-skip-keystore-storage=true ...
 ```
 
-Tradeoff: keys imported at runtime are lost on restart, so operators must have their own re-import or backup strategy.
+Tradeoff: keys imported at runtime are lost on restart (`POST /reload` keeps them), so operators must have their own re-import or backup strategy.
 
 ### Passing JVM options to the distroless image
 

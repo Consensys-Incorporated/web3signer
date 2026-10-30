@@ -15,29 +15,34 @@ package tech.pegasys.web3signer.signing.config;
 import static tech.pegasys.web3signer.signing.KeyType.BLS;
 import static tech.pegasys.web3signer.signing.KeyType.SECP256K1;
 
-import tech.pegasys.web3signer.keystorage.common.MappedResults;
 import tech.pegasys.web3signer.signing.ArtifactSigner;
 import tech.pegasys.web3signer.signing.ArtifactSignerProvider;
 import tech.pegasys.web3signer.signing.KeyType;
 import tech.pegasys.web3signer.signing.bulkloading.BlsKeystoreBulkLoader;
 import tech.pegasys.web3signer.signing.bulkloading.SecpV3KeystoresBulkLoader;
 
-import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
-import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import com.google.common.base.Suppliers;
+import com.google.common.collect.Sets;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -76,16 +81,60 @@ public class DefaultArtifactSignerProvider implements ArtifactSignerProvider {
 
   private static final Logger LOG = LogManager.getLogger();
 
-  // MappedResults = Collection + Error count
-  private final Supplier<MappedResults<ArtifactSigner>> artifactSignerResultsSupplier;
+  private final Supplier<List<SignerSourceResult>> artifactSignerResultsSupplier;
   private final Optional<BiConsumer<Set<String>, Set<String>>> postLoadingCallback;
   private final Optional<KeystoresParameters> commitBoostKeystoresParameters;
 
   // Volatile references to immutable maps - readers see atomic snapshots
-  private volatile SignerState state = new SignerState(Map.of(), Map.of());
+  private volatile SignerState state = new SignerState(Map.of(), Map.of(), Map.of(), Map.of());
 
   private record SignerState(
-      Map<String, ArtifactSigner> signers, Map<String, Set<ArtifactSigner>> proxySigners) {}
+      Map<String, ArtifactSigner> signers,
+      Map<String, Set<ArtifactSigner>> proxySigners,
+      Map<String, Provenance> provenance,
+      Map<String, Provenance> proxyProvenance) {}
+
+  /** Source of keys imported without a key config file; no load removes them. */
+  private static final String IN_MEMORY_SOURCE = "key manager API (in memory)";
+
+  private static final Provenance IN_MEMORY = new Provenance(IN_MEMORY_SOURCE, null);
+
+  /**
+   * Where a signer was loaded from. A key defined by several files has one entry per file, chained
+   * through {@code next}. A key imported without a file has the single place {@link #IN_MEMORY},
+   * which every load keeps. Entries of keys removed via {@link #removeSigner} stay until the next
+   * {@link #load()}; retention only looks at loaded keys.
+   *
+   * @param source loader source; the proxy keystore directory for proxy signers
+   * @param file source file, {@code null} for vaults and in-memory keys
+   * @param next another file the same key was loaded from, or {@code null}
+   */
+  private record Provenance(String source, String file, Provenance next) {
+
+    private Provenance(final String source, final String file) {
+      this(source, file, null);
+    }
+
+    /** Adds the places of {@code other} that {@code first} does not list yet. */
+    private static Provenance merge(final Provenance first, final Provenance other) {
+      Provenance merged = first;
+      for (Provenance place = other; place != null; place = place.next) {
+        if (!first.lists(place)) {
+          merged = new Provenance(place.source, place.file, merged);
+        }
+      }
+      return merged;
+    }
+
+    private boolean lists(final Provenance other) {
+      for (Provenance place = this; place != null; place = place.next) {
+        if (place.source.equals(other.source) && Objects.equals(place.file, other.file)) {
+          return true;
+        }
+      }
+      return false;
+    }
+  }
 
   private final ExecutorService executorService =
       Executors.newSingleThreadExecutor(
@@ -96,7 +145,7 @@ public class DefaultArtifactSignerProvider implements ArtifactSignerProvider {
           });
 
   public DefaultArtifactSignerProvider(
-      final Supplier<MappedResults<ArtifactSigner>> artifactSignerResultsSupplier,
+      final Supplier<List<SignerSourceResult>> artifactSignerResultsSupplier,
       final Optional<BiConsumer<Set<String>, Set<String>>> postLoadingCallback,
       final Optional<KeystoresParameters> commitBoostKeystoresParameters) {
     this.artifactSignerResultsSupplier = artifactSignerResultsSupplier;
@@ -116,8 +165,9 @@ public class DefaultArtifactSignerProvider implements ArtifactSignerProvider {
    *       Vault, etc.), capturing both successfully loaded signers and error counts
    *   <li>Builds a new immutable signers map from successfully loaded signers, handling duplicate
    *       keys by keeping the first signer and logging a warning
-   *   <li>If commit boost parameters are enabled, loads proxy signers for each consensus public key
-   *   <li>Atomically swaps the volatile references to the new immutable maps
+   *   <li>If commit boost parameters are enabled, loads proxy signers for each consensus public
+   *       key, keeping those whose directory or file failed to load
+   *   <li>Atomically swaps the volatile references to the new immutable maps, unless interrupted
    *   <li>Invokes the optional post-loading callback (e.g., for slashing protection registration)
    * </ol>
    *
@@ -128,7 +178,8 @@ public class DefaultArtifactSignerProvider implements ArtifactSignerProvider {
    * <p><b>Error Handling:</b> Individual signer loading failures (e.g., malformed keystores,
    * invalid keys) are counted but do not prevent the loading of other valid signers. Successfully
    * loaded signers are made available even if some configurations fail. The returned error count
-   * allows callers to detect partial failures.
+   * allows callers to detect partial failures. A missing signer is kept if its source or one of its
+   * files failed to load; otherwise it is removed.
    *
    * <p>This method is typically invoked:
    *
@@ -152,61 +203,58 @@ public class DefaultArtifactSignerProvider implements ArtifactSignerProvider {
           final SignerState currentState = this.state;
           LOG.debug("Signer keys pre-loaded in memory {}", currentState.signers.size());
 
-          // Get MappedResults - includes error count
-          final MappedResults<ArtifactSigner> results = artifactSignerResultsSupplier.get();
-          final long errorCount = results.getErrorCount();
+          // per-source results, with failed files and error counts
+          final List<SignerSourceResult> results = artifactSignerResultsSupplier.get();
+          final long errorCount = results.stream().mapToLong(SignerSourceResult::errorCount).sum();
 
-          // Build new signers map from successful results
-          final Map<String, ArtifactSigner> newSigners =
-              results.getValues().stream()
-                  .collect(
-                      Collectors.toMap(
-                          ArtifactSigner::getIdentifier,
-                          Function.identity(),
-                          (signer1, signer2) -> {
-                            LOG.warn(
-                                "Duplicate key found while loading: {}", signer1.getIdentifier());
-                            return signer1;
-                          }));
+          // build the new signers map and record where each signer came from
+          final Map<String, ArtifactSigner> newSigners = new HashMap<>();
+          final Map<String, Provenance> newProvenance = new HashMap<>();
+          for (final SignerSourceResult result : results) {
+            for (final SignerSourceResult.LoadedSigner loaded : result.signers()) {
+              final String identifier = loaded.signer().getIdentifier();
+              if (newSigners.putIfAbsent(identifier, loaded.signer()) != null) {
+                LOG.warn("Duplicate key found while loading: {}", identifier);
+              }
+              newProvenance.merge(
+                  identifier,
+                  new Provenance(result.source(), loaded.file().orElse(null)),
+                  Provenance::merge);
+            }
+          }
+
+          retainSignersOfFailedSources(
+              currentState, Failures.of(results), newSigners, newProvenance);
 
           // Build new proxy signers map
           final Map<String, Set<ArtifactSigner>> newProxySigners = new HashMap<>();
-
+          final Map<String, Provenance> newProxyProvenance = new HashMap<>();
           commitBoostKeystoresParameters
               .filter(KeystoresParameters::isEnabled)
               .ifPresent(
-                  keystoreParameter -> {
-                    newSigners
-                        .keySet()
-                        .forEach(
-                            consensusPubKey -> {
-                              LOG.trace("Loading proxy signers for '{}' ...", consensusPubKey);
-                              final Set<ArtifactSigner> proxies = new HashSet<>();
+                  keystoreParameter ->
+                      loadProxySigners(
+                          keystoreParameter,
+                          currentState,
+                          newSigners.keySet(),
+                          newProxySigners,
+                          newProxyProvenance));
 
-                              loadProxySignersInto(
-                                  proxies,
-                                  keystoreParameter,
-                                  consensusPubKey,
-                                  SECP256K1.name(),
-                                  SecpV3KeystoresBulkLoader::loadECDSAProxyKeystores);
-
-                              loadProxySignersInto(
-                                  proxies,
-                                  keystoreParameter,
-                                  consensusPubKey,
-                                  BLS.name(),
-                                  BlsKeystoreBulkLoader::loadKeystoresUsingPasswordFile);
-
-                              if (!proxies.isEmpty()) {
-                                newProxySigners.put(consensusPubKey, Set.copyOf(proxies));
-                              }
-                            });
-                  });
+          // an interrupted load (shutdown) may miss keys that were not deleted: publish nothing
+          if (Thread.currentThread().isInterrupted()) {
+            LOG.warn("Signer loading was interrupted; keeping the currently loaded signers");
+            throw new CancellationException("Signer loading was interrupted");
+          }
 
           // Atomically publish new immutable state - Map.copyOf() ensures readers never see
           // intermediate modifications, volatile write guarantees immediate visibility across
           // threads
-          state = new SignerState(Map.copyOf(newSigners), Map.copyOf(newProxySigners));
+          state =
+              new SignerState(
+                  Map.copyOf(newSigners),
+                  Map.copyOf(newProxySigners),
+                  Map.copyOf(newProvenance),
+                  Map.copyOf(newProxyProvenance));
 
           // Compute delta and invoke callback only when callback is configured
           postLoadingCallback.ifPresent(
@@ -273,26 +321,42 @@ public class DefaultArtifactSignerProvider implements ArtifactSignerProvider {
   }
 
   @Override
-  public Future<Void> addSigner(final ArtifactSigner signer) {
+  public Future<Void> addSigner(final ArtifactSigner signer, final Optional<Path> keyConfigFile) {
     return executorService.submit(
         () -> {
           final SignerState currentState = this.state;
+          final String identifier = signer.getIdentifier();
 
           final Map<String, ArtifactSigner> newSigners = new HashMap<>(currentState.signers);
-          final ArtifactSigner existing = newSigners.put(signer.getIdentifier(), signer);
+          final ArtifactSigner existing = newSigners.put(identifier, signer);
           if (existing != null) {
-            LOG.warn("Replaced existing signer for identifier '{}'", signer.getIdentifier());
+            LOG.warn("Replaced existing signer for identifier '{}'", identifier);
           }
 
           final Map<String, Set<ArtifactSigner>> newProxySigners =
               new HashMap<>(currentState.proxySigners);
-          newProxySigners.putIfAbsent(signer.getIdentifier(), Set.of());
+          newProxySigners.putIfAbsent(identifier, Set.of());
+
+          // the signer comes from its key config file, as if loaded by the key config source, or
+          // from memory only, which no load removes
+          final Map<String, Provenance> newProvenance = new HashMap<>(currentState.provenance);
+          newProvenance.put(
+              identifier,
+              keyConfigFile
+                  .map(
+                      file -> new Provenance(SignerLoader.SOURCE_NAME, SignerLoader.fileName(file)))
+                  .orElse(IN_MEMORY));
 
           // Atomically publish new immutable state - Map.copyOf() ensures readers never see
           // intermediate modifications, volatile write guarantees immediate visibility across
-          // threads
-          state = new SignerState(Map.copyOf(newSigners), Map.copyOf(newProxySigners));
-          LOG.info("Loaded new signer for identifier '{}'", signer.getIdentifier());
+          // threads.
+          state =
+              new SignerState(
+                  Map.copyOf(newSigners),
+                  Map.copyOf(newProxySigners),
+                  Map.copyOf(newProvenance),
+                  currentState.proxyProvenance);
+          LOG.info("Loaded new signer for identifier '{}'", identifier);
           return null;
         });
   }
@@ -311,8 +375,13 @@ public class DefaultArtifactSignerProvider implements ArtifactSignerProvider {
 
           // Atomically publish new immutable state - Map.copyOf() ensures readers never see
           // intermediate modifications, volatile write guarantees immediate visibility across
-          // threads
-          this.state = new SignerState(Map.copyOf(newSigners), Map.copyOf(newProxySigners));
+          // threads. Provenance is left in place (see Provenance).
+          this.state =
+              new SignerState(
+                  Map.copyOf(newSigners),
+                  Map.copyOf(newProxySigners),
+                  currentState.provenance,
+                  currentState.proxyProvenance);
 
           LOG.info("Removed signer with identifier '{}'", identifier);
           return null;
@@ -332,18 +401,21 @@ public class DefaultArtifactSignerProvider implements ArtifactSignerProvider {
    * </ol>
    *
    * <p>Concurrent readers will see either the state before or after the addition, never an
-   * intermediate state.
+   * intermediate state. The proxy signer is attributed to its keystore file, as if loaded from its
+   * proxy directory.
    *
    * @param signerToAdd the proxy signer to add
    * @param consensusPubKey the consensus public key to associate with the proxy signer
+   * @param keystoreFile the proxy keystore file written for the proxy signer
    * @return a {@link Future} that completes when the proxy signer has been added
    */
   @Override
   public Future<Void> addProxySigner(
-      final ArtifactSigner signerToAdd, final String consensusPubKey) {
+      final ArtifactSigner signerToAdd, final String consensusPubKey, final Path keystoreFile) {
     return executorService.submit(
         () -> {
           final SignerState currentState = this.state;
+          final String identifier = signerToAdd.getIdentifier();
 
           final Map<String, Set<ArtifactSigner>> newProxySigners =
               new HashMap<>(currentState.proxySigners);
@@ -353,14 +425,35 @@ public class DefaultArtifactSignerProvider implements ArtifactSignerProvider {
           updatedProxies.add(signerToAdd);
           newProxySigners.put(consensusPubKey, Set.copyOf(updatedProxies));
 
+          // the same names the proxy loader reports: the proxy directory under the configured
+          // keystores path, and the file in it
+          final Path proxyDir =
+              commitBoostKeystoresParameters
+                  .map(KeystoresParameters::getKeystoresPath)
+                  .map(
+                      path ->
+                          path.resolve(consensusPubKey).resolve(signerToAdd.getKeyType().name()))
+                  .orElse(keystoreFile.getParent());
+          final Map<String, Provenance> newProxyProvenance =
+              new HashMap<>(currentState.proxyProvenance);
+          newProxyProvenance.put(
+              identifier,
+              new Provenance(
+                  proxyDir.toString(), proxyDir.resolve(keystoreFile.getFileName()).toString()));
+
           // Atomically publish new immutable state - Map.copyOf() ensures readers never see
           // intermediate modifications, volatile write guarantees immediate visibility across
           // threads
-          this.state = new SignerState(currentState.signers, Map.copyOf(newProxySigners));
+          this.state =
+              new SignerState(
+                  currentState.signers,
+                  Map.copyOf(newProxySigners),
+                  currentState.provenance,
+                  Map.copyOf(newProxyProvenance));
 
           LOG.info(
               "Loaded new proxy signer {} for consensus public key '{}'",
-              signerToAdd.getIdentifier(),
+              identifier,
               consensusPubKey);
           return null;
         });
@@ -373,52 +466,289 @@ public class DefaultArtifactSignerProvider implements ArtifactSignerProvider {
     executorService.shutdownNow();
   }
 
-  private static boolean canReadFromDirectory(final Path path) {
-    final File file = path.toFile();
-    return file.canRead() && file.isDirectory();
-  }
-
   /**
-   * Loads proxy signers from a keystore directory into the target set.
-   *
-   * <p>This static utility method attempts to load proxy signers for a specific consensus public
-   * key and key type from the configured keystores path. The directory structure expected is:
+   * Loads the proxy signers of every consensus public key from the commit boost keystores path. The
+   * directory structure expected is:
    *
    * <pre>
    * {keystoresPath}/{consensusPubKey}/{keyType}/
    * </pre>
    *
-   * <p>For example, for a consensus key {@code 0x1234...} with BLS proxy signers:
-   *
-   * <pre>
-   * /path/to/keystores/0x1234.../BLS/
-   * </pre>
-   *
-   * <p>If the directory exists and is readable, the loader function is invoked to bulk load all
-   * keystores from that directory using the configured password file. If the directory does not
-   * exist or is not readable, no action is taken.
-   *
-   * @param targetSet the mutable set to add loaded proxy signers into
-   * @param keystoreParameter the keystore configuration containing paths and password file location
-   * @param consensusPubKey the consensus public key for which to load proxy signers
-   * @param keyType the type of keys to load (e.g., "BLS" or "SECP256K1")
-   * @param loaderFunction the bulk loading function that reads keystores from a directory using a
-   *     password file and returns the loaded signers
+   * <p>A missing proxy signer is kept if its directory (unreadable directory or password file) or
+   * its file failed to load; a missing or empty directory has no proxy signers. A missing keystores
+   * path has no proxy signers; one that cannot be read keeps them all. The password file is read at
+   * most once.
    */
-  private static void loadProxySignersInto(
-      final Set<ArtifactSigner> targetSet,
+  private static void loadProxySigners(
       final KeystoresParameters keystoreParameter,
+      final SignerState currentState,
+      final Set<String> consensusPubKeys,
+      final Map<String, Set<ArtifactSigner>> newProxySigners,
+      final Map<String, Provenance> newProxyProvenance) {
+    final Path keystoresPath = keystoreParameter.getKeystoresPath();
+    final boolean hadProxies =
+        currentState.proxySigners.values().stream().anyMatch(proxies -> !proxies.isEmpty());
+    if (Files.notExists(keystoresPath)) {
+      if (hadProxies) {
+        LOG.warn("Proxy keystores path {} does not exist; removing proxy keys", keystoresPath);
+      }
+      return;
+    }
+    if (!Files.isDirectory(keystoresPath) || !Files.isReadable(keystoresPath)) {
+      if (hadProxies) {
+        LOG.error(
+            "Unable to read proxy keystores path {}; keeping previously loaded proxy keys",
+            keystoresPath);
+        retainAllProxySigners(currentState, consensusPubKeys, newProxySigners, newProxyProvenance);
+      }
+      return;
+    }
+
+    final Supplier<Optional<String>> password =
+        Suppliers.memoize(() -> readProxyPassword(keystoreParameter.getKeystoresPasswordFile()));
+    int retainedCount = 0;
+
+    for (final String consensusPubKey : consensusPubKeys) {
+      LOG.trace("Loading proxy signers for '{}' ...", consensusPubKey);
+      final List<SignerSourceResult> dirResults = new ArrayList<>(2);
+      loadProxyDir(
+              keystoresPath,
+              consensusPubKey,
+              SECP256K1,
+              password,
+              SecpV3KeystoresBulkLoader::loadECDSAProxyKeystores)
+          .ifPresent(dirResults::add);
+      loadProxyDir(
+              keystoresPath,
+              consensusPubKey,
+              BLS,
+              password,
+              BlsKeystoreBulkLoader::loadKeystoresUsingPassword)
+          .ifPresent(dirResults::add);
+
+      final Map<String, ArtifactSigner> proxies = new HashMap<>();
+      for (final SignerSourceResult result : dirResults) {
+        for (final SignerSourceResult.LoadedSigner loaded : result.signers()) {
+          final String identifier = loaded.signer().getIdentifier();
+          proxies.putIfAbsent(identifier, loaded.signer());
+          newProxyProvenance.merge(
+              identifier,
+              new Provenance(result.source(), loaded.file().orElse(null)),
+              Provenance::merge);
+        }
+      }
+
+      final Failures dirFailures = Failures.of(dirResults);
+      for (final ArtifactSigner previous :
+          currentState.proxySigners.getOrDefault(consensusPubKey, Set.of())) {
+        final String identifier = previous.getIdentifier();
+        final Provenance provenance = currentState.proxyProvenance.get(identifier);
+        if (proxies.containsKey(identifier)) {
+          if (!dirFailures.isEmpty()) {
+            newProxyProvenance.computeIfPresent(
+                identifier, (id, places) -> withKeptPlaces(places, provenance, dirFailures));
+          }
+          continue;
+        }
+        final Provenance kept = keptPlaces(provenance, dirFailures);
+        if (kept == null) {
+          continue;
+        }
+        proxies.put(identifier, previous);
+        newProxyProvenance.merge(identifier, kept, Provenance::merge);
+        retainedCount++;
+      }
+
+      if (!proxies.isEmpty()) {
+        newProxySigners.put(consensusPubKey, Set.copyOf(proxies.values()));
+      }
+    }
+
+    if (retainedCount > 0) {
+      LOG.warn(
+          "Retained {} previously loaded proxy key(s) whose directory or file failed to load",
+          retainedCount);
+    }
+  }
+
+  private static void retainAllProxySigners(
+      final SignerState currentState,
+      final Set<String> consensusPubKeys,
+      final Map<String, Set<ArtifactSigner>> newProxySigners,
+      final Map<String, Provenance> newProxyProvenance) {
+    int retainedCount = 0;
+    for (final String consensusPubKey : consensusPubKeys) {
+      final Set<ArtifactSigner> previousProxies =
+          currentState.proxySigners.getOrDefault(consensusPubKey, Set.of());
+      if (!previousProxies.isEmpty()) {
+        newProxySigners.put(consensusPubKey, previousProxies);
+        previousProxies.forEach(
+            proxy -> copyProvenance(currentState, proxy.getIdentifier(), newProxyProvenance));
+        retainedCount += previousProxies.size();
+      }
+    }
+    if (retainedCount > 0) {
+      LOG.warn("Retained {} previously loaded proxy key(s)", retainedCount);
+    }
+  }
+
+  private static void copyProvenance(
+      final SignerState currentState,
+      final String identifier,
+      final Map<String, Provenance> newProxyProvenance) {
+    final Provenance provenance = currentState.proxyProvenance.get(identifier);
+    if (provenance != null) {
+      // the same proxy key may also be loaded for another consensus key
+      newProxyProvenance.merge(identifier, provenance, Provenance::merge);
+    }
+  }
+
+  private static Optional<String> readProxyPassword(final Path passwordFile) {
+    try {
+      return Optional.of(Files.readString(passwordFile));
+    } catch (final IOException e) {
+      LOG.error(
+          "Unable to read proxy keystores password file; keeping previously loaded proxy keys", e);
+      return Optional.empty();
+    }
+  }
+
+  /**
+   * Loads the proxy keystores of one consensus key and key type, as a source named after the
+   * directory. Empty only if the directory is known not to exist.
+   */
+  private static Optional<SignerSourceResult> loadProxyDir(
+      final Path keystoresPath,
       final String consensusPubKey,
-      final String keyType,
-      final BiFunction<Path, Path, MappedResults<ArtifactSigner>> loaderFunction) {
+      final KeyType keyType,
+      final Supplier<Optional<String>> password,
+      final BiFunction<Path, String, SignerSourceResult> loaderFunction) {
+    final Path proxyDir = keystoresPath.resolve(consensusPubKey).resolve(keyType.name());
+    // not Files.exists: it is also false when existence cannot be determined
+    if (Files.notExists(proxyDir)) {
+      return Optional.empty();
+    }
+    final String source = proxyDir.toString();
+    if (password.get().isEmpty()) {
+      return Optional.of(SignerSourceResult.sourceFailure(source));
+    }
+    final SignerSourceResult result = loaderFunction.apply(proxyDir, password.get().get());
+    return Optional.of(
+        new SignerSourceResult(
+            source,
+            result.signers(),
+            result.failedFiles(),
+            result.errorCount(),
+            result.sourceFailed()));
+  }
 
-    final Path identifierPath = keystoreParameter.getKeystoresPath().resolve(consensusPubKey);
-    final Path proxyDir = identifierPath.resolve(keyType);
+  /**
+   * Keeps previously loaded signers that are missing because their source or file failed to load,
+   * so a failure is not reported as a removal (and does not disable them in slashing protection).
+   * Only the failed places are kept. A signer that still loads keeps its previous failed places.
+   * Signers imported in memory only are always kept.
+   */
+  private static void retainSignersOfFailedSources(
+      final SignerState currentState,
+      final Failures failures,
+      final Map<String, ArtifactSigner> newSigners,
+      final Map<String, Provenance> newProvenance) {
+    int retainedCount = 0;
+    for (final Map.Entry<String, ArtifactSigner> previous : currentState.signers.entrySet()) {
+      final String identifier = previous.getKey();
+      final Provenance provenance = currentState.provenance.get(identifier);
+      if (newSigners.containsKey(identifier)) {
+        if (provenance != null && (!failures.isEmpty() || provenance.lists(IN_MEMORY))) {
+          newProvenance.computeIfPresent(
+              identifier, (id, places) -> withKeptPlaces(places, provenance, failures));
+        }
+        continue;
+      }
+      final Provenance kept = keptPlaces(provenance, failures);
+      if (kept == null) {
+        continue;
+      }
+      newSigners.put(identifier, previous.getValue());
+      newProvenance.put(identifier, kept);
+      if (kept.next() != null || !kept.source().equals(IN_MEMORY_SOURCE)) {
+        retainedCount++;
+      }
+    }
 
-    if (canReadFromDirectory(proxyDir)) {
-      final MappedResults<ArtifactSigner> signersResult =
-          loaderFunction.apply(proxyDir, keystoreParameter.getKeystoresPasswordFile());
-      targetSet.addAll(signersResult.getValues());
+    if (retainedCount > 0) {
+      LOG.warn(
+          "Retained {} previously loaded key(s) whose source or file failed to load; they are removed once their source or file loads without them",
+          retainedCount);
+    }
+  }
+
+  /**
+   * The places to keep in this load: those that failed, and the in-memory place. {@code null} if
+   * none; {@code places} itself if it is a single kept place.
+   */
+  private static Provenance keptPlaces(final Provenance places, final Failures failures) {
+    if (places == null) {
+      return null;
+    }
+    if (places.next() == null) {
+      return isKept(places, failures) ? places : null;
+    }
+    if (failures.isEmpty() && !places.lists(IN_MEMORY)) {
+      return null;
+    }
+    Provenance kept = null;
+    for (Provenance place = places; place != null; place = place.next()) {
+      if (isKept(place, failures)) {
+        kept = new Provenance(place.source(), place.file(), kept);
+      }
+    }
+    return kept;
+  }
+
+  private static boolean isKept(final Provenance place, final Failures failures) {
+    return place.source().equals(IN_MEMORY_SOURCE) || failures.failed(place);
+  }
+
+  /** Adds a loaded key's previous places that are kept in this load. */
+  private static Provenance withKeptPlaces(
+      final Provenance places, final Provenance previous, final Failures failures) {
+    final Provenance kept = keptPlaces(previous, failures);
+    return kept == null ? places : Provenance.merge(places, kept);
+  }
+
+  /**
+   * What failed in one load: whole sources, and individual files by source. Built once per load, so
+   * checking a place is a hash lookup instead of a scan of the results.
+   */
+  private record Failures(Set<String> failedSources, Map<String, Set<String>> failedFiles) {
+    private static final Failures NONE = new Failures(Set.of(), Map.of());
+
+    private static Failures of(final List<SignerSourceResult> results) {
+      final Set<String> failedSources = new HashSet<>();
+      final Map<String, Set<String>> failedFiles = new HashMap<>();
+      for (final SignerSourceResult result : results) {
+        if (result.sourceFailed()) {
+          failedSources.add(result.source());
+        } else if (!result.failedFiles().isEmpty()) {
+          failedFiles.merge(result.source(), result.failedFiles(), Sets::union);
+        }
+      }
+      if (failedSources.isEmpty() && failedFiles.isEmpty()) {
+        return NONE;
+      }
+      return new Failures(failedSources, failedFiles);
+    }
+
+    private boolean isEmpty() {
+      return failedSources.isEmpty() && failedFiles.isEmpty();
+    }
+
+    private boolean failed(final Provenance place) {
+      if (failedSources.contains(place.source())) {
+        return true;
+      }
+      final Set<String> files = failedFiles.get(place.source());
+      return files != null && place.file() != null && files.contains(place.file());
     }
   }
 }

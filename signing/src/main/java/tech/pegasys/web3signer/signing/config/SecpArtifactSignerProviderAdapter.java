@@ -18,6 +18,7 @@ import static tech.pegasys.web3signer.signing.util.IdentifierUtils.normaliseIden
 import tech.pegasys.web3signer.signing.ArtifactSigner;
 import tech.pegasys.web3signer.signing.ArtifactSignerProvider;
 
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -123,7 +124,7 @@ public class SecpArtifactSignerProviderAdapter implements ArtifactSignerProvider
   }
 
   @Override
-  public Future<Void> addSigner(final ArtifactSigner signer) {
+  public Future<Void> addSigner(final ArtifactSigner signer, final Optional<Path> keyConfigFile) {
     throw new NotImplementedException();
   }
 

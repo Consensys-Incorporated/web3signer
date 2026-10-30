@@ -13,8 +13,8 @@
 package tech.pegasys.web3signer.signing.config;
 
 import tech.pegasys.web3signer.common.config.SignerLoaderConfig;
-import tech.pegasys.web3signer.keystorage.common.MappedResults;
 import tech.pegasys.web3signer.signing.ArtifactSigner;
+import tech.pegasys.web3signer.signing.config.SignerSourceResult.LoadedSigner;
 import tech.pegasys.web3signer.signing.config.metadata.SigningMetadata;
 import tech.pegasys.web3signer.signing.config.metadata.SigningMetadataException;
 import tech.pegasys.web3signer.signing.config.metadata.parser.SignerParser;
@@ -29,7 +29,6 @@ import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -43,6 +42,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -51,6 +51,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Sets;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.commons.lang3.time.DurationFormatUtils;
@@ -79,6 +80,12 @@ import org.apache.logging.log4j.Logger;
 public class SignerLoader implements Closeable {
   private static final Logger LOG = LogManager.getLogger();
   private static final Set<String> CONFIG_FILE_EXTENSIONS = Set.of("yaml", "yml");
+  static final String SOURCE_NAME = "key config files";
+
+  /** The name under which a key config file is reported in {@link SignerSourceResult}. */
+  static String fileName(final Path file) {
+    return file.toAbsolutePath().normalize().toString();
+  }
 
   private volatile Map<String, CachedSignerData> cachedArtifactSigners = Collections.emptyMap();
   private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -91,10 +98,58 @@ public class SignerLoader implements Closeable {
    * Result of loading signers from configuration files.
    *
    * @param loadedSigners map of file paths to their loaded artifact signers
-   * @param errorCount number of errors encountered during loading
+   * @param failedPaths files present but failed to load; one error each
+   * @param unprocessedPaths files not processed because loading stopped (loader closed, thread
+   *     interrupted, task cancelled); not errors, but not deleted either
    */
   @VisibleForTesting
-  record LoadResult(Map<String, Set<ArtifactSigner>> loadedSigners, int errorCount) {}
+  record LoadResult(
+      Map<String, Set<ArtifactSigner>> loadedSigners,
+      Set<String> failedPaths,
+      Set<String> unprocessedPaths) {
+    private static final LoadResult EMPTY = new LoadResult(Map.of(), Set.of(), Set.of());
+
+    static LoadResult loaded(final String path, final Set<ArtifactSigner> signers) {
+      return new LoadResult(Map.of(path, signers), Set.of(), Set.of());
+    }
+
+    static LoadResult failed(final String path) {
+      return new LoadResult(Map.of(), Set.of(path), Set.of());
+    }
+
+    static LoadResult unprocessed(final String path) {
+      return new LoadResult(Map.of(), Set.of(), Set.of(path));
+    }
+
+    int errorCount() {
+      return failedPaths.size();
+    }
+  }
+
+  /** Accumulates file results; not thread-safe. */
+  private static final class LoadResultBuilder {
+    private final Map<String, Set<ArtifactSigner>> loadedSigners = new HashMap<>();
+    private final Set<String> failedPaths = new HashSet<>();
+    private final Set<String> unprocessedPaths = new HashSet<>();
+
+    void add(final LoadResult result) {
+      loadedSigners.putAll(result.loadedSigners());
+      failedPaths.addAll(result.failedPaths());
+      unprocessedPaths.addAll(result.unprocessedPaths());
+    }
+
+    void addFailed(final String path) {
+      failedPaths.add(path);
+    }
+
+    void addUnprocessed(final String path) {
+      unprocessedPaths.add(path);
+    }
+
+    LoadResult build() {
+      return new LoadResult(loadedSigners, failedPaths, unprocessedPaths);
+    }
+  }
 
   private final SignerLoaderConfig config;
   private final ExecutorService virtualThreadExecutor;
@@ -116,10 +171,10 @@ public class SignerLoader implements Closeable {
    * </ul>
    *
    * @param signerParser An implementation of SignerParser to parse the metadata files
-   * @return A MappedResults of ArtifactSigners and error count
+   * @return the loaded signers with their files, the failed files and the error count
    * @throws IllegalStateException if this SignerLoader has been closed
    */
-  public MappedResults<ArtifactSigner> load(final SignerParser signerParser) {
+  public SignerSourceResult load(final SignerParser signerParser) {
     if (closed.get()) {
       throw new IllegalStateException("SignerLoader instance has been closed");
     }
@@ -132,7 +187,7 @@ public class SignerLoader implements Closeable {
       availableFilesWithTime = getMetadataConfigFilesWithTime();
     } catch (final IOException e) {
       LOG.error("Unable to access the supplied key directory", e);
-      return MappedResults.errorResult();
+      return SignerSourceResult.sourceFailure(SOURCE_NAME);
     }
 
     // Get new cache by removing entries that doesn't exist or has modified time
@@ -164,21 +219,31 @@ public class SignerLoader implements Closeable {
     // Update the volatile reference with the new immutable map
     cachedArtifactSigners = Map.copyOf(newCache);
 
-    // Return all ArtifactSigners from the cache
-    final Collection<ArtifactSigner> allArtifactSigners =
-        cachedArtifactSigners.values().stream()
-            .map(CachedSignerData::signers)
-            .flatMap(Collection::stream)
-            .collect(Collectors.toSet());
+    // one entry per file, so that a key defined by several files is kept while any of them fails;
+    // unprocessed files are kept like failed ones but are not errors
+    final SignerSourceResult result =
+        new SignerSourceResult(
+            SOURCE_NAME,
+            cachedArtifactSigners.values().stream()
+                .flatMap(
+                    cached ->
+                        cached.signers().stream()
+                            .map(
+                                signer -> new LoadedSigner(signer, Optional.of(cached.filePath()))))
+                .toList(),
+            Sets.union(loadResult.failedPaths(), loadResult.unprocessedPaths()),
+            loadResult.errorCount(),
+            false);
 
     LOG.info(
-        "Total Artifact Signers loaded via configuration files: {}\nTotal Paths cached: {}, Error count: {}\nTime Taken: {}.",
-        allArtifactSigners.size(),
+        "Total Artifact Signers loaded via configuration files: {}\nTotal Paths cached: {}, Error count: {}, Not processed: {}\nTime Taken: {}.",
+        result.signers().size(),
         cachedArtifactSigners.size(),
-        loadResult.errorCount,
+        loadResult.errorCount(),
+        loadResult.unprocessedPaths().size(),
         calculateTimeTaken(loadStartTime).orElse("unknown duration"));
 
-    return MappedResults.newInstance(allArtifactSigners, loadResult.errorCount);
+    return result;
   }
 
   /**
@@ -260,7 +325,7 @@ public class SignerLoader implements Closeable {
     final int totalFiles = newFilesToProcess.size();
 
     if (totalFiles == 0) {
-      return new LoadResult(Map.of(), 0);
+      return LoadResult.EMPTY;
     }
 
     // Sequential processing for small batches or when parallel is disabled
@@ -275,13 +340,15 @@ public class SignerLoader implements Closeable {
   }
 
   /**
-   * Processes files in parallel using virtual threads, subdivided into batches.
+   * Processes files in parallel using virtual threads, subdivided into batches. Stops before the
+   * next batch if the loader is closed or the thread is interrupted; files of batches not started
+   * are reported as unprocessed.
    *
    * @param filesToProcess set of file paths to process
    * @param signerParser parser for converting file content
    * @param configFilesHandled atomic counter for progress tracking
    * @param totalFiles total number of files for progress reporting
-   * @return LoadResult with all loaded signers and total error count
+   * @return LoadResult with all loaded signers, failed and unprocessed files
    */
   @VisibleForTesting
   LoadResult processInBatches(
@@ -290,15 +357,20 @@ public class SignerLoader implements Closeable {
       final AtomicLong configFilesHandled,
       final int totalFiles) {
 
-    final Map<String, Set<ArtifactSigner>> allLoadedSigners = new HashMap<>();
-    int totalErrorCount = 0;
+    final LoadResultBuilder results = new LoadResultBuilder();
     final List<String> fileList = new ArrayList<>(filesToProcess);
+    int handledFiles = 0;
 
-    for (int batchStart = 0; batchStart < fileList.size(); batchStart += config.batchSize()) {
+    while (handledFiles < fileList.size()) {
       if (closed.get()) {
         LOG.warn("SignerLoader closed during batch processing");
         break;
       }
+      if (Thread.currentThread().isInterrupted()) {
+        LOG.warn("Batch processing interrupted, returning partial results");
+        break;
+      }
+      final int batchStart = handledFiles;
       final int batchEnd = Math.min(batchStart + config.batchSize(), fileList.size());
       final List<String> batch = fileList.subList(batchStart, batchEnd);
 
@@ -306,95 +378,87 @@ public class SignerLoader implements Closeable {
         LOG.info("Processing batch {}-{} of {} files", batchStart + 1, batchEnd, totalFiles);
       }
 
-      // Submit all tasks in this batch
-      final List<Future<LoadResult>> futures = new ArrayList<>();
-      for (String pathStr : batch) {
-        futures.add(
-            virtualThreadExecutor.submit(
-                () -> processFile(pathStr, signerParser, configFilesHandled, totalFiles)));
+      // Submit all tasks in this batch; the executor rejects tasks once the loader is closed
+      final List<Future<LoadResult>> futures = new ArrayList<>(batch.size());
+      try {
+        for (String pathStr : batch) {
+          futures.add(
+              virtualThreadExecutor.submit(
+                  () -> processFile(pathStr, signerParser, configFilesHandled, totalFiles)));
+        }
+      } catch (final RejectedExecutionException e) {
+        LOG.warn("SignerLoader closed during batch processing");
       }
 
-      try {
-        // Collect results from this batch
-        final LoadResult batchResult = collectBatchResults(futures, batch);
-
-        // Accumulate into overall results
-        allLoadedSigners.putAll(batchResult.loadedSigners());
-        totalErrorCount += batchResult.errorCount();
-
-      } catch (final InterruptedException e) {
-        // Interrupted while collecting batch results
-        LOG.warn("Batch processing interrupted, returning partial results");
-        // Thread interrupt status already restored by collectBatchResults
-        break; // Stop processing further batches
+      results.add(collectBatchResults(futures, batch.subList(0, futures.size())));
+      handledFiles = batchStart + futures.size();
+      if (futures.size() < batch.size()) {
+        break;
       }
     }
 
-    return new LoadResult(allLoadedSigners, totalErrorCount);
+    // not processed, not deleted: report them so that their previously loaded signers are kept
+    fileList.subList(handledFiles, fileList.size()).forEach(results::addUnprocessed);
+    return results.build();
   }
 
   /**
    * Collects results from a batch of futures, applying individual timeout to each task.
    *
-   * <p>If interrupted while waiting for a future, this method:
-   *
-   * <ol>
-   *   <li>Restores the thread's interrupt status
-   *   <li>Cancels all remaining unprocessed futures
-   *   <li>Propagates the InterruptedException to the caller
-   * </ol>
+   * <p>If interrupted while waiting for a future, this method restores the thread's interrupt
+   * status, keeps the results of the tasks that already completed, cancels the others and reports
+   * their files as unprocessed.
    *
    * @param futures list of submitted futures to collect results from
-   * @param batch corresponding file paths for logging purposes
-   * @return LoadResult containing all successfully loaded signers and total error count
-   * @throws InterruptedException if interrupted while waiting for any future to complete
+   * @param batch corresponding file paths
+   * @return LoadResult with the loaded signers, failed and unprocessed files of the batch
    */
   @VisibleForTesting
-  LoadResult collectBatchResults(final List<Future<LoadResult>> futures, final List<String> batch)
-      throws InterruptedException {
-
-    final Map<String, Set<ArtifactSigner>> allLoadedSigners = new HashMap<>();
-    int errorCount = 0;
+  LoadResult collectBatchResults(final List<Future<LoadResult>> futures, final List<String> batch) {
+    final LoadResultBuilder results = new LoadResultBuilder();
 
     for (int i = 0; i < futures.size(); i++) {
       final Future<LoadResult> future = futures.get(i);
       final String filePath = batch.get(i);
 
       try {
-        final LoadResult result = future.get(config.taskTimeoutSeconds(), TimeUnit.SECONDS);
-
-        // Accumulate results
-        allLoadedSigners.putAll(result.loadedSigners);
-        errorCount += result.errorCount;
+        results.add(future.get(config.taskTimeoutSeconds(), TimeUnit.SECONDS));
       } catch (final TimeoutException e) {
         LOG.error("Task timed out after {} seconds: {}", config.taskTimeoutSeconds(), filePath);
         future.cancel(true);
-        errorCount++;
+        results.addFailed(filePath);
       } catch (final InterruptedException e) {
-        // Restore interrupt status
         Thread.currentThread().interrupt();
-
-        LOG.error("Interrupted while collecting batch results");
-
-        // Cancel all remaining futures to free resources
-        cancelRemainingFutures(futures, i);
-        throw e; // propagate interruption to caller
+        LOG.warn("Interrupted while collecting batch results");
+        collectCompletedAndCancelRest(futures, batch, i, results);
+        break;
       } catch (final ExecutionException e) {
         LOG.warn("Task execution failed: {}", filePath, e);
-        errorCount++;
+        results.addFailed(filePath);
       } catch (final CancellationException e) {
-        // task was intentionally canceled - not an error
-        LOG.debug("Task was canceled: {}", filePath);
+        LOG.warn("Task was canceled: {}", filePath);
+        results.addUnprocessed(filePath);
       }
     }
-    return new LoadResult(allLoadedSigners, errorCount);
+    return results.build();
   }
 
-  /** Cancels all futures starting from the given index. */
-  private void cancelRemainingFutures(
-      final List<Future<LoadResult>> futures, final int startIndex) {
+  /** Keeps the results of the tasks from the given index that completed; cancels the others. */
+  private static void collectCompletedAndCancelRest(
+      final List<Future<LoadResult>> futures,
+      final List<String> batch,
+      final int startIndex,
+      final LoadResultBuilder results) {
     for (int j = startIndex; j < futures.size(); j++) {
-      futures.get(j).cancel(true);
+      final Future<LoadResult> future = futures.get(j);
+      switch (future.state()) {
+        case SUCCESS -> results.add(future.resultNow());
+        case FAILED -> results.addFailed(batch.get(j));
+        default -> {
+          future.cancel(true);
+          results.addUnprocessed(batch.get(j));
+        }
+      }
     }
   }
 
@@ -415,16 +479,11 @@ public class SignerLoader implements Closeable {
       final AtomicLong configFilesHandled,
       final int totalFiles) {
 
-    final Map<String, Set<ArtifactSigner>> loadedArtSigners = new HashMap<>();
-    int errorCount = 0;
-
+    final LoadResultBuilder results = new LoadResultBuilder();
     for (String pathStr : newFilesToProcess) {
-      final LoadResult result = processFile(pathStr, signerParser, configFilesHandled, totalFiles);
-      loadedArtSigners.putAll(result.loadedSigners);
-      errorCount += result.errorCount;
+      results.add(processFile(pathStr, signerParser, configFilesHandled, totalFiles));
     }
-
-    return new LoadResult(loadedArtSigners, errorCount);
+    return results.build();
   }
 
   /**
@@ -453,9 +512,9 @@ public class SignerLoader implements Closeable {
    * <p><b>Thread Safety:</b> This method is thread-safe and can be called concurrently from
    * multiple virtual threads. The shared counters use atomic operations for thread-safe updates.
    *
-   * <p><b>Error Handling:</b> All errors are logged with appropriate detail levels and increment
-   * the error counter. The method returns {@code null} for any processing failure rather than
-   * propagating exceptions, allowing batch processing to continue with other files.
+   * <p><b>Error Handling:</b> All errors are logged with appropriate detail levels and reported as
+   * a failed file; an interrupted file is reported as unprocessed. Exceptions are not propagated,
+   * allowing batch processing to continue with other files.
    *
    * @param pathStr absolute normalized path to the metadata file to process
    * @param signerParser parser implementation for converting metadata to ArtifactSigners
@@ -463,8 +522,7 @@ public class SignerLoader implements Closeable {
    *     reporting)
    * @param totalFiles total number of files being processed in this batch (for progress
    *     calculation)
-   * @return a Map.Entry with the file path as key and immutable Set of ArtifactSigners as value, or
-   *     {@code null} if processing failed or was interrupted
+   * @return the file's immutable set of ArtifactSigners, or the file as failed or unprocessed
    * @implNote The returned Set of ArtifactSigners is made immutable using {@code Set.copyOf()} to
    *     ensure thread safety when cached. The decryption step (Step 3) is the most time-consuming
    *     operation and may involve HSM operations, encrypted key material decryption, or remote key
@@ -476,12 +534,10 @@ public class SignerLoader implements Closeable {
       final SignerParser signerParser,
       final AtomicLong configFilesHandled,
       final int totalFiles) {
-    int errorCount = 0;
-
-    // Check interruption at the beginning
+    // interrupted files are reported as unprocessed, not deleted; check before starting
     if (Thread.currentThread().isInterrupted()) {
       LOG.debug("File processing interrupted before start: {}", pathStr);
-      return new LoadResult(Map.of(), errorCount);
+      return LoadResult.unprocessed(pathStr);
     }
 
     reportProgress(configFilesHandled, totalFiles);
@@ -494,7 +550,7 @@ public class SignerLoader implements Closeable {
       // Check interruption after IO operation
       if (Thread.currentThread().isInterrupted()) {
         LOG.debug("File processing interrupted after reading: {}", pathStr);
-        return new LoadResult(Map.of(), errorCount);
+        return LoadResult.unprocessed(pathStr);
       }
 
       // Step 2: Parse metadata (mixed IO/CPU)
@@ -506,13 +562,13 @@ public class SignerLoader implements Closeable {
             "Error parsing metadata file {} to signing metadata: {}",
             pathStr,
             ExceptionUtils.getRootCauseMessage(e));
-        return new LoadResult(Map.of(), ++errorCount);
+        return LoadResult.failed(pathStr);
       }
 
       // Check interruption before expensive decryption operation
       if (Thread.currentThread().isInterrupted()) {
         LOG.debug("File processing interrupted before decryption: {}", pathStr);
-        return new LoadResult(Map.of(), errorCount);
+        return LoadResult.unprocessed(pathStr);
       }
 
       // Step 3: Decryption and conversion (CPU-bound, can take up to a minute)
@@ -524,31 +580,29 @@ public class SignerLoader implements Closeable {
             "Error converting signing metadata to Artifact Signer for file {}: {}",
             pathStr,
             ExceptionUtils.getRootCauseMessage(e));
-        return new LoadResult(Map.of(), ++errorCount);
+        return LoadResult.failed(pathStr);
       }
 
       LOG.trace("Successfully processed file {} with {} signers", pathStr, artifactSigners.size());
-      return new LoadResult(Map.of(pathStr, artifactSigners), errorCount);
+      return LoadResult.loaded(pathStr, artifactSigners);
     } catch (final IOException e) {
       // Check if IOException was caused by interruption
       if (Thread.currentThread().isInterrupted()) {
         LOG.debug("File processing interrupted during IO: {}", pathStr);
-      } else {
-        LOG.error("Error reading metadata config file: {}", pathStr, e);
-        errorCount++;
+        return LoadResult.unprocessed(pathStr);
       }
-      return new LoadResult(Map.of(), errorCount);
+      LOG.error("Error reading metadata config file: {}", pathStr, e);
+      return LoadResult.failed(pathStr);
     } catch (final Exception e) {
       // Check if exception is due to thread interruption (timeout/cancellation)
       if (Thread.currentThread().isInterrupted()
           || e instanceof InterruptedException
           || (e.getCause() != null && e.getCause() instanceof InterruptedException)) {
         LOG.debug("File processing cancelled: {}", pathStr);
-      } else {
-        LOG.error("Unexpected error processing file: {}", pathStr, e);
-        errorCount++;
+        return LoadResult.unprocessed(pathStr);
       }
-      return new LoadResult(Map.of(), errorCount);
+      LOG.error("Unexpected error processing file: {}", pathStr, e);
+      return LoadResult.failed(pathStr);
     }
   }
 
@@ -621,7 +675,7 @@ public class SignerLoader implements Closeable {
           .filter(SignerLoader::validFileExtension)
           .collect(
               Collectors.toMap(
-                  path -> path.toAbsolutePath().normalize().toString(),
+                  SignerLoader::fileName,
                   path -> {
                     try {
                       return Files.getLastModifiedTime(path);

@@ -14,7 +14,6 @@ package tech.pegasys.web3signer.core.service.http.handlers.commitboost;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import tech.pegasys.web3signer.signing.ArtifactSigner;
 import tech.pegasys.web3signer.signing.KeyType;
 import tech.pegasys.web3signer.signing.config.KeystoresParameters;
 import tech.pegasys.web3signer.signing.config.TestCommitBoostParameters;
@@ -41,23 +40,27 @@ class ProxyKeysGeneratorTest {
 
   @Test
   void generateBLSProxyKey() {
-    final ArtifactSigner artifactSigner = proxyKeysGenerator.generateBLSProxyKey("consensuspubkey");
-    assertThat(
-            commitBoostKeystoresPath
-                .resolve("consensuspubkey")
-                .resolve(KeyType.BLS.name())
-                .resolve(artifactSigner.getIdentifier() + ".json"))
-        .exists();
+    final ProxyKeysGenerator.GeneratedProxyKey generated =
+        proxyKeysGenerator.generateBLSProxyKey("consensuspubkey");
+    final Path expected =
+        commitBoostKeystoresPath
+            .resolve("consensuspubkey")
+            .resolve(KeyType.BLS.name())
+            .resolve(generated.signer().getIdentifier() + ".json");
+    assertThat(expected).exists();
+    assertThat(generated.keystoreFile()).isEqualTo(expected);
   }
 
   @Test
   void generateECProxyKey() {
-    final ArtifactSigner artifactSigner = proxyKeysGenerator.generateECProxyKey("consensuspubkey");
-    assertThat(
-            commitBoostKeystoresPath
-                .resolve("consensuspubkey")
-                .resolve(KeyType.SECP256K1.name())
-                .resolve(artifactSigner.getIdentifier() + ".json"))
-        .exists();
+    final ProxyKeysGenerator.GeneratedProxyKey generated =
+        proxyKeysGenerator.generateECProxyKey("consensuspubkey");
+    final Path expected =
+        commitBoostKeystoresPath
+            .resolve("consensuspubkey")
+            .resolve(KeyType.SECP256K1.name())
+            .resolve(generated.signer().getIdentifier() + ".json");
+    assertThat(expected).exists();
+    assertThat(generated.keystoreFile()).isEqualTo(expected);
   }
 }

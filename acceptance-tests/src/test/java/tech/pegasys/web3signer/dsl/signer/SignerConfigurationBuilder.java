@@ -77,6 +77,7 @@ public class SignerConfigurationBuilder {
   private Long gloasForkEpoch = null;
   private String network = null;
   private boolean keyManagerApiEnabled = false;
+  private boolean keyManagerSkipKeystoreStorage = false;
   private KeystoresParameters keystoresParameters;
   private WatermarkRepairParameters watermarkRepairParameters;
   private int downstreamHttpPort;
@@ -301,6 +302,12 @@ public class SignerConfigurationBuilder {
     return this;
   }
 
+  public SignerConfigurationBuilder withKeyManagerSkipKeystoreStorage(
+      final boolean keyManagerSkipKeystoreStorage) {
+    this.keyManagerSkipKeystoreStorage = keyManagerSkipKeystoreStorage;
+    return this;
+  }
+
   public SignerConfigurationBuilder withStartupTimeout(final Duration startupTimeout) {
     this.startupTimeout = startupTimeout;
     return this;
@@ -391,6 +398,7 @@ public class SignerConfigurationBuilder {
         Optional.ofNullable(gloasForkEpoch),
         Optional.ofNullable(network),
         keyManagerApiEnabled,
+        keyManagerSkipKeystoreStorage,
         Optional.ofNullable(watermarkRepairParameters),
         downstreamHttpPort,
         Optional.ofNullable(downstreamTlsOptions),

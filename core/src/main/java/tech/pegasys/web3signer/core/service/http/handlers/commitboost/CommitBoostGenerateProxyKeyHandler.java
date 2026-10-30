@@ -79,14 +79,16 @@ public class CommitBoostGenerateProxyKeyHandler implements Handler<RoutingContex
 
     try {
       // Generate actual proxy key and encrypted keystore based on signature scheme
-      final ArtifactSigner proxyArtifactSigner =
+      final ProxyKeysGenerator.GeneratedProxyKey generated =
           switch (proxyKeyBody.scheme()) {
             case BLS -> proxyKeyGenerator.generateBLSProxyKey(consensusPubKey);
             case ECDSA -> proxyKeyGenerator.generateECProxyKey(consensusPubKey);
           };
+      final ArtifactSigner proxyArtifactSigner = generated.signer();
 
       // Add generated proxy ArtifactSigner to ArtifactSignerProvider
-      commitBoostSignerProvider.addProxySigner(proxyArtifactSigner, consensusPubKey);
+      commitBoostSignerProvider.addProxySigner(
+          proxyArtifactSigner, consensusPubKey, generated.keystoreFile());
 
       final ProxyDelegation proxyDelegation =
           new ProxyDelegation(consensusPubKey, proxyArtifactSigner.getIdentifier());

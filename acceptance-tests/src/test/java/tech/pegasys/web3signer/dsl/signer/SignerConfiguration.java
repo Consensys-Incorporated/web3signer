@@ -75,6 +75,7 @@ public class SignerConfiguration {
   private final Optional<Long> gloasForkEpoch;
   private final Optional<String> network;
   private final boolean keyManagerApiEnabled;
+  private final boolean keyManagerSkipKeystoreStorage;
   private Optional<WatermarkRepairParameters> watermarkRepairParameters;
   private int downstreamHttpPort;
   private Optional<ClientTlsOptions> downstreamTlsOptions;
@@ -127,6 +128,7 @@ public class SignerConfiguration {
       final Optional<Long> gloasForkEpoch,
       final Optional<String> network,
       final boolean keyManagerApiEnabled,
+      final boolean keyManagerSkipKeystoreStorage,
       final Optional<WatermarkRepairParameters> watermarkRepairParameters,
       final int downstreamHttpPort,
       final Optional<ClientTlsOptions> downstreamTlsOptions,
@@ -175,6 +177,7 @@ public class SignerConfiguration {
     this.gloasForkEpoch = gloasForkEpoch;
     this.network = network;
     this.keyManagerApiEnabled = keyManagerApiEnabled;
+    this.keyManagerSkipKeystoreStorage = keyManagerSkipKeystoreStorage;
     this.watermarkRepairParameters = watermarkRepairParameters;
     this.downstreamHttpPort = downstreamHttpPort;
     this.downstreamTlsOptions = downstreamTlsOptions;
@@ -346,6 +349,10 @@ public class SignerConfiguration {
 
   public boolean isKeyManagerApiEnabled() {
     return keyManagerApiEnabled;
+  }
+
+  public boolean isKeyManagerSkipKeystoreStorage() {
+    return keyManagerSkipKeystoreStorage;
   }
 
   public Duration getStartupTimeout() {
