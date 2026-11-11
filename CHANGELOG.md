@@ -8,6 +8,8 @@
 - Docker images can now be built without a local Java install: when the `TAR_FILE` build argument is omitted, `docker/Dockerfile` and `docker/Dockerfile.distroless` build the distribution from source inside Docker. Building from a pre-built `TAR_FILE` remains the recommended path. See `docker/README.md`. [#1249][PR_1249]
 
 ### Bugs Fixed
+- `POST /reload` no longer removes keys, or disables them in slashing protection, when their keystore source fails to load; only deleted keys are removed. This includes keys imported through the Key Manager API, which are kept while their key config file fails to load, and keys whose keystore was renamed without its password file, which are kept while the renamed keystore fails to load. [#1251][PR_1251]
+- `POST /reload` no longer removes keys imported through the Key Manager API with `--Xkey-manager-skip-keystore-storage`, or disables them in slashing protection; they stay until deleted through the Key Manager API or Web3Signer restarts. [#1251][PR_1251]
 
 ### Breaking Changes
 
@@ -29,6 +31,7 @@
 [PR_1288]: https://github.com/Consensys-Incorporated/web3signer/pull/1288
 [PR_1287]: https://github.com/Consensys-Incorporated/web3signer/pull/1287
 [PR_1275]: https://github.com/Consensys-Incorporated/web3signer/pull/1275
+[PR_1251]: https://github.com/Consensys-Incorporated/web3signer/pull/1251
 [PR_1249]: https://github.com/Consensys-Incorporated/web3signer/pull/1249
 
 ---

@@ -15,85 +15,112 @@ package tech.pegasys.web3signer.signing.bulkloading;
 import tech.pegasys.teku.bls.BLSKeyPair;
 import tech.pegasys.web3signer.bls.keystore.KeyStore;
 import tech.pegasys.web3signer.bls.keystore.KeyStoreLoader;
-import tech.pegasys.web3signer.bls.keystore.KeyStoreValidationException;
 import tech.pegasys.web3signer.bls.keystore.model.KeyStoreData;
-import tech.pegasys.web3signer.keystorage.common.MappedResults;
-import tech.pegasys.web3signer.signing.ArtifactSigner;
 import tech.pegasys.web3signer.signing.BlsArtifactSigner;
+import tech.pegasys.web3signer.signing.config.SignerSourceResult;
 import tech.pegasys.web3signer.signing.config.metadata.SignerOrigin;
 import tech.pegasys.web3signer.signing.secp256k1.util.JsonFilesUtil;
+import tech.pegasys.web3signer.signing.util.IdentifierUtils;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
 
 import org.apache.commons.io.FilenameUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+/** Bulk-loads BLS keystores; reports each signer's file and the files that failed. */
 public class BlsKeystoreBulkLoader {
   private static final Logger LOG = LogManager.getLogger();
+  private static final String SOURCE_NAME = "bls keystores";
 
-  public static MappedResults<ArtifactSigner> loadKeystoresUsingPasswordDir(
+  public static SignerSourceResult loadKeystoresUsingPasswordDir(
       final Path keystoresDirectory, final Path passwordsDirectory) {
+    final PasswordReader passwordReader;
+    try {
+      passwordReader = PasswordReader.fromDirectory(passwordsDirectory);
+    } catch (final IOException e) {
+      LOG.error("Unable to read keystore password directory", e);
+      return SignerSourceResult.sourceFailure(SOURCE_NAME);
+    }
+
     final List<Path> keystoreFiles;
     try {
       keystoreFiles = JsonFilesUtil.loadJsonExtPaths(keystoresDirectory);
     } catch (final IOException e) {
       LOG.error("Error reading keystore files", e);
-      return MappedResults.errorResult();
+      return SignerSourceResult.sourceFailure(SOURCE_NAME);
     }
 
-    return keystoreFiles.parallelStream()
-        .map(
-            keystoreFile ->
-                createSignerForKeystore(
-                    keystoreFile,
-                    keystorePassword ->
-                        Files.readString(passwordsDirectory.resolve(keystorePassword))))
-        .reduce(MappedResults.newSetInstance(), MappedResults::merge);
+    return KeystoreFilesLoader.load(
+        SOURCE_NAME,
+        keystoreFiles,
+        keystoreFile -> createSignerForKeystore(keystoreFile, passwordReader));
   }
 
-  public static MappedResults<ArtifactSigner> loadKeystoresUsingPasswordFile(
+  public static SignerSourceResult loadKeystoresUsingPasswordFile(
       final Path keystoresDirectory, final Path passwordFile) {
-    final List<Path> keystoreFiles;
-    try {
-      keystoreFiles = JsonFilesUtil.loadJsonExtPaths(keystoresDirectory);
-    } catch (final IOException e) {
-      LOG.error("Error reading keystore files", e);
-      return MappedResults.errorResult();
-    }
-
     final String password;
     try {
       password = Files.readString(passwordFile);
     } catch (final IOException e) {
       LOG.error("Unable to read password file", e);
-      return MappedResults.errorResult();
+      return SignerSourceResult.sourceFailure(SOURCE_NAME);
     }
 
-    return keystoreFiles.parallelStream()
-        .map(keystoreFile -> createSignerForKeystore(keystoreFile, keystorePassword -> password))
-        .reduce(MappedResults.newSetInstance(), MappedResults::merge);
+    return loadKeystoresUsingPassword(keystoresDirectory, password);
   }
 
-  private static MappedResults<ArtifactSigner> createSignerForKeystore(
-      final Path keystoreFile, final PasswordReader passwordReader) {
+  /** Loads every keystore with an already read password (proxy keystores). */
+  public static SignerSourceResult loadKeystoresUsingPassword(
+      final Path keystoresDirectory, final String password) {
+    final List<Path> keystoreFiles;
     try {
-      LOG.debug("Loading keystore {}", keystoreFile);
+      keystoreFiles = JsonFilesUtil.loadJsonExtPaths(keystoresDirectory);
+    } catch (final IOException e) {
+      LOG.error("Error reading keystore files", e);
+      return SignerSourceResult.sourceFailure(SOURCE_NAME);
+    }
+
+    return KeystoreFilesLoader.load(
+        SOURCE_NAME,
+        keystoreFiles,
+        keystoreFile -> createSignerForKeystore(keystoreFile, ignored -> password));
+  }
+
+  /**
+   * A keystore whose password file cannot be read reports the pubkey in its JSON, which a renamed
+   * keystore still holds. The pubkey is unverified: decryption has not run, so nothing contradicts
+   * it. A keystore that fails at or after decryption claims nothing.
+   */
+  private static KeystoreFilesLoader.FileResult createSignerForKeystore(
+      final Path keystoreFile, final PasswordReader passwordReader) {
+    LOG.debug("Loading keystore {}", keystoreFile);
+    try {
       final KeyStoreData keyStoreData = KeyStoreLoader.loadFromFile(keystoreFile.toUri());
       final String fileNameWithoutExt =
           FilenameUtils.removeExtension(keystoreFile.getFileName().toString());
-      final String password = passwordReader.readPassword(fileNameWithoutExt + ".txt");
+      final String password;
+      try {
+        password = passwordReader.readPassword(fileNameWithoutExt + ".txt");
+      } catch (final IOException e) {
+        LOG.error("Password of keystore {} could not be read", keystoreFile, e);
+        return KeystoreFilesLoader.FileResult.failedClaiming(claimedKey(keyStoreData));
+      }
       final BLSKeyPair keyPair = KeyStore.decrypt(password, keyStoreData);
-      final BlsArtifactSigner artifactSigner =
-          new BlsArtifactSigner(keyPair, SignerOrigin.FILE_KEYSTORE);
-      return MappedResults.newInstance(Set.of(artifactSigner), 0);
-    } catch (final KeyStoreValidationException | IOException e) {
+      return KeystoreFilesLoader.FileResult.loaded(
+          new BlsArtifactSigner(keyPair, SignerOrigin.FILE_KEYSTORE));
+    } catch (final RuntimeException e) {
       LOG.error("Keystore could not be loaded {}", keystoreFile, e);
-      return MappedResults.errorResult();
+      return KeystoreFilesLoader.FileResult.failed();
     }
+  }
+
+  private static String claimedKey(final KeyStoreData keyStoreData) {
+    return keyStoreData.pubkey() == null
+        ? null
+        : IdentifierUtils.normaliseIdentifier(keyStoreData.pubkey().toHexString());
   }
 }

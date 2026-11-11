@@ -13,6 +13,7 @@
 package tech.pegasys.web3signer.signing;
 
 import java.io.Closeable;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -96,9 +97,12 @@ public interface ArtifactSignerProvider extends Closeable {
    * Add a new signer to the signer provider.
    *
    * @param signer the signer to add
+   * @param keyConfigFile the key config file written for the signer, empty if it is kept in memory
+   *     only. A reload keeps the signer while this file fails to load and removes it once the file
+   *     is gone; a reload never removes a signer without a file, only {@link #removeSigner} does
    * @return a future that completes when the signer is added
    */
-  Future<Void> addSigner(final ArtifactSigner signer);
+  Future<Void> addSigner(final ArtifactSigner signer, final Optional<Path> keyConfigFile);
 
   /**
    * Remove a signer from the signer provider.
@@ -113,10 +117,12 @@ public interface ArtifactSignerProvider extends Closeable {
    *
    * @param proxySigner Instance of ArtifactSigner that represents the proxy signer
    * @param consensusPubKey Public Key of the consensus signer for which proxy signer is being added
+   * @param keystoreFile the proxy keystore file written for the proxy signer. A reload keeps the
+   *     proxy signer while this file fails to load and removes it once the file is gone
    * @return a future that completes when the proxy signer is added
    */
   default Future<Void> addProxySigner(
-      final ArtifactSigner proxySigner, final String consensusPubKey) {
+      final ArtifactSigner proxySigner, final String consensusPubKey, final Path keystoreFile) {
     throw new UnsupportedOperationException("Proxy signers are not supported by this provider");
   }
 

@@ -98,9 +98,10 @@ public class KeystoreFileManager {
    * Create Keystore metadata, json and password files.
    *
    * @param fileRecord KeystoreFileRecord with keystore file data
+   * @return the metadata (key config) yaml file
    * @throws IOException In case file write operations fail
    */
-  public void createKeystoreFiles(final KeystoreFileRecord fileRecord) throws IOException {
+  public Path createKeystoreFiles(final KeystoreFileRecord fileRecord) throws IOException {
     final Path metadataYamlFile = keystorePath.resolve(fileRecord.metadataFileName());
     final Path keystoreJsonFile = keystorePath.resolve(fileRecord.keystoreFileName());
     final Path keystorePasswordFile = keystorePath.resolve(fileRecord.passwordFileName());
@@ -114,6 +115,7 @@ public class KeystoreFileManager {
       Files.writeString(keystoreJsonFile, fileRecord.json(), StandardCharsets.UTF_8);
       // password file
       Files.writeString(keystorePasswordFile, fileRecord.password(), StandardCharsets.UTF_8);
+      return metadataYamlFile;
     } catch (final IOException e) {
       deleteFile(metadataYamlFile);
       deleteFile(keystoreJsonFile);

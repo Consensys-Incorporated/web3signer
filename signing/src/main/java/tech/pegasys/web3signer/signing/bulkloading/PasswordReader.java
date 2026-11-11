@@ -13,8 +13,23 @@
 package tech.pegasys.web3signer.signing.bulkloading;
 
 import java.io.IOException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 @FunctionalInterface
 public interface PasswordReader {
   String readPassword(final String fileName) throws IOException;
+
+  /**
+   * Reads each password from its own file in {@code passwordsDirectory}.
+   *
+   * @throws IOException if the directory is missing, is not a directory or cannot be listed, so
+   *     that the caller reports a source failure instead of one failed file per keystore
+   */
+  static PasswordReader fromDirectory(final Path passwordsDirectory) throws IOException {
+    try (final DirectoryStream<Path> ignored = Files.newDirectoryStream(passwordsDirectory)) {
+      return fileName -> Files.readString(passwordsDirectory.resolve(fileName));
+    }
+  }
 }

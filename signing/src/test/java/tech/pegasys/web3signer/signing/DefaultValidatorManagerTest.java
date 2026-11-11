@@ -33,6 +33,7 @@ import tech.pegasys.web3signer.signing.config.metadata.SignerOrigin;
 import tech.pegasys.web3signer.signing.config.metadata.parser.SigningMetadataModule;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -65,20 +66,22 @@ class DefaultValidatorManagerTest {
   void addsValidator()
       throws IOException, ExecutionException, InterruptedException, JsonProcessingException {
     final Future<Void> futureAddSigner = Mockito.mock(Future.class);
-    when(artifactSignerProvider.addSigner(any())).thenReturn(futureAddSigner);
+    when(artifactSignerProvider.addSigner(any(), any())).thenReturn(futureAddSigner);
 
     final String keystoreJson = createKeystoreString();
     final BlsArtifactSigner signer =
         new BlsArtifactSigner(BLS_KEY_PAIR, SignerOrigin.FILE_KEYSTORE);
     final KeystoreFileRecord fileRecord =
         new KeystoreFileRecord(keystoreJson, "password", BLS_KEY_PAIR.getPublicKey().toString());
+    final Path keyConfigFile = Path.of("/keys", fileRecord.metadataFileName());
+    when(keystoreFileManager.createKeystoreFiles(fileRecord)).thenReturn(keyConfigFile);
 
     final DefaultValidatorManager defaultValidatorManager =
         new DefaultValidatorManager(artifactSignerProvider, Optional.of(keystoreFileManager));
     defaultValidatorManager.addValidator(signer, fileRecord);
 
-    verify(artifactSignerProvider).addSigner(eq(signer));
-    verify(keystoreFileManager).createKeystoreFiles(eq(fileRecord));
+    // the provider learns the written key config file, so a reload can attribute the key to it
+    verify(artifactSignerProvider).addSigner(eq(signer), eq(Optional.of(keyConfigFile)));
     verify(futureAddSigner).get();
   }
 
@@ -123,7 +126,7 @@ class DefaultValidatorManagerTest {
   void addsValidatorWithoutFileStorage()
       throws ExecutionException, InterruptedException, IOException {
     final Future<Void> futureAddSigner = Mockito.mock(Future.class);
-    when(artifactSignerProvider.addSigner(any())).thenReturn(futureAddSigner);
+    when(artifactSignerProvider.addSigner(any(), any())).thenReturn(futureAddSigner);
 
     final BlsArtifactSigner signer =
         new BlsArtifactSigner(BLS_KEY_PAIR, SignerOrigin.FILE_KEYSTORE);
@@ -138,7 +141,8 @@ class DefaultValidatorManagerTest {
                 s ->
                     s instanceof BlsArtifactSigner blsSigner
                         && s.getIdentifier().equals(BLS_KEY_PAIR.getPublicKey().toString())
-                        && !blsSigner.isReadOnlyKey()));
+                        && !blsSigner.isReadOnlyKey()),
+            eq(Optional.empty()));
     verify(keystoreFileManager, never()).createKeystoreFiles(any());
     verify(futureAddSigner).get();
   }
@@ -164,7 +168,7 @@ class DefaultValidatorManagerTest {
   void addValidatorThrowsExceptionWhenFutureGetFails()
       throws ExecutionException, InterruptedException {
     final Future<Void> futureAddSigner = Mockito.mock(Future.class);
-    when(artifactSignerProvider.addSigner(any())).thenReturn(futureAddSigner);
+    when(artifactSignerProvider.addSigner(any(), any())).thenReturn(futureAddSigner);
     when(futureAddSigner.get())
         .thenThrow(new ExecutionException(new RuntimeException("Test exception")));
 

@@ -13,6 +13,7 @@
 package tech.pegasys.web3signer.signing;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
@@ -23,8 +24,8 @@ import org.apache.tuweni.bytes.Bytes;
 ///
 /// When a `KeystoreFileManager` is supplied, validators are persisted to disk before being
 /// activated in memory, so they survive a restart. When no file manager is supplied (i.e.
-/// `skipKeystoreStorage` is enabled), validators exist only in memory and are lost when Web3Signer
-/// stops.
+/// `skipKeystoreStorage` is enabled), validators exist only in memory: reloads keep them, and they
+/// are lost when Web3Signer stops.
 ///
 /// In both modes the in-memory state is always the source of truth for active signing: additions
 /// register the signer in memory _after_ a successful file write (if applicable), and deletions
@@ -75,11 +76,15 @@ public class DefaultValidatorManager implements ValidatorManager {
       final BlsArtifactSigner signer, final KeystoreFileRecord keystoreFileRecord) {
     try {
       // write keystore to file - allows to bail out in case of failure
+      final Optional<Path> keyConfigFile;
       if (keystoreFileManager.isPresent()) {
-        keystoreFileManager.get().createKeystoreFiles(keystoreFileRecord);
+        keyConfigFile =
+            Optional.of(keystoreFileManager.get().createKeystoreFiles(keystoreFileRecord));
+      } else {
+        keyConfigFile = Optional.empty();
       }
       // Then, add it in memory to make it available for signing ...
-      signerProvider.addSigner(signer).get();
+      signerProvider.addSigner(signer, keyConfigFile).get();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new IllegalStateException("Unable to add validator", e);
