@@ -25,6 +25,7 @@ import static tech.pegasys.web3signer.tests.AcceptanceTestBase.DEFAULT_CHAIN_ID;
 
 import tech.pegasys.web3signer.core.config.ClientAuthConstraints;
 import tech.pegasys.web3signer.core.config.TlsOptions;
+import tech.pegasys.web3signer.core.config.TrustStoreOptions;
 import tech.pegasys.web3signer.core.service.jsonrpc.handlers.signing.ConfigurationChainId;
 import tech.pegasys.web3signer.dsl.signer.Signer;
 import tech.pegasys.web3signer.dsl.signer.SignerConfigurationBuilder;
@@ -32,16 +33,20 @@ import tech.pegasys.web3signer.dsl.tls.BasicTlsOptions;
 import tech.pegasys.web3signer.dsl.tls.ClientTlsConfig;
 import tech.pegasys.web3signer.dsl.tls.TlsCertificateDefinition;
 import tech.pegasys.web3signer.dsl.tls.support.BasicClientAuthConstraints;
+import tech.pegasys.web3signer.keystore.dsl.certificates.CertificateHelpers;
+import tech.pegasys.web3signer.keystore.dsl.certificates.SelfSignedCertificate;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.Optional;
 import javax.net.ssl.SSLHandshakeException;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class ServerSideTlsAcceptanceTest {
@@ -276,5 +281,102 @@ class ServerSideTlsAcceptanceTest {
                 .body(equalToIgnoringCase("OK"));
 
     assertThatThrownBy(request::run).isInstanceOf(IOException.class);
+  }
+
+  @ParameterizedTest(name = "useConfigFile={0}, pemTrustStore={1}")
+  @CsvSource({"true,false", "false,false", "true,true", "false,true"})
+  void clientInServerTrustStoreCanConnectToWeb3Signer(
+      final boolean useConfigFile, final boolean pemTrustStore) throws Exception {
+    final TlsCertificateDefinition clientCert = generateCertificate("client");
+    signer = createTrustStoreTlsSigner(clientCert, pemTrustStore, useConfigFile);
+    signer.start();
+    signer.awaitStartupCompletion();
+
+    signer
+        .requestSpec()
+        .when()
+        .get("/upcheck")
+        .then()
+        .assertThat()
+        .statusCode(200)
+        .body(equalToIgnoringCase("OK"));
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  void clientMissingFromServerTrustStoreCannotConnectToWeb3Signer(final boolean useConfigFile)
+      throws Exception {
+    final TlsCertificateDefinition trustedCert = generateCertificate("trusted");
+    final TlsCertificateDefinition untrustedCert = generateCertificate("untrusted");
+    signer = createTrustStoreTlsSigner(trustedCert, false, useConfigFile);
+    signer.start();
+    signer.awaitStartupCompletion();
+
+    final ClientTlsConfig clientTlsConfig = new ClientTlsConfig(cert1, untrustedCert);
+    Runnable request =
+        () ->
+            given()
+                .spec(createRequestSpecification(Optional.of(clientTlsConfig)))
+                .baseUri(signer.getUrl())
+                .when()
+                .get("/upcheck")
+                .then()
+                .assertThat()
+                .statusCode(200);
+
+    assertThatThrownBy(request::run).isInstanceOf(IOException.class);
+  }
+
+  /**
+   * Web3Signer trusting only {@code trustedClient}, as a PKCS#12 or PEM truststore, queried by a
+   * client presenting it.
+   */
+  private Signer createTrustStoreTlsSigner(
+      final TlsCertificateDefinition trustedClient,
+      final boolean pemTrustStore,
+      final boolean useConfigFile)
+      throws Exception {
+    final Path serverPasswordFile = writeString(dataPath.resolve("keystore.passwd"), "password");
+    final TrustStoreOptions trustStoreOptions;
+    if (pemTrustStore) {
+      final String pem =
+          "-----BEGIN CERTIFICATE-----\n"
+              + Base64.getMimeEncoder(64, new byte[] {'\n'})
+                  .encodeToString(trustedClient.certificates().get(0).getEncoded())
+              + "\n-----END CERTIFICATE-----\n";
+      trustStoreOptions =
+          new TrustStoreOptions(
+              writeString(dataPath.resolve("truststore.pem"), pem), Optional.empty());
+    } else {
+      final Path trustStorePasswordFile =
+          writeString(dataPath.resolve("truststore.passwd"), trustedClient.getPassword());
+      trustStoreOptions =
+          new TrustStoreOptions(
+              trustedClient.getPkcs12File().toPath(), Optional.of(trustStorePasswordFile));
+    }
+    final ClientAuthConstraints clientAuthConstraints =
+        BasicClientAuthConstraints.fromTrustStore(trustStoreOptions);
+    final SignerConfigurationBuilder configBuilder =
+        new SignerConfigurationBuilder()
+            .withUseConfigFile(useConfigFile)
+            .withMode("eth1")
+            .withChainIdProvider(new ConfigurationChainId(DEFAULT_CHAIN_ID))
+            .withServerTlsOptions(
+                new BasicTlsOptions(
+                    cert1.getPkcs12File(),
+                    serverPasswordFile.toFile(),
+                    Optional.of(clientAuthConstraints)));
+
+    return new Signer(configBuilder.build(), new ClientTlsConfig(cert1, trustedClient));
+  }
+
+  private TlsCertificateDefinition generateCertificate(final String name) throws IOException {
+    final String password = name + "-password";
+    final Path keyStore =
+        CertificateHelpers.createPkcs12TrustStore(
+            Files.createDirectories(dataPath.resolve(name)),
+            SelfSignedCertificate.generate(),
+            password);
+    return new TlsCertificateDefinition(keyStore.toFile(), password);
   }
 }

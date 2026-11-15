@@ -13,6 +13,7 @@
 package tech.pegasys.web3signer.dsl.tls.client;
 
 import tech.pegasys.web3signer.core.config.KeyStoreOptions;
+import tech.pegasys.web3signer.core.config.TrustStoreOptions;
 import tech.pegasys.web3signer.core.config.client.ClientTlsOptions;
 
 import java.nio.file.Path;
@@ -21,6 +22,7 @@ import java.util.Optional;
 public class BasicClientTlsOptions implements ClientTlsOptions {
   private final Optional<KeyStoreOptions> tlsCertificateOptions;
   private final Optional<Path> knownServersFile;
+  private final Optional<TrustStoreOptions> trustStoreOptions;
   private final boolean caAuthEnabled;
 
   public BasicClientTlsOptions(
@@ -29,7 +31,16 @@ public class BasicClientTlsOptions implements ClientTlsOptions {
       final boolean caAuthEnabled) {
     this.tlsCertificateOptions = Optional.ofNullable(tlsCertificateOptions);
     this.knownServersFile = knownServersFile;
+    this.trustStoreOptions = Optional.empty();
     this.caAuthEnabled = caAuthEnabled;
+  }
+
+  public BasicClientTlsOptions(
+      final KeyStoreOptions tlsCertificateOptions, final TrustStoreOptions trustStoreOptions) {
+    this.tlsCertificateOptions = Optional.ofNullable(tlsCertificateOptions);
+    this.knownServersFile = Optional.empty();
+    this.trustStoreOptions = Optional.of(trustStoreOptions);
+    this.caAuthEnabled = true;
   }
 
   @Override
@@ -37,11 +48,20 @@ public class BasicClientTlsOptions implements ClientTlsOptions {
     return tlsCertificateOptions;
   }
 
+  @SuppressWarnings("removal") // overrides the deprecated interface method
+  @Deprecated(forRemoval = true)
   @Override
   public Optional<Path> getKnownServersFile() {
     return knownServersFile;
   }
 
+  @Override
+  public Optional<TrustStoreOptions> getTrustStoreOptions() {
+    return trustStoreOptions;
+  }
+
+  @SuppressWarnings("removal") // overrides the deprecated interface method
+  @Deprecated(forRemoval = true)
   @Override
   public boolean isCaAuthEnabled() {
     return caAuthEnabled;

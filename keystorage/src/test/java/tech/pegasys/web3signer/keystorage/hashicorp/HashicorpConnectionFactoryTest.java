@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Optional;
 
 import com.google.common.io.Resources;
@@ -37,6 +38,7 @@ public class HashicorpConnectionFactoryTest {
   final String CONFIGURED_HOST = "Host";
 
   @Test
+  @SuppressWarnings("removal") // deprecated WHITELIST truststore type
   void invalidWhiteListFileCausesConnectionToThrowHashicorpException() throws IOException {
     final File invalidWhitelist = File.createTempFile("invalid", ".whitelist");
     Files.writeString(invalidWhitelist.toPath(), "Invalid Whitelist content");
@@ -57,6 +59,7 @@ public class HashicorpConnectionFactoryTest {
   }
 
   @Test
+  @SuppressWarnings("removal") // deprecated WHITELIST truststore type
   void missingAndUncreatableWhiteListThrowsHashicorpException() {
     final Path invalidFile = Path.of("/missingUnCreatable.whitelist");
 
@@ -96,6 +99,42 @@ public class HashicorpConnectionFactoryTest {
     // methods will be called first during validation, second when truststore to be initialized.
     Mockito.verify(tlsOptions, Mockito.times(2)).getTrustStorePath();
     Mockito.verify(tlsOptions, Mockito.times(2)).getTrustStorePassword();
+  }
+
+  @Test
+  void httpClientIsOnlySharedBetweenConnectionsWithIdenticalTlsOptions() throws IOException {
+    final Path trustStoreA = Path.of(Resources.getResource("tls/cert1.pfx").getPath());
+    final Path trustStoreB = Files.createTempFile("trustStoreB", ".pfx");
+    trustStoreB.toFile().deleteOnExit();
+    Files.copy(trustStoreA, trustStoreB, StandardCopyOption.REPLACE_EXISTING);
+
+    try (final HashicorpConnectionFactory connectionFactory = new HashicorpConnectionFactory()) {
+      final Object defaultCas =
+          httpClientOf(connectionFactory, new TlsOptions(Optional.empty(), null, null));
+      final Object firstA = httpClientOf(connectionFactory, pkcs12(trustStoreA));
+      final Object secondA = httpClientOf(connectionFactory, pkcs12(trustStoreA));
+      final Object b = httpClientOf(connectionFactory, pkcs12(trustStoreB));
+
+      assertThat(firstA).isSameAs(secondA);
+      assertThat(firstA).isNotSameAs(defaultCas);
+      assertThat(firstA).isNotSameAs(b);
+      assertThat(b).isNotSameAs(defaultCas);
+    }
+  }
+
+  private static TlsOptions pkcs12(final Path trustStore) {
+    return new TlsOptions(Optional.of(TrustStoreType.PKCS12), trustStore, "password");
+  }
+
+  private Object httpClientOf(
+      final HashicorpConnectionFactory connectionFactory, final TlsOptions tlsOptions) {
+    final ConnectionParameters params =
+        ConnectionParameters.newBuilder()
+            .withServerHost(CONFIGURED_HOST)
+            .withTlsOptions(tlsOptions)
+            .withTimeoutMs(10L)
+            .build();
+    return assertThat(connectionFactory.create(params)).extracting("httpClient").actual();
   }
 
   @Test

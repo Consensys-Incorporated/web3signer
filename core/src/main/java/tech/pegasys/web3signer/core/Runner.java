@@ -20,11 +20,13 @@ import tech.pegasys.web3signer.core.config.BaseConfig;
 import tech.pegasys.web3signer.core.config.ClientAuthConstraints;
 import tech.pegasys.web3signer.core.config.MetricsPushOptions;
 import tech.pegasys.web3signer.core.config.TlsOptions;
+import tech.pegasys.web3signer.core.config.TrustStoreOptions;
 import tech.pegasys.web3signer.core.metrics.vertx.VertxMetricsAdapterFactory;
 import tech.pegasys.web3signer.core.service.http.HostAllowListHandler;
 import tech.pegasys.web3signer.core.service.http.handlers.JsonErrorHandler;
 import tech.pegasys.web3signer.core.service.http.handlers.UpcheckHandler;
 import tech.pegasys.web3signer.core.util.FileUtil;
+import tech.pegasys.web3signer.core.util.TrustStoreUtil;
 import tech.pegasys.web3signer.signing.ArtifactSignerProvider;
 
 import java.io.Closeable;
@@ -352,11 +354,19 @@ public abstract class Runner implements Runnable, AutoCloseable {
     }
   }
 
+  @SuppressWarnings("removal") // deprecated known clients file and CA clients
   private static HttpServerOptions applyClientAuthentication(
       final HttpServerOptions input, final ClientAuthConstraints constraints) {
     final HttpServerOptions result = new HttpServerOptions(input);
 
     result.setClientAuth(ClientAuth.REQUIRED);
+
+    final Optional<TrustStoreOptions> trustStoreOptions = constraints.getTrustStoreOptions();
+    if (trustStoreOptions.isPresent()) {
+      result.setTrustOptions(TrustStoreUtil.createTrustOptions(trustStoreOptions.get()));
+      return result;
+    }
+
     try {
       constraints
           .getKnownClientsFile()

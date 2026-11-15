@@ -16,8 +16,10 @@ import static org.apache.tuweni.net.tls.VertxTrustOptions.allowlistServers;
 
 import tech.pegasys.web3signer.core.config.Eth1Config;
 import tech.pegasys.web3signer.core.config.KeyStoreOptions;
+import tech.pegasys.web3signer.core.config.TrustStoreOptions;
 import tech.pegasys.web3signer.core.config.client.ClientTlsOptions;
 import tech.pegasys.web3signer.core.util.FileUtil;
+import tech.pegasys.web3signer.core.util.TrustStoreUtil;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -56,6 +58,7 @@ public class WebClientOptionsFactory {
     return Optional.of(proxyOptions);
   }
 
+  @SuppressWarnings("removal") // deprecated known servers file and CA auth
   private void applyTlsOptions(final WebClientOptions webClientOptions, final Eth1Config config) {
     final Optional<ClientTlsOptions> optionalClientTlsOptions = config.getClientTlsOptions();
     if (optionalClientTlsOptions.isEmpty()) {
@@ -68,6 +71,7 @@ public class WebClientOptionsFactory {
 
     applyTrustOptions(
         webClientOptions,
+        clientTlsOptions.getTrustStoreOptions(),
         clientTlsOptions.getKnownServersFile(),
         clientTlsOptions.isCaAuthEnabled());
     applyKeyStoreOptions(webClientOptions, clientTlsOptions.getKeyStoreOptions());
@@ -75,8 +79,14 @@ public class WebClientOptionsFactory {
 
   private void applyTrustOptions(
       final WebClientOptions webClientOptions,
+      final Optional<TrustStoreOptions> trustStoreOptions,
       final Optional<Path> knownServerFile,
       final boolean caAuthEnabled) {
+
+    if (trustStoreOptions.isPresent()) {
+      webClientOptions.setTrustOptions(TrustStoreUtil.createTrustOptions(trustStoreOptions.get()));
+      return;
+    }
 
     if (knownServerFile.isPresent()) {
       try {
@@ -84,13 +94,15 @@ public class WebClientOptionsFactory {
       } catch (RuntimeException e) {
         throw new InitializationException("Failed to load known server file.", e);
       }
+      return;
     }
 
-    if (knownServerFile.isEmpty() && !caAuthEnabled) {
+    if (!caAuthEnabled) {
       throw new InitializationException(
-          "Must specify a known-server file if CA-signed option is disabled");
+          "Must specify a truststore file if CA-signed option is disabled");
     }
-    // otherwise knownServerFile is empty and caAuthEnabled is true which is the default situation
+    // otherwise no truststore/known-servers file and caAuthEnabled is true (the default): use the
+    // JVM's default CAs
   }
 
   private void applyKeyStoreOptions(

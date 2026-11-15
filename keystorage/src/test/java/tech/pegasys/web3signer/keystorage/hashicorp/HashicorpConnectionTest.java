@@ -17,11 +17,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import tech.pegasys.web3signer.keystorage.hashicorp.config.ConnectionParameters;
 import tech.pegasys.web3signer.keystorage.hashicorp.config.TlsOptions;
 
-import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.file.Path;
+import java.security.KeyStoreException;
 import java.util.Optional;
 
 import com.google.common.io.Resources;
@@ -33,7 +33,7 @@ public class HashicorpConnectionTest {
   private final HashicorpConnectionFactory connectionFactory = new HashicorpConnectionFactory();
 
   @Test
-  void missingJksTrustStoreFileThrowsHashicorpException() throws IOException {
+  void emptyTrustStoreFileThrowsHashicorpException() throws IOException {
 
     final File tempFile = File.createTempFile("trustStore", ".tmp");
     tempFile.deleteOnExit();
@@ -51,7 +51,8 @@ public class HashicorpConnectionTest {
         .isInstanceOf(HashicorpException.class)
         .hasMessage("Unable to initialise connection to hashicorp vault.")
         .cause()
-        .isInstanceOf(EOFException.class);
+        .isInstanceOf(KeyStoreException.class)
+        .hasMessageContaining("Unrecognized keystore format");
   }
 
   @Test

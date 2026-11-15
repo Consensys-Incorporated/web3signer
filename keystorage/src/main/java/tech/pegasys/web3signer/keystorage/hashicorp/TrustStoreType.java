@@ -18,7 +18,11 @@ import java.util.Optional;
 public enum TrustStoreType {
   JKS(true),
   PKCS12(true),
+  /** Fingerprint allowlist; deprecated with Hashicorp metadata {@code tlsKnownServersPath}. */
+  @Deprecated(forRemoval = true)
   WHITELIST(false),
+  /** Fingerprint allowlist; deprecated with Hashicorp metadata {@code tlsKnownServersPath}. */
+  @Deprecated(forRemoval = true)
   ALLOWLIST(false),
   PEM(false);
 

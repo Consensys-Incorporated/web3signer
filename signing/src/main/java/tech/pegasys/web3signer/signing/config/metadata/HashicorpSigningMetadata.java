@@ -36,6 +36,8 @@ public class HashicorpSigningMetadata extends SigningMetadata {
 
   private Boolean tlsEnabled = false;
   private Path tlsKnownServerFile = null;
+  private Path tlsTruststoreFile = null;
+  private Path tlsTruststorePasswordFile = null;
   private HttpClient.Version httpProtocolVersion;
 
   private VaultAuthMethod authMethod = VaultAuthMethod.TOKEN;
@@ -78,9 +80,25 @@ public class HashicorpSigningMetadata extends SigningMetadata {
     this.keyName = value;
   }
 
+  /**
+   * Sets the known servers (fingerprint) file.
+   *
+   * @deprecated use {@link #setTlsTruststoreFile(Path)}
+   */
+  @Deprecated(forRemoval = true)
   @JsonSetter("tlsKnownServersPath")
   public void setTlsKnownServersPath(final Path value) {
     this.tlsKnownServerFile = value;
+  }
+
+  @JsonSetter("tlsTruststoreFile")
+  public void setTlsTruststoreFile(final Path value) {
+    this.tlsTruststoreFile = value;
+  }
+
+  @JsonSetter("tlsTruststorePasswordFile")
+  public void setTlsTruststorePasswordFile(final Path value) {
+    this.tlsTruststorePasswordFile = value;
   }
 
   @JsonSetter("httpProtocolVersion")
@@ -138,8 +156,22 @@ public class HashicorpSigningMetadata extends SigningMetadata {
     return tlsEnabled;
   }
 
+  /**
+   * Returns the known servers (fingerprint) file.
+   *
+   * @deprecated use {@link #getTlsTruststoreFile()}
+   */
+  @Deprecated(forRemoval = true)
   public Path getTlsKnownServerFile() {
     return tlsKnownServerFile;
+  }
+
+  public Path getTlsTruststoreFile() {
+    return tlsTruststoreFile;
+  }
+
+  public Path getTlsTruststorePasswordFile() {
+    return tlsTruststorePasswordFile;
   }
 
   public HttpClient.Version getHttpProtocolVersion() {

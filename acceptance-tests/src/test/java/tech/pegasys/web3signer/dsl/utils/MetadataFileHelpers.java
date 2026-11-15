@@ -121,11 +121,16 @@ public class MetadataFileHelpers {
       signingMetadata.put("tlsEnabled", Boolean.toString(tlsEnabled));
       if (tlsEnabled) {
         final Path parentDir = metadataFilePath.getParent();
-        final Path knownServerPath =
-            CertificateHelpers.createFingerprintFile(
-                parentDir, node.getServerCertificate().get(), Optional.of(node.getPort()));
+        final String trustStorePassword = "password";
+        final Path trustStorePath =
+            CertificateHelpers.createPkcs12TrustStore(
+                parentDir, node.getServerCertificate().get(), trustStorePassword);
+        final Path trustStorePasswordFile =
+            parentDir.resolve(metadataFilePath.getFileName() + ".truststore.password");
+        createPasswordFile(trustStorePasswordFile, trustStorePassword);
 
-        signingMetadata.put("tlsKnownServersPath", knownServerPath.toString());
+        signingMetadata.put("tlsTruststoreFile", trustStorePath.toString());
+        signingMetadata.put("tlsTruststorePasswordFile", trustStorePasswordFile.toString());
       }
       signingMetadata.put("keyPath", node.getSecretHttpPath());
       signingMetadata.put("keyName", node.getSecretName());

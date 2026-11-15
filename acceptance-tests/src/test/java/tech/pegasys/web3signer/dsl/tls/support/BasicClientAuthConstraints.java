@@ -13,6 +13,7 @@
 package tech.pegasys.web3signer.dsl.tls.support;
 
 import tech.pegasys.web3signer.core.config.ClientAuthConstraints;
+import tech.pegasys.web3signer.core.config.TrustStoreOptions;
 
 import java.io.File;
 import java.util.Optional;
@@ -20,16 +21,24 @@ import java.util.Optional;
 public class BasicClientAuthConstraints implements ClientAuthConstraints {
 
   private final Optional<File> knownClientsFile;
+  private final Optional<TrustStoreOptions> trustStoreOptions;
   private final boolean allowCaClients;
 
   public BasicClientAuthConstraints(final Optional<File> knownClientsFile) {
-    this.knownClientsFile = knownClientsFile;
-    this.allowCaClients = false;
+    this(knownClientsFile, false);
   }
 
   public BasicClientAuthConstraints(
       final Optional<File> knownClientsFile, final boolean allowCaClients) {
+    this(knownClientsFile, Optional.empty(), allowCaClients);
+  }
+
+  private BasicClientAuthConstraints(
+      final Optional<File> knownClientsFile,
+      final Optional<TrustStoreOptions> trustStoreOptions,
+      final boolean allowCaClients) {
     this.knownClientsFile = knownClientsFile;
+    this.trustStoreOptions = trustStoreOptions;
     this.allowCaClients = allowCaClients;
   }
 
@@ -37,15 +46,29 @@ public class BasicClientAuthConstraints implements ClientAuthConstraints {
     return new BasicClientAuthConstraints(Optional.ofNullable(knownClientsFile));
   }
 
+  public static BasicClientAuthConstraints fromTrustStore(
+      final TrustStoreOptions trustStoreOptions) {
+    return new BasicClientAuthConstraints(Optional.empty(), Optional.of(trustStoreOptions), false);
+  }
+
   public static BasicClientAuthConstraints caOnly() {
     return new BasicClientAuthConstraints(Optional.empty(), true);
   }
 
+  @SuppressWarnings("removal") // overrides the deprecated interface method
+  @Deprecated(forRemoval = true)
   @Override
   public Optional<File> getKnownClientsFile() {
     return knownClientsFile;
   }
 
+  @Override
+  public Optional<TrustStoreOptions> getTrustStoreOptions() {
+    return trustStoreOptions;
+  }
+
+  @SuppressWarnings("removal") // overrides the deprecated interface method
+  @Deprecated(forRemoval = true)
   @Override
   public boolean isCaAuthorizedClientAllowed() {
     return allowCaClients;

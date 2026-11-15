@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.SSLContext;
@@ -31,13 +32,13 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
- * Factory for Hashicorp connections. Uses Java's HttpClient implementation. Cache HttpClient for
- * each host/port.
+ * Factory for Hashicorp connections. Uses Java's HttpClient implementation. Caches one HttpClient
+ * per vault URI and client settings, so connections with different TLS trust never share a client.
  */
 public class HashicorpConnectionFactory implements AutoCloseable {
 
   private static final Logger LOG = LogManager.getLogger();
-  private final Map<URI, HttpClient> httpClientMap = new ConcurrentHashMap<>();
+  private final Map<ClientKey, HttpClient> httpClientMap = new ConcurrentHashMap<>();
   private final AtomicBoolean closed = new AtomicBoolean(false);
 
   public HashicorpConnectionFactory() {}
@@ -51,7 +52,7 @@ public class HashicorpConnectionFactory implements AutoCloseable {
   private HttpClient getHttpClient(ConnectionParameters connectionParameters) {
     ensureNotClosed();
     return httpClientMap.computeIfAbsent(
-        connectionParameters.getVaultURI(),
+        ClientKey.of(connectionParameters),
         _key -> {
           // Double-check after acquiring the lock for creation
           if (closed.get()) {
@@ -136,7 +137,7 @@ public class HashicorpConnectionFactory implements AutoCloseable {
         "Closing HashicorpConnectionFactory with {} active connections", httpClientMap.size());
 
     // Drain all entries atomically to local collection
-    final List<Map.Entry<URI, HttpClient>> entries = new ArrayList<>();
+    final List<Map.Entry<ClientKey, HttpClient>> entries = new ArrayList<>();
     httpClientMap
         .entrySet()
         .removeIf(
@@ -146,13 +147,27 @@ public class HashicorpConnectionFactory implements AutoCloseable {
             });
 
     // Close all clients outside the concurrent map
-    for (Map.Entry<URI, HttpClient> entry : entries) {
+    for (Map.Entry<ClientKey, HttpClient> entry : entries) {
       try {
-        LOG.trace("Closing HttpClient for URI: {}", entry.getKey());
+        LOG.trace("Closing HttpClient for URI: {}", entry.getKey().vaultUri());
         entry.getValue().close();
       } catch (Exception e) {
-        LOG.warn("Failed to close HttpClient for URI: {}", entry.getKey(), e);
+        LOG.warn("Failed to close HttpClient for URI: {}", entry.getKey().vaultUri(), e);
       }
+    }
+  }
+
+  private record ClientKey(
+      URI vaultUri,
+      Optional<TlsOptions> tlsOptions,
+      HttpClient.Version httpProtocolVersion,
+      long timeoutMilliseconds) {
+    static ClientKey of(final ConnectionParameters parameters) {
+      return new ClientKey(
+          parameters.getVaultURI(),
+          parameters.getTlsOptions(),
+          parameters.getHttpProtocolVersion(),
+          parameters.getTimeoutMilliseconds());
     }
   }
 }

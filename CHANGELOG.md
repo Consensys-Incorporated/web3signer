@@ -4,10 +4,23 @@
 ### Security
 - Guava upgraded to 33.7.2-jre to fix CVE-2026-102554, and snappy-java pinned to 1.1.10.9 to fix CVE-2026-93451 and CVE-2026-108106 (transitive via besu and teku). [#1285][PR_1285]
 
+### Upcoming Breaking Changes
+These options are deprecated and will be removed in a future release. Using them logs a warning. A truststore can hold CA certificates as well as client or server certificates. [#1282][PR_1282]
+- `--tls-known-clients-file` and `--tls-allow-ca-clients`: use `--tls-truststore-file` and `--tls-truststore-password-file`.
+- `--downstream-http-tls-known-servers-file`: use `--downstream-http-tls-truststore-file` and `--downstream-http-tls-truststore-password-file`.
+- `--downstream-http-tls-ca-auth-enabled`: remove it. Without a truststore, the JVM's default CAs are used.
+- Hashicorp signing metadata `tlsKnownServersPath`: use `tlsTruststoreFile` and `tlsTruststorePasswordFile`.
+
 ### Features Added
+- TLS trust can be configured with a truststore instead of certificate fingerprint files. Supported formats are PKCS#12 (preferred), JKS and PEM. The format is detected from the file content. PKCS#12 and JKS need a password file; PEM does not. The truststore holds the trusted certificates or their CAs. Like `javax.net.ssl.trustStore`, it replaces the JVM's default CAs. [#1282][PR_1282]
+  - Inbound client authentication: `--tls-truststore-file` and `--tls-truststore-password-file`. Requires `--tls-keystore-file`. Cannot be combined with `--tls-known-clients-file`, `--tls-allow-ca-clients` or `--tls-allow-any-client`.
+  - Eth1 downstream web3 provider: `--downstream-http-tls-truststore-file` and `--downstream-http-tls-truststore-password-file`. Requires `--downstream-http-tls-enabled`. Cannot be combined with `--downstream-http-tls-known-servers-file` or `--downstream-http-tls-ca-auth-enabled`.
+  - Hashicorp Vault signing metadata: `tlsTruststoreFile` and `tlsTruststorePasswordFile`. Requires `tlsEnabled: true`. Cannot be combined with `tlsKnownServersPath`. Relative paths resolve against the key config directory.
 - Docker images can now be built without a local Java install: when the `TAR_FILE` build argument is omitted, `docker/Dockerfile` and `docker/Dockerfile.distroless` build the distribution from source inside Docker. Building from a pre-built `TAR_FILE` remains the recommended path. See `docker/README.md`. [#1249][PR_1249]
 
 ### Bugs Fixed
+- Hashicorp key files for the same Vault shared one HTTP client, even with different TLS settings. The first key file loaded decided the trust for all of them. Key files with different TLS settings now get separate clients. [#1282][PR_1282]
+- The deprecated Hashicorp `tlsKnownServersPath` is now loaded relative to the key config directory, not the working directory. The existence check already used the key config directory. [#1282][PR_1282]
 
 ### Breaking Changes
 
@@ -30,6 +43,7 @@
 [PR_1287]: https://github.com/Consensys-Incorporated/web3signer/pull/1287
 [PR_1275]: https://github.com/Consensys-Incorporated/web3signer/pull/1275
 [PR_1249]: https://github.com/Consensys-Incorporated/web3signer/pull/1249
+[PR_1282]: https://github.com/Consensys-Incorporated/web3signer/pull/1282
 
 ---
 ## 26.10.2

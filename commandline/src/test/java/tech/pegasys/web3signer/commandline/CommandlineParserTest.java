@@ -47,6 +47,8 @@ import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
 
 class CommandlineParserTest {
@@ -325,7 +327,7 @@ class CommandlineParserTest {
     assertThat(result).isNotZero();
     assertThat(commandError.toString())
         .contains(
-            "Error parsing parameters: --tls-known-clients-file must be specified if both --tls-allow-any-client and --tls-allow-ca-clients are set to false");
+            "Error parsing parameters: --tls-truststore-file must be specified if both --tls-allow-any-client and --tls-allow-ca-clients are set to false");
   }
 
   @Test
@@ -396,7 +398,7 @@ class CommandlineParserTest {
     assertThat(result).isNotZero();
     assertThat(commandError.toString())
         .contains(
-            "Error parsing parameters: --tls-allow-any-client cannot be set to true when --tls-known-clients-file is specified or --tls-allow-ca-clients is set to true");
+            "Error parsing parameters: --tls-allow-any-client cannot be set to true when --tls-truststore-file or --tls-known-clients-file is specified or --tls-allow-ca-clients is set to true");
   }
 
   @Test
@@ -414,7 +416,107 @@ class CommandlineParserTest {
     assertThat(result).isNotZero();
     assertThat(commandError.toString())
         .contains(
-            "Error parsing parameters: --tls-allow-any-client cannot be set to true when --tls-known-clients-file is specified or --tls-allow-ca-clients is set to true");
+            "Error parsing parameters: --tls-allow-any-client cannot be set to true when --tls-truststore-file or --tls-known-clients-file is specified or --tls-allow-ca-clients is set to true");
+  }
+
+  @Test
+  void tlsOptionsWithTrustStoreParsesSuccessfully() {
+    String cmdline = validBaseCommandOptions();
+    cmdline += "--tls-keystore-file=./keystorefile.p12 ";
+    cmdline += "--tls-keystore-password-file=./passwordfile.txt ";
+    cmdline += "--tls-truststore-file=./truststore.p12 ";
+    cmdline += "--tls-truststore-password-file=./truststore.pass ";
+    cmdline += "eth2 --slashing-protection-enabled=false";
+
+    parser.registerSubCommands(new MockEth2SubCommand());
+    final int result = parser.parseCommandLine(cmdline.split(" "));
+    assertThat(result).isZero();
+  }
+
+  @Test
+  void tlsOptionsWithTrustStoreWithoutPasswordFileParsesSuccessfully() {
+    String cmdline = validBaseCommandOptions();
+    cmdline += "--tls-keystore-file=./keystorefile.p12 ";
+    cmdline += "--tls-keystore-password-file=./passwordfile.txt ";
+    cmdline += "--tls-truststore-file=./truststore.pem ";
+    cmdline += "eth2 --slashing-protection-enabled=false";
+
+    parser.registerSubCommands(new MockEth2SubCommand());
+    final int result = parser.parseCommandLine(cmdline.split(" "));
+    assertThat(result).isZero();
+  }
+
+  @Test
+  void tlsTrustStorePasswordFileWithoutTrustStoreFailsToParse() {
+    String cmdline = validBaseCommandOptions();
+    cmdline += "--tls-keystore-file=./keystorefile.p12 ";
+    cmdline += "--tls-keystore-password-file=./passwordfile.txt ";
+    cmdline += "--tls-allow-ca-clients=true ";
+    cmdline += "--tls-truststore-password-file=./truststore.pass ";
+    cmdline += "eth2 --slashing-protection-enabled=false";
+
+    parser.registerSubCommands(new MockEth2SubCommand());
+    final int result = parser.parseCommandLine(cmdline.split(" "));
+
+    assertThat(result).isNotZero();
+    assertThat(commandError.toString())
+        .contains(
+            "Error parsing parameters: --tls-truststore-password-file requires --tls-truststore-file");
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {"--tls-truststore-file=./truststore.pem", "--tls-truststore-password-file=./p"})
+  void tlsTrustStoreOptionsWithoutKeyStoreFailToParse(final String trustStoreOption) {
+    String cmdline = validBaseCommandOptions();
+    cmdline += trustStoreOption + " ";
+    cmdline += "eth2 --slashing-protection-enabled=false";
+
+    parser.registerSubCommands(new MockEth2SubCommand());
+    final int result = parser.parseCommandLine(cmdline.split(" "));
+
+    assertThat(result).isNotZero();
+    assertThat(commandError.toString())
+        .contains(
+            "Error parsing parameters: --tls-truststore-file and --tls-truststore-password-file require --tls-keystore-file and --tls-keystore-password-file");
+  }
+
+  @Test
+  void tlsTrustStoreAndKnownClientsFileFailsToParse() {
+    String cmdline = validBaseCommandOptions();
+    cmdline += "--tls-keystore-file=./keystorefile.p12 ";
+    cmdline += "--tls-keystore-password-file=./passwordfile.txt ";
+    cmdline += "--tls-truststore-file=./truststore.p12 ";
+    cmdline += "--tls-truststore-password-file=./truststore.pass ";
+    cmdline += "--tls-known-clients-file=./knownClients.txt ";
+    cmdline += "eth2 --slashing-protection-enabled=false";
+
+    parser.registerSubCommands(new MockEth2SubCommand());
+    final int result = parser.parseCommandLine(cmdline.split(" "));
+
+    assertThat(result).isNotZero();
+    assertThat(commandError.toString())
+        .contains(
+            "Error parsing parameters: --tls-truststore-file cannot be specified together with the deprecated --tls-known-clients-file");
+  }
+
+  @Test
+  void tlsTrustStoreAndAllowCAClientsFailsToParse() {
+    String cmdline = validBaseCommandOptions();
+    cmdline += "--tls-keystore-file=./keystorefile.p12 ";
+    cmdline += "--tls-keystore-password-file=./passwordfile.txt ";
+    cmdline += "--tls-truststore-file=./truststore.p12 ";
+    cmdline += "--tls-truststore-password-file=./truststore.pass ";
+    cmdline += "--tls-allow-ca-clients=true ";
+    cmdline += "eth2 --slashing-protection-enabled=false";
+
+    parser.registerSubCommands(new MockEth2SubCommand());
+    final int result = parser.parseCommandLine(cmdline.split(" "));
+
+    assertThat(result).isNotZero();
+    assertThat(commandError.toString())
+        .contains(
+            "Error parsing parameters: --tls-truststore-file cannot be specified when --tls-allow-ca-clients is set to true");
   }
 
   @Test
