@@ -27,8 +27,20 @@ jar {
   }
 }
 
+// libblst.so for the enclave image comes from the jblst jar, through a configuration of its own
+// so that jblst never reaches runtimeClasspath.
+configurations {
+  enclaveNative {
+    canBeConsumed = false
+    canBeResolved = true
+    transitive = false
+  }
+}
+
 // The enclave runs this jar and enclave-protocol, nothing else (see verifyEnclaveClasspath).
 dependencies {
+  enclaveNative 'tech.pegasys:jblst'
+
   implementation project(':enclave-protocol')
 
   testImplementation 'tech.pegasys.teku.internal:bls'
@@ -45,3 +57,58 @@ dependencies {
   testFixturesApi project(':enclave-protocol')
   testFixturesRuntimeOnly 'tech.pegasys:jblst'
 }
+
+// -PenclaveArch=amd64|arm64 (Docker's TARGETARCH); unset or empty means the build machine's arch
+def enclaveNativeDirectory = providers.gradleProperty('enclaveArch')
+  .orElse('')
+  .map { String arch ->
+    def effective = arch ?: System.getProperty('os.arch')
+    switch (effective) {
+      case 'amd64':
+      case 'x86_64':
+        return 'Linux/amd64'
+      case 'arm64':
+      case 'aarch64':
+        return 'Linux/aarch64'
+      default:
+        throw new GradleException("Unsupported enclave architecture: ${effective}")
+    }
+  }
+
+// Contents of the enclave image: lib/ (this jar and enclave-protocol) and native/libblst.so
+tasks.register('enclaveImage', Sync) {
+  description = 'Assembles the files of the enclave image in build/enclave-image.'
+  group = 'build'
+  into layout.buildDirectory.dir('enclave-image')
+  into('lib') {
+    from tasks.named('jar')
+    from configurations.runtimeClasspath
+  }
+  inputs.property('enclaveNativeDirectory', enclaveNativeDirectory)
+  from({ zipTree(configurations.enclaveNative.singleFile) }) {
+    include "supranational/blst/${enclaveNativeDirectory.get()}/libblst.so"
+    eachFile { it.path = "native/${it.name}" }
+  }
+  includeEmptyDirs = false
+}
+
+// Trusted code inventory: the enclave's runtime classpath is enclave-protocol and nothing else.
+def verifyEnclaveClasspath = tasks.register('verifyEnclaveClasspath') {
+  description = 'Fails when runtimeClasspath holds anything but the enclave-protocol project.'
+  group = 'verification'
+  def runtime = configurations.runtimeClasspath
+  def selfPath = project.path
+  doLast {
+    def components = runtime.incoming.resolutionResult.allComponents
+      .collect { it.id }
+      .findAll { !(it instanceof ProjectComponentIdentifier && it.projectPath == selfPath) }
+    def unexpected = components.findAll {
+      !(it instanceof ProjectComponentIdentifier && it.projectPath == ':enclave-protocol')
+    }
+    if (components.size() != 1 || !unexpected.isEmpty()) {
+      throw new GradleException(
+        "enclave-signer runtimeClasspath must contain :enclave-protocol only, found: ${components*.displayName}")
+    }
+  }
+}
+tasks.named('check') { dependsOn verifyEnclaveClasspath }

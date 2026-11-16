@@ -68,6 +68,7 @@ public final class EnclaveSignerApp {
   static Attestor attestorFor(final int platform) {
     return switch (platform) {
       case Protocol.PLATFORM_DEV -> new DevAttestor();
+      case Protocol.PLATFORM_AWS_NITRO -> new NsmAttestor();
       default ->
           throw new IllegalArgumentException(
               "Unsupported platform: " + Protocol.platformName(platform));

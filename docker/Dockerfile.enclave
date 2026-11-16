@@ -1,0 +1,41 @@
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+
+# Image of the Web3Signer enclave signer, for `nitro-cli build-enclave`.
+# The runtime is a jlink'ed java.base, the signer and protocol jars, and libblst.so from the jblst jar.
+FROM eclipse-temurin:25-jdk@sha256:83f4a7fc27df94dcc7b8de04d14cbbba8da14406f921e966969c3b09000aa507 AS build
+ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+RUN --mount=type=bind,target=/src,rw \
+    --mount=type=cache,id=web3signer-gradle,target=/root/.gradle,sharing=locked \
+    ./gradlew --no-daemon :enclave-signer:enclaveImage -PenclaveArch=${TARGETARCH} && \
+    cp -r enclave-signer/build/enclave-image /enclave
+RUN jlink --add-modules java.base --strip-debug --no-header-files --no-man-pages --compress zip-6 \
+      --output /enclave/runtime
+
+FROM gcr.io/distroless/cc-debian13@sha256:809d04afa1be033c441f76bb0051878c342fb76d0ea236bc6dc94b655fa0fbd6 AS runtime
+COPY --from=build /enclave /opt/enclave
+
+# Local runs over TCP with the dev platform: docker build --target dev
+FROM runtime AS dev
+CMD ["/opt/enclave/runtime/bin/java", \
+  "-XX:+UseSerialGC", "-Xms64m", "-Xmx128m", \
+  "-XX:-UsePerfData", "-XX:+DisableAttachMechanism", "-XX:+ExitOnOutOfMemoryError", \
+  "-Djava.security.egd=file:/dev/urandom", \
+  "--enable-native-access=ALL-UNNAMED", \
+  "-cp", "/opt/enclave/lib/*", \
+  "tech.pegasys.web3signer.enclave.signer.EnclaveSignerApp", \
+  "--platform=dev", "--listen=tcp:0.0.0.0:5000", "--blst-library=/opt/enclave/native/libblst.so"]
+
+# The enclave image. Last stage, so it is the default target.
+# One CMD with the full command line and no ENTRYPOINT: nitro-cli runs only CMD when an image has
+# both. The parent cannot pass arguments to an enclave, so the platform is fixed by this image.
+FROM runtime AS enclave
+CMD ["/opt/enclave/runtime/bin/java", \
+  "-XX:+UseSerialGC", "-Xms64m", "-Xmx128m", \
+  "-XX:-UsePerfData", "-XX:+DisableAttachMechanism", "-XX:+ExitOnOutOfMemoryError", \
+  "-Djava.security.egd=file:/dev/urandom", \
+  "--enable-native-access=ALL-UNNAMED", \
+  "-cp", "/opt/enclave/lib/*", \
+  "tech.pegasys.web3signer.enclave.signer.EnclaveSignerApp", \
+  "--platform=aws-nitro", "--listen=vsock:5000", "--blst-library=/opt/enclave/native/libblst.so"]
