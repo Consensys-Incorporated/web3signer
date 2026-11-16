@@ -31,16 +31,30 @@ import static tech.pegasys.web3signer.enclave.protocol.Protocol.UNSUPPORTED;
 
 import tech.pegasys.web3signer.enclave.protocol.Connection;
 import tech.pegasys.web3signer.enclave.protocol.Frames;
+import tech.pegasys.web3signer.enclave.protocol.LoadResult;
 import tech.pegasys.web3signer.enclave.protocol.Payloads;
 import tech.pegasys.web3signer.enclave.protocol.Protocol;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.SecureRandom;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.Set;
 
 /**
  * Serves one connection on its own thread. Handles every complete frame in its input buffer and
  * writes the responses together, once no complete request is left or the output buffer is full.
+ *
+ * <p>Provisioning state belongs to the connection: {@code Idle}, {@code KeyPending} (an RSA key
+ * pair from {@code ATTEST} waits for its single unwrap) and {@code DekHeld} (the data key opens
+ * {@code LOAD_KEYS} entries). It is discarded when the connection ends.
  */
 final class ConnectionHandler {
   private static final int BUFFER_SIZE = 64 * 1024;
@@ -49,6 +63,13 @@ final class ConnectionHandler {
   private final Connection connection;
   private final SignerServer server;
   private final Blst.Scratch scratch;
+  private final SecureRandom random = new SecureRandom();
+
+  /** RSA key of the last ATTEST, used for at most one UNWRAP_DEK. Non-null in KeyPending. */
+  private PrivateKey pendingKey;
+
+  /** The data key. Non-null in DekHeld. */
+  private byte[] dek;
 
   private byte[] in = new byte[BUFFER_SIZE];
   private int inStart;
@@ -64,6 +85,14 @@ final class ConnectionHandler {
 
   /** Runs until the peer closes, an I/O error, or a frame with an impossible length. */
   void run() throws IOException {
+    try {
+      serve();
+    } finally {
+      discardProvisioningState();
+    }
+  }
+
+  private void serve() throws IOException {
     while (true) {
       while (inEnd - inStart >= LENGTH_PREFIX_SIZE) {
         final long length = getUnsignedInt(in, inStart);
@@ -143,6 +172,9 @@ final class ConnectionHandler {
         case Protocol.SIGN -> sign(requestId, payload, payloadLength);
         case Protocol.STATUS -> status(requestId, payloadLength);
         case Protocol.GET_PUBLIC_KEYS -> publicKeys(requestId, payload, payloadLength);
+        case Protocol.ATTEST -> attest(requestId, payload, payloadLength);
+        case Protocol.UNWRAP_DEK -> unwrapDek(requestId, payload, payloadLength);
+        case Protocol.LOAD_KEYS -> loadKeys(requestId, payload, payloadLength);
         default -> respond(type, requestId, Payloads.errorResponse(UNSUPPORTED));
       }
     } catch (final RuntimeException e) {
@@ -217,5 +249,139 @@ final class ConnectionHandler {
     putInt(response, 5, page.count());
     System.arraycopy(page.publicKeys(), 0, response, 9, page.publicKeys().length);
     respond(Protocol.GET_PUBLIC_KEYS, requestId, response);
+  }
+
+  /** Back to Idle: drops the pending RSA key and zeroes the data key. */
+  private void discardProvisioningState() {
+    pendingKey = null;
+    if (dek != null) {
+      Arrays.fill(dek, (byte) 0);
+      dek = null;
+    }
+  }
+
+  private void attest(final int requestId, final int payload, final int payloadLength)
+      throws IOException {
+    if (payloadLength < 1
+        || (in[payload] & 0xff) > Protocol.MAX_NONCE_SIZE
+        || payloadLength != 1 + (in[payload] & 0xff)) {
+      respond(Protocol.ATTEST, requestId, Payloads.errorResponse(BAD_REQUEST));
+      return;
+    }
+    discardProvisioningState();
+    final byte[] nonce = Arrays.copyOfRange(in, payload + 1, payload + payloadLength);
+    final KeyPair keyPair;
+    try {
+      final KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+      // never SecureRandom.getInstanceStrong(): /dev/random can block inside the enclave
+      generator.initialize(2048, random);
+      keyPair = generator.generateKeyPair();
+    } catch (final NoSuchAlgorithmException e) {
+      Log.error("RSA key generation failed", e);
+      respond(Protocol.ATTEST, requestId, Payloads.errorResponse(INTERNAL_ERROR));
+      return;
+    }
+    final byte[] document;
+    try {
+      document = server.attestor().attest(keyPair.getPublic().getEncoded(), nonce);
+    } catch (final Attestor.AttestationException e) {
+      Log.warn("attestation failed: " + e.getMessage());
+      respond(Protocol.ATTEST, requestId, Payloads.errorResponse(Protocol.ATTESTATION_FAILED));
+      return;
+    }
+    pendingKey = keyPair.getPrivate();
+    Log.info("attestation document issued (" + document.length + " bytes)");
+    respond(Protocol.ATTEST, requestId, Payloads.attestResponse(document));
+  }
+
+  private void unwrapDek(final int requestId, final int payload, final int payloadLength)
+      throws IOException {
+    if (pendingKey == null) {
+      respond(Protocol.UNWRAP_DEK, requestId, Payloads.errorResponse(Protocol.INVALID_STATE));
+      return;
+    }
+    // the key pair serves exactly one attempt, whatever its outcome
+    final PrivateKey key = pendingKey;
+    discardProvisioningState();
+    if (payloadLength < 5 || getUnsignedInt(in, payload + 1) != payloadLength - 5) {
+      respond(Protocol.UNWRAP_DEK, requestId, Payloads.errorResponse(BAD_REQUEST));
+      return;
+    }
+    if ((in[payload] & 0xff) != Protocol.BLOB_FORMAT_CMS) {
+      respond(Protocol.UNWRAP_DEK, requestId, Payloads.errorResponse(UNSUPPORTED));
+      return;
+    }
+    try {
+      dek = DekUnwrapper.unwrap(key, Arrays.copyOfRange(in, payload + 5, payload + payloadLength));
+    } catch (final DekUnwrapper.UnwrapException e) {
+      Log.warn("data key unwrap failed");
+      respond(Protocol.UNWRAP_DEK, requestId, Payloads.errorResponse(Protocol.UNWRAP_FAILED));
+      return;
+    }
+    Log.info("data key unwrapped");
+    respond(Protocol.UNWRAP_DEK, requestId, Payloads.unwrapDekResponse());
+  }
+
+  private void loadKeys(final int requestId, final int payload, final int payloadLength)
+      throws IOException {
+    if (dek == null) {
+      respond(Protocol.LOAD_KEYS, requestId, Payloads.errorResponse(Protocol.INVALID_STATE));
+      return;
+    }
+    final long count = payloadLength < 4 ? -1 : getUnsignedInt(in, payload);
+    if (count < 1
+        || count > Protocol.MAX_LOAD_KEYS
+        || payloadLength != 4 + count * Protocol.SEALED_KEY_SIZE) {
+      respond(Protocol.LOAD_KEYS, requestId, Payloads.errorResponse(BAD_REQUEST));
+      return;
+    }
+    final KeyTable keys = server.keys();
+    final SealedKeyOpener opener = new SealedKeyOpener(server.blst(), scratch, dek);
+    final Set<String> seen = new HashSet<>();
+    final byte[] accepted = new byte[(int) count * PUBLIC_KEY_SIZE];
+    int acceptedCount = 0;
+    int duplicates = 0;
+    int rejected = 0;
+    try (Arena staging = Arena.ofConfined()) {
+      final MemorySegment scalars = staging.allocate(count * Blst.SCALAR_SIZE, 8);
+      try {
+        for (int i = 0; i < count; i++) {
+          final int entry = payload + 4 + i * Protocol.SEALED_KEY_SIZE;
+          final byte[] publicKey = Arrays.copyOfRange(in, entry, entry + PUBLIC_KEY_SIZE);
+          if (keys.contains(publicKey) || !seen.add(HexFormat.of().formatHex(publicKey))) {
+            duplicates++;
+            continue;
+          }
+          final MemorySegment scalar =
+              scalars.asSlice((long) acceptedCount * Blst.SCALAR_SIZE, Blst.SCALAR_SIZE);
+          if (opener.open(in, entry, scalar)) {
+            System.arraycopy(
+                publicKey, 0, accepted, acceptedCount * PUBLIC_KEY_SIZE, PUBLIC_KEY_SIZE);
+            acceptedCount++;
+          } else {
+            rejected++;
+          }
+        }
+        final int added = acceptedCount == 0 ? 0 : keys.addAll(accepted, scalars, acceptedCount);
+        // another connection may have added some of these keys meanwhile
+        duplicates += acceptedCount - added;
+        Log.info(
+            "load keys: "
+                + added
+                + " loaded, "
+                + duplicates
+                + " duplicates, "
+                + rejected
+                + " rejected, "
+                + keys.size()
+                + " in total");
+        respond(
+            Protocol.LOAD_KEYS,
+            requestId,
+            Payloads.loadKeysResponse(new LoadResult(added, duplicates, rejected)));
+      } finally {
+        scalars.fill((byte) 0);
+      }
+    }
   }
 }
