@@ -16,6 +16,8 @@ dependencies {
 
   implementation project(":common")
   implementation project(":core")
+  implementation project(":enclave-host")
+  implementation project(":enclave-protocol")
   implementation project(":keystorage")
   implementation project(":slashing-protection")
   implementation project(":signing")

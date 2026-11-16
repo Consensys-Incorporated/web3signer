@@ -15,6 +15,7 @@ package tech.pegasys.web3signer.core;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_AWS_BULK_LOADING;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_AZURE_BULK_LOADING;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_CONFIG_FILE_LOADING;
+import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_ENCLAVE_BULK_LOADING;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_GCP_BULK_LOADING;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_KEYSTORE_BULK_LOADING;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.SLASHING_PROTECTION_DB;
@@ -42,12 +43,14 @@ import tech.pegasys.web3signer.signing.ArtifactSigner;
 import tech.pegasys.web3signer.signing.ArtifactSignerProvider;
 import tech.pegasys.web3signer.signing.BlsArtifactSigner;
 import tech.pegasys.web3signer.signing.bulkloading.BlsAwsBulkLoader;
+import tech.pegasys.web3signer.signing.bulkloading.BlsEnclaveBulkLoader;
 import tech.pegasys.web3signer.signing.bulkloading.BlsGcpBulkLoader;
 import tech.pegasys.web3signer.signing.bulkloading.BlsKeystoreBulkLoader;
 import tech.pegasys.web3signer.signing.config.AwsVaultParameters;
 import tech.pegasys.web3signer.signing.config.AzureKeyVaultFactory;
 import tech.pegasys.web3signer.signing.config.AzureKeyVaultParameters;
 import tech.pegasys.web3signer.signing.config.DefaultArtifactSignerProvider;
+import tech.pegasys.web3signer.signing.config.EnclaveSignerParameters;
 import tech.pegasys.web3signer.signing.config.GcpSecretManagerParameters;
 import tech.pegasys.web3signer.signing.config.KeystoresParameters;
 import tech.pegasys.web3signer.signing.config.SignerLoader;
@@ -95,6 +98,8 @@ public class Eth2Runner extends Runner {
   private final KeyManagerApiConfig keyManagerApiConfig;
   private final boolean signingExtEnabled;
   private final KeystoresParameters commitBoostApiParameters;
+  private final EnclaveSignerParameters enclaveSignerParameters;
+  private Optional<BlsEnclaveBulkLoader> enclaveBulkLoader = Optional.empty();
 
   public Eth2Runner(
       final BaseConfig baseConfig,
@@ -106,7 +111,8 @@ public class Eth2Runner extends Runner {
       final Spec eth2Spec,
       final KeyManagerApiConfig keyManagerApiConfig,
       final boolean signingExtEnabled,
-      final KeystoresParameters commitBoostApiParameters) {
+      final KeystoresParameters commitBoostApiParameters,
+      final EnclaveSignerParameters enclaveSignerParameters) {
     super(baseConfig);
     this.slashingProtectionContext = createSlashingProtection(slashingProtectionParameters);
     this.azureKeyVaultParameters = azureKeyVaultParameters;
@@ -119,6 +125,7 @@ public class Eth2Runner extends Runner {
     this.gcpSecretManagerParameters = gcpSecretManagerParameters;
     this.signingExtEnabled = signingExtEnabled;
     this.commitBoostApiParameters = commitBoostApiParameters;
+    this.enclaveSignerParameters = enclaveSignerParameters;
   }
 
   private Optional<SlashingProtectionContext> createSlashingProtection(
@@ -162,6 +169,12 @@ public class Eth2Runner extends Runner {
 
     // Register for cleanup ONCE
     registerClose(signerLoader);
+
+    if (enclaveSignerParameters.isEnabled()) {
+      final BlsEnclaveBulkLoader loader = new BlsEnclaveBulkLoader(enclaveSignerParameters);
+      registerClose(loader);
+      enclaveBulkLoader = Optional.of(loader);
+    }
 
     return List.of(
         new DefaultArtifactSignerProvider(
@@ -277,6 +290,17 @@ public class Eth2Runner extends Runner {
           gcpResult.getErrorCount());
       registerSignerLoadingHealthCheck(KEYS_CHECK_GCP_BULK_LOADING, gcpResult);
       results = MappedResults.merge(results, gcpResult);
+    }
+
+    if (enclaveBulkLoader.isPresent()) {
+      LOG.info("Bulk loading keys from the enclave signer ... ");
+      final MappedResults<ArtifactSigner> enclaveResult = enclaveBulkLoader.get().load();
+      LOG.info(
+          "Keys loaded from the enclave signer: [{}], with error count: [{}]",
+          enclaveResult.getValues().size(),
+          enclaveResult.getErrorCount());
+      registerSignerLoadingHealthCheck(KEYS_CHECK_ENCLAVE_BULK_LOADING, enclaveResult);
+      results = MappedResults.merge(results, enclaveResult);
     }
 
     return results;

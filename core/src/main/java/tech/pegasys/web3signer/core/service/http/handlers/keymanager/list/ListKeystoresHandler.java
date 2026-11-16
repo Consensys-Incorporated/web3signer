@@ -17,8 +17,10 @@ import static tech.pegasys.web3signer.core.service.http.handlers.ContentTypes.JS
 
 import tech.pegasys.web3signer.signing.ArtifactSignerProvider;
 import tech.pegasys.web3signer.signing.BlsArtifactSigner;
+import tech.pegasys.web3signer.signing.EnclaveBlsArtifactSigner;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -45,12 +47,17 @@ public class ListKeystoresHandler implements Handler<RoutingContext> {
         artifactSignerProvider.availableIdentifiers().stream()
             .sorted() // arbitrary sorting to make API calls repeatable
             .map(artifactSignerProvider::getSigner)
-            .filter(signer -> signer.isPresent() && signer.get() instanceof BlsArtifactSigner)
-            .map(signer -> (BlsArtifactSigner) signer.get())
-            .map(
-                signer ->
-                    new KeystoreInfo(
-                        signer.getIdentifier(), signer.getDerivationPath(), signer.isReadOnlyKey()))
+            .flatMap(Optional::stream)
+            .<KeystoreInfo>mapMulti(
+                (signer, out) -> {
+                  if (signer instanceof BlsArtifactSigner bls) {
+                    out.accept(
+                        new KeystoreInfo(
+                            bls.getIdentifier(), bls.getDerivationPath(), bls.isReadOnlyKey()));
+                  } else if (signer instanceof EnclaveBlsArtifactSigner enclave) {
+                    out.accept(new KeystoreInfo(enclave.getIdentifier(), null, true));
+                  }
+                })
             .collect(Collectors.toList());
     final ListKeystoresResponse response = new ListKeystoresResponse(data);
     try {

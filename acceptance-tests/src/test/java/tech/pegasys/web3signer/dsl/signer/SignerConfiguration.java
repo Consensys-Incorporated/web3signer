@@ -84,6 +84,7 @@ public class SignerConfiguration {
 
   private final boolean signingExtEnabled;
   private Optional<Pair<Path, Path>> commitBoostParameters;
+  private final Optional<String> enclaveSignerAddress;
 
   public SignerConfiguration(
       final String hostname,
@@ -133,7 +134,8 @@ public class SignerConfiguration {
       final ChainIdProvider chainIdProvider,
       final Optional<KeystoresParameters> v3KeystoresBulkloadParameters,
       final boolean signingExtEnabled,
-      final Optional<Pair<Path, Path>> commitBoostParameters) {
+      final Optional<Pair<Path, Path>> commitBoostParameters,
+      final Optional<String> enclaveSignerAddress) {
     this.hostname = hostname;
     this.logLevel = logLevel;
     this.httpRpcPort = httpRpcPort;
@@ -182,6 +184,7 @@ public class SignerConfiguration {
     this.v3KeystoresBulkloadParameters = v3KeystoresBulkloadParameters;
     this.signingExtEnabled = signingExtEnabled;
     this.commitBoostParameters = commitBoostParameters;
+    this.enclaveSignerAddress = enclaveSignerAddress;
   }
 
   public String hostname() {
@@ -382,5 +385,9 @@ public class SignerConfiguration {
 
   public Optional<Pair<Path, Path>> getCommitBoostParameters() {
     return commitBoostParameters;
+  }
+
+  public Optional<String> getEnclaveSignerAddress() {
+    return enclaveSignerAddress;
   }
 }

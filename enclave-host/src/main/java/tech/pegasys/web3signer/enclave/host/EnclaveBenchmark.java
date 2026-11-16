@@ -18,7 +18,7 @@ import tech.pegasys.teku.bls.BLSPublicKey;
 import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.web3signer.enclave.protocol.EnclaveClient;
 
-import java.io.PrintStream;
+import java.io.PrintWriter;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -81,7 +81,7 @@ public final class EnclaveBenchmark {
   @SuppressWarnings("ArrayRecordComponent")
   private record Sample(byte[] publicKey, byte[] message, byte[] signature) {}
 
-  public static Result run(final EnclaveClient client, final Options options, final PrintStream out)
+  public static Result run(final EnclaveClient client, final Options options, final PrintWriter out)
       throws InterruptedException {
     final List<byte[]> keys = client.publicKeys();
     if (keys.isEmpty()) {
