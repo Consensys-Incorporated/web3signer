@@ -112,3 +112,8 @@ def verifyEnclaveClasspath = tasks.register('verifyEnclaveClasspath') {
   }
 }
 tasks.named('check') { dependsOn verifyEnclaveClasspath }
+
+// Doclint as for the rest of the repository, except for missing comments.
+javadoc {
+  options.addStringOption('Xdoclint:all,-missing', '-quiet')
+}

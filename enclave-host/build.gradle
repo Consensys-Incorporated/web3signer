@@ -54,3 +54,8 @@ dependencies {
   testFixturesApi 'tech.pegasys.teku.internal:bls'
   testFixturesRuntimeOnly 'tech.pegasys:jblst'
 }
+
+// Doclint as for the rest of the repository, except for missing comments.
+javadoc {
+  options.addStringOption('Xdoclint:all,-missing', '-quiet')
+}
