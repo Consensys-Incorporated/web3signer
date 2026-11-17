@@ -81,7 +81,8 @@ The four flows:
 4. **Sign**, for every request: Web3Signer computes the signing root, the enclave signs it, and
    Web3Signer checks slashing protection as today.
 
-Three roles take part. One person can hold all three, but keep the identities apart:
+Three roles take part. One person can hold all three for a trial, but in production give each its own
+identity, and never let the parent role act as operator or key administrator:
 
 | Role | Does | Can | Cannot |
 |---|---|---|---|
@@ -308,9 +309,24 @@ Options:
 
 ## 4. Seal the validator keys
 
-Run this step as the operator, on a machine with the Web3Signer distribution and the operator's AWS
-credentials. Sealing creates a new data key in KMS, encrypts each BLS key with it, and writes the
-bundle.
+Run this step as the operator, on a machine you trust that holds the keystores. **Never seal on the
+parent instance**: while sealing, the BLS secrets and the plaintext data key are in memory together,
+and the parent must never see either. The key policy enforces this, because the parent role cannot
+create data keys.
+
+The operator's machine needs:
+
+- the Web3Signer distribution (Java 25);
+- network access to the KMS endpoint of `$AWS_REGION`;
+- AWS credentials for `OPERATOR_ARN`, found through the AWS SDK default credential chain:
+  environment variables, a profile (`AWS_PROFILE`, including IAM Identity Center profiles after
+  `aws sso login`), or an instance role. Within the key's account no IAM policy is needed: the key
+  policy grants `kms:GenerateDataKey`, and nothing else. An operator identity in another account
+  also needs an IAM policy that allows `kms:GenerateDataKey` on the key.
+
+Sealing creates a new data key in KMS, encrypts each BLS key with it, and writes the bundle. The
+keystores are decrypted in memory only; no secret is written to disk. Afterwards the operator cannot
+open the bundle: only an enclave with the approved image can.
 
 From EIP-2335 keystores, with one password file per keystore (`<keystore name>.txt`) or one password
 file for all of them (`--keystores-password-file`):
