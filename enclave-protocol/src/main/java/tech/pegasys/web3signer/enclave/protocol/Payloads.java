@@ -218,12 +218,21 @@ public final class Payloads {
         getUnsignedShort(payload, 4),
         getUnsignedInt(payload, 6),
         HexFormat.of().formatHex(payload, 10, 10 + BOOT_ID_SIZE),
-        printable(new String(payload, 27, versionLength, StandardCharsets.UTF_8)));
+        printableAscii(payload, 27, versionLength));
   }
 
-  /** The version comes from the peer and ends up in logs: control characters become '?'. */
-  private static String printable(final String value) {
-    return value.replaceAll("[\\r\\n\\p{Cntrl}]", "?");
+  /**
+   * The version comes from the peer and ends up in logs. It is rebuilt character by character, and
+   * anything outside printable ASCII (line breaks, other control characters, non-ASCII) becomes
+   * '?'.
+   */
+  private static String printableAscii(final byte[] bytes, final int offset, final int length) {
+    final StringBuilder result = new StringBuilder(length);
+    for (int i = offset; i < offset + length; i++) {
+      final int c = bytes[i] & 0xff;
+      result.append(c >= 0x20 && c < 0x7f ? (char) c : '?');
+    }
+    return result.toString();
   }
 
   public static PublicKeysPage decodePublicKeys(final byte[] payload) {

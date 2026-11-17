@@ -101,6 +101,13 @@ class FramesTest {
   }
 
   @Test
+  void peerVersionIsReducedToPrintableAscii() {
+    final byte[] payload =
+        Payloads.statusResponse(1, 2, 0, new byte[16], "1.0\r\nINFO forged line\u0007é");
+    assertThat(Payloads.decodeStatus(payload).version()).isEqualTo("1.0??INFO forged line???");
+  }
+
+  @Test
   void getPublicKeysLayout() {
     assertThat(HEX.formatHex(Payloads.getPublicKeysRequest(5, 16384)))
         .isEqualTo("00000005" + "00004000");
