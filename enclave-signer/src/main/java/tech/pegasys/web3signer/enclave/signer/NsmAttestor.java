@@ -102,7 +102,9 @@ public final class NsmAttestor implements Attestor {
         }
         return NsmCbor.attestationDocument(response.asSlice(0, length).toArray(JAVA_BYTE));
       } finally {
-        final int ignored = (int) close.invokeExact(capture, fd);
+        if ((int) close.invokeExact(capture, fd) != 0) {
+          Log.warn("close " + DEVICE + " failed, errno " + errno(capture));
+        }
       }
     } catch (final AttestationException e) {
       throw e;

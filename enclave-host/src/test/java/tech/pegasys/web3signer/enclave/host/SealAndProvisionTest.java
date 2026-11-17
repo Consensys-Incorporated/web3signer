@@ -43,6 +43,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class SealAndProvisionTest {
   private static final KeyProvisioner.Options OPTIONS = new KeyProvisioner.Options(5, true, null);
+  private static final SecureRandom RANDOM = new SecureRandom();
 
   @TempDir Path dir;
   private InProcessEnclaveSigner signer;
@@ -62,7 +63,7 @@ class SealAndProvisionTest {
 
   private static byte[] masterKey() {
     final byte[] key = new byte[32];
-    new SecureRandom().nextBytes(key);
+    RANDOM.nextBytes(key);
     return key;
   }
 

@@ -27,6 +27,7 @@ import org.apache.tuweni.bytes.Bytes;
 import org.junit.jupiter.api.Test;
 
 class BlstTest {
+  private static final SecureRandom RANDOM = new SecureRandom();
   private static final HexFormat HEX = HexFormat.of();
   private final Blst blst = new Blst(BlstTestLibrary.path());
 
@@ -55,15 +56,14 @@ class BlstTest {
 
   @Test
   void matchesTekuForRandomKeysAndMessages() {
-    final SecureRandom random = new SecureRandom();
     final int[] lengths = {32, 0, 1, 2000};
     try (Arena arena = Arena.ofConfined()) {
       final Blst.Scratch scratch = new Blst.Scratch(arena);
       for (int i = 0; i < 200; i++) {
-        final BLSKeyPair keyPair = BLSKeyPair.random(random);
+        final BLSKeyPair keyPair = BLSKeyPair.random(RANDOM);
         final byte[] secret = keyPair.getSecretKey().toBytes().toArrayUnsafe();
         final byte[] message = new byte[lengths[i % lengths.length]];
-        random.nextBytes(message);
+        RANDOM.nextBytes(message);
 
         final MemorySegment scalar = Blst.allocateScalar(arena);
         blst.scalarFromBigEndian(scratch, secret, 0, scalar);
@@ -89,7 +89,7 @@ class BlstTest {
             org.apache.tuweni.bytes.Bytes32.fromHexString(
                 "25295f0d1d592a90b333e26e85149708208e9f8e8bc18f6c77bd62f8ad7a6866"));
     final byte[] buffer = new byte[100];
-    new SecureRandom().nextBytes(buffer);
+    RANDOM.nextBytes(buffer);
     try (Arena arena = Arena.ofConfined()) {
       final Blst.Scratch scratch = new Blst.Scratch(arena);
       final MemorySegment scalar = Blst.allocateScalar(arena);

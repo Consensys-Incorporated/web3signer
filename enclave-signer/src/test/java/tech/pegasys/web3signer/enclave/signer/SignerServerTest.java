@@ -51,6 +51,7 @@ class SignerServerTest {
 
   private final List<AutoCloseable> resources = new ArrayList<>();
   private SignerServer server;
+  private final Random random = new Random(1);
 
   @AfterEach
   void tearDown() throws Exception {
@@ -137,7 +138,7 @@ class SignerServerTest {
     startServer();
     final int count = 20_000;
     final byte[] keys = new byte[count * 48];
-    new Random(1).nextBytes(keys);
+    random.nextBytes(keys);
     try (Arena arena = Arena.ofConfined()) {
       final MemorySegment scalars = arena.allocate(count * 32L, 8);
       assertThat(server.keys().addAll(keys, scalars, count)).isEqualTo(count);

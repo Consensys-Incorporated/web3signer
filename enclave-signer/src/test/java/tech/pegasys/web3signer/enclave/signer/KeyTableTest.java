@@ -31,10 +31,21 @@ import org.junit.jupiter.api.Test;
 class KeyTableTest {
   private final Random random = new Random(42);
 
-  /** A public key whose bytes derive from {@code id}; the scalar holds {@code id}. */
+  /**
+   * A public key whose bytes derive from {@code id} (SplitMix64 of id and position); the scalar
+   * holds {@code id}.
+   */
   private static byte[] publicKey(final int id) {
     final byte[] key = new byte[48];
-    new Random(id).nextBytes(key);
+    for (int i = 0; i < key.length; i += 8) {
+      long z = (((long) id << 8) | i) + 0x9E3779B97F4A7C15L;
+      z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+      z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+      z ^= z >>> 31;
+      for (int b = 0; b < 8; b++) {
+        key[i + b] = (byte) (z >>> (8 * b));
+      }
+    }
     key[0] = (byte) 0x80; // compression flag, as in real keys
     return key;
   }

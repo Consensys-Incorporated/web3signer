@@ -173,19 +173,21 @@ final class VsockNative {
     }
   }
 
-  static void shutdownQuietly(final int fd) {
+  /** Best effort; callers may ignore the result. Returns the result of shutdown(2), or -1. */
+  static int shutdownQuietly(final int fd) {
     try (Arena arena = Arena.ofConfined()) {
-      final int ignored = (int) Handles.SHUTDOWN.invokeExact(allocateCapture(arena), fd, SHUT_RDWR);
+      return (int) Handles.SHUTDOWN.invokeExact(allocateCapture(arena), fd, SHUT_RDWR);
     } catch (final Throwable t) {
-      // best effort
+      return -1;
     }
   }
 
-  static void closeQuietly(final int fd) {
+  /** Best effort; callers may ignore the result. Returns the result of close(2), or -1. */
+  static int closeQuietly(final int fd) {
     try (Arena arena = Arena.ofConfined()) {
-      final int ignored = (int) Handles.CLOSE.invokeExact(allocateCapture(arena), fd);
+      return (int) Handles.CLOSE.invokeExact(allocateCapture(arena), fd);
     } catch (final Throwable t) {
-      // best effort
+      return -1;
     }
   }
 }

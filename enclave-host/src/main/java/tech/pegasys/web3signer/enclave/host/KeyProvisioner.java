@@ -34,6 +34,8 @@ import java.util.concurrent.TimeUnit;
 public final class KeyProvisioner {
   private static final long RETRY_MILLIS = 1000;
 
+  private static final SecureRandom RANDOM = new SecureRandom();
+
   private KeyProvisioner() {}
 
   /**
@@ -79,7 +81,7 @@ public final class KeyProvisioner {
       }
 
       final byte[] nonce = new byte[32];
-      new SecureRandom().nextBytes(nonce);
+      RANDOM.nextBytes(nonce);
       final byte[] document = session.attest(nonce);
       final byte[] blob = broker.release(bundle.dek(), document);
       if (options.dumpReleaseBlob() != null) {

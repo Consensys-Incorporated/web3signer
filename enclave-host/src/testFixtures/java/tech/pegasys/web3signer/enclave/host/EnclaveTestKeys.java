@@ -21,12 +21,14 @@ import java.util.List;
 
 /** Seals key pairs with the dev broker and provisions them into an enclave signer. */
 public final class EnclaveTestKeys {
+  private static final SecureRandom RANDOM = new SecureRandom();
+
   private EnclaveTestKeys() {}
 
   public static KeyProvisioner.Result provision(
       final EnclaveAddress address, final List<BLSKeyPair> keys) {
     final byte[] masterKey = new byte[32];
-    new SecureRandom().nextBytes(masterKey);
+    RANDOM.nextBytes(masterKey);
     try (DevKeyReleaseBroker broker = new DevKeyReleaseBroker(masterKey);
         EnclaveClient client =
             EnclaveClient.create(address, new EnclaveClient.Options(1, 8, 30_000))) {
@@ -36,9 +38,8 @@ public final class EnclaveTestKeys {
   }
 
   public static List<BLSKeyPair> randomKeys(final int count) {
-    final SecureRandom random = new SecureRandom();
     return java.util.stream.IntStream.range(0, count)
-        .mapToObj(i -> BLSKeyPair.random(random))
+        .mapToObj(i -> BLSKeyPair.random(RANDOM))
         .toList();
   }
 }

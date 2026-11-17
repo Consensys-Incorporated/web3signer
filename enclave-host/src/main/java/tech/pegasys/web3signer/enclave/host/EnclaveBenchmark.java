@@ -38,6 +38,7 @@ import org.apache.tuweni.bytes.Bytes48;
 public final class EnclaveBenchmark {
   private static final int BASELINE_SIGNATURES = 2000;
   private static final int VERIFIED_SIGNATURES = 200;
+  private static final SecureRandom RANDOM = new SecureRandom();
 
   private EnclaveBenchmark() {}
 
@@ -202,7 +203,7 @@ public final class EnclaveBenchmark {
 
   /** One Teku {@code BLS.sign} in this JVM, averaged over 2,000 calls after a warm-up. */
   static double baselineMicros() {
-    final BLSKeyPair key = BLSKeyPair.random(new SecureRandom());
+    final BLSKeyPair key = BLSKeyPair.random(RANDOM);
     final byte[] message = new byte[32];
     for (int i = 0; i < BASELINE_SIGNATURES / 2; i++) {
       message[0] = (byte) i;

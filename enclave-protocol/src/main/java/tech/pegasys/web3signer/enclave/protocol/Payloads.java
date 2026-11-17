@@ -218,7 +218,12 @@ public final class Payloads {
         getUnsignedShort(payload, 4),
         getUnsignedInt(payload, 6),
         HexFormat.of().formatHex(payload, 10, 10 + BOOT_ID_SIZE),
-        new String(payload, 27, versionLength, StandardCharsets.UTF_8));
+        printable(new String(payload, 27, versionLength, StandardCharsets.UTF_8)));
+  }
+
+  /** The version comes from the peer and ends up in logs: control characters become '?'. */
+  private static String printable(final String value) {
+    return value.replaceAll("[\\r\\n\\p{Cntrl}]", "?");
   }
 
   public static PublicKeysPage decodePublicKeys(final byte[] payload) {

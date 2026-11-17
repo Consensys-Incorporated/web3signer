@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /** Accept loop of the enclave signer. One platform thread per connection, up to a maximum. */
 public final class SignerServer implements AutoCloseable {
   public static final int DEFAULT_MAX_CONNECTIONS = 64;
+  private static final SecureRandom RANDOM = new SecureRandom();
 
   private final Listener listener;
   private final KeyTable keys;
@@ -56,7 +57,7 @@ public final class SignerServer implements AutoCloseable {
     this.platform = platform;
     this.maxConnections = maxConnections;
     this.version = version;
-    new SecureRandom().nextBytes(bootId);
+    RANDOM.nextBytes(bootId);
   }
 
   public synchronized void start() {

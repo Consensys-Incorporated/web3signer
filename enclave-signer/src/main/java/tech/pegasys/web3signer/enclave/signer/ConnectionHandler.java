@@ -328,22 +328,23 @@ final class ConnectionHandler {
       respond(Protocol.LOAD_KEYS, requestId, Payloads.errorResponse(Protocol.INVALID_STATE));
       return;
     }
-    final long count = payloadLength < 4 ? -1 : getUnsignedInt(in, payload);
-    if (count < 1
-        || count > Protocol.MAX_LOAD_KEYS
-        || payloadLength != 4 + count * Protocol.SEALED_KEY_SIZE) {
+    final long announced = payloadLength < 4 ? -1 : getUnsignedInt(in, payload);
+    if (announced < 1
+        || announced > Protocol.MAX_LOAD_KEYS
+        || payloadLength != 4 + announced * Protocol.SEALED_KEY_SIZE) {
       respond(Protocol.LOAD_KEYS, requestId, Payloads.errorResponse(BAD_REQUEST));
       return;
     }
+    final int count = (int) announced; // 1..MAX_LOAD_KEYS
     final KeyTable keys = server.keys();
     final SealedKeyOpener opener = new SealedKeyOpener(server.blst(), scratch, dek);
     final Set<String> seen = new HashSet<>();
-    final byte[] accepted = new byte[(int) count * PUBLIC_KEY_SIZE];
+    final byte[] accepted = new byte[count * PUBLIC_KEY_SIZE];
     int acceptedCount = 0;
     int duplicates = 0;
     int rejected = 0;
     try (Arena staging = Arena.ofConfined()) {
-      final MemorySegment scalars = staging.allocate(count * Blst.SCALAR_SIZE, 8);
+      final MemorySegment scalars = staging.allocate((long) count * Blst.SCALAR_SIZE, 8);
       try {
         for (int i = 0; i < count; i++) {
           final int entry = payload + 4 + i * Protocol.SEALED_KEY_SIZE;

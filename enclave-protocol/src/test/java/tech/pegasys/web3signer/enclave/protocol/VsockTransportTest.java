@@ -44,9 +44,11 @@ class VsockTransportTest {
   private static final int LOOPBACK_CID = 1;
   private static final int EAFNOSUPPORT = 97;
 
+  private final Random random = new Random();
+
   @Test
   void framesRoundTripOverVsockLoopback() throws Exception {
-    final int port = 20_000 + new Random().nextInt(20_000);
+    final int port = 20_000 + random.nextInt(20_000);
     final VsockListener listener;
     try {
       listener = VsockListener.bind(port);
@@ -84,7 +86,7 @@ class VsockTransportTest {
       }
       try (client) {
         final byte[] big = new byte[200_000];
-        new Random(1).nextBytes(big);
+        random.nextBytes(big);
         for (final byte[] payload : new byte[][] {new byte[0], new byte[] {1, 2, 3}, big}) {
           final byte[] frame = Frames.encode(Protocol.SIGN, payload.length, payload);
           client.write(frame, 0, frame.length);
@@ -112,7 +114,7 @@ class VsockTransportTest {
         right) {
       VsockNative.setTimeouts(fds[0], 200);
       final byte[] big = new byte[300_000];
-      new Random(2).nextBytes(big);
+      random.nextBytes(big);
       final CompletableFuture<Void> writer =
           CompletableFuture.runAsync(
               () -> {
