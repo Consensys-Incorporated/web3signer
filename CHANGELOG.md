@@ -10,6 +10,7 @@
 ### Bugs Fixed
 
 ### Features Added
+- Experimental enclave signer for eth2 (AWS Nitro Enclaves): BLS keys exist in plaintext only inside the enclave, and Web3Signer signs through it. Enabled with the hidden `--Xenclave-signer-*` options of `eth2`; keys are sealed, loaded and checked with the `web3signer enclave` subcommands (`seal`, `provision`, `status`, `bench`). Slashing protection stays in Web3Signer. Enclave keys sign 32-byte signing roots only, so the signing extension endpoint does not support them. `/healthcheck` reports the enclave's live status as `enclave-signer`, and signing while the enclave is down answers 500 with `Signer unavailable: ...`. The options can change without notice. Deployment guide: `deployments/aws-nitro/README.md`.
 
 ### CI/Build Enhancements
 

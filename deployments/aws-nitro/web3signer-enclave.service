@@ -1,0 +1,19 @@
+[Unit]
+Description=Web3Signer enclave signer (Nitro Enclave) with key provisioning
+After=network-online.target nitro-enclaves-allocator.service
+Wants=network-online.target
+Requires=nitro-enclaves-allocator.service
+
+[Service]
+Type=simple
+User=web3signer
+Group=web3signer
+SupplementaryGroups=ne
+Environment=JAVA_HOME=/usr/lib/jvm/java-25-amazon-corretto.x86_64
+ExecStart=/opt/web3signer-enclave/run-enclave.sh
+ExecStopPost=-/usr/bin/nitro-cli terminate-enclave --enclave-name web3signer-enclave
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
