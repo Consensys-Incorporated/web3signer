@@ -3,6 +3,7 @@
 ## Unreleased
 ### Security
 - Guava upgraded to 33.7.2-jre to fix CVE-2026-102554, and snappy-java pinned to 1.1.10.9 to fix CVE-2026-93451 and CVE-2026-108106 (transitive via besu and teku). [#1285][PR_1285]
+- Web3Signer now starts with `-XX:-UseBASE64Intrinsics` to mitigate [CVE-2026-114938](https://www.aikido.dev/blog/java-17-rce-vulnerability-cve-2026-114938), a heap overflow in the JVM's Base64 decoder on x86-64 CPUs with AVX-512. Set `WEB3SIGNER_OPTS=-XX:+UseBASE64Intrinsics` to turn the intrinsic back on. The distroless image sets the flags in its entrypoint, so they can only be changed there by overriding the entrypoint. [#1299][PR_1299]
 
 ### Upcoming Breaking Changes
 These options are deprecated and will be removed in a future release. Using them logs a warning. A truststore can hold CA certificates as well as client or server certificates. [#1282][PR_1282]
@@ -44,6 +45,7 @@ These options are deprecated and will be removed in a future release. Using them
 [PR_1275]: https://github.com/Consensys-Incorporated/web3signer/pull/1275
 [PR_1249]: https://github.com/Consensys-Incorporated/web3signer/pull/1249
 [PR_1282]: https://github.com/Consensys-Incorporated/web3signer/pull/1282
+[PR_1299]: https://github.com/Consensys-Incorporated/web3signer/pull/1299
 
 ---
 ## 26.10.2
