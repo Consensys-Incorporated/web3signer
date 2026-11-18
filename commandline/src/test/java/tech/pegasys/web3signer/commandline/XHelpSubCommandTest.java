@@ -56,7 +56,12 @@ public class XHelpSubCommandTest {
           "--Xazure-authority-host-override",
           "--Xazure-trust-certificate-override",
           "--Xgcp-endpoint-override",
-          "--Xkey-manager-skip-keystore-storage");
+          "--Xkey-manager-skip-keystore-storage",
+          "--Xenclave-signer-enabled",
+          "--Xenclave-signer-address",
+          "--Xenclave-signer-connections",
+          "--Xenclave-signer-max-batch",
+          "--Xenclave-signer-request-timeout-ms");
 
   /** The only unstable options on the eth1 subtree. */
   private static final List<String> ETH1_OPTIONS =

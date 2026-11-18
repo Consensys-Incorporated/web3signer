@@ -31,6 +31,7 @@ import tech.pegasys.web3signer.commandline.PicoCliGcpSecretManagerParameters;
 import tech.pegasys.web3signer.commandline.PicoCliSlashingProtectionParameters;
 import tech.pegasys.web3signer.commandline.VersionProvider;
 import tech.pegasys.web3signer.commandline.config.KeyManagerApiParameters;
+import tech.pegasys.web3signer.commandline.config.PicoCliEnclaveSignerParameters;
 import tech.pegasys.web3signer.commandline.config.PicoCommitBoostApiParameters;
 import tech.pegasys.web3signer.commandline.config.PicoKeystoresParameters;
 import tech.pegasys.web3signer.common.config.AwsAuthenticationMode;
@@ -183,6 +184,7 @@ public class Eth2SubCommand extends ModeSubCommand {
   @Mixin private PicoCliGcpSecretManagerParameters gcpSecretManagerParameters;
   @Mixin private KeyManagerApiParameters keyManagerApiParameters;
   @Mixin private PicoCommitBoostApiParameters commitBoostApiParameters;
+  @Mixin private PicoCliEnclaveSignerParameters enclaveSignerParameters;
   private tech.pegasys.teku.spec.Spec eth2Spec;
 
   public Eth2SubCommand() {
@@ -203,7 +205,8 @@ public class Eth2SubCommand extends ModeSubCommand {
         eth2Spec,
         keyManagerApiParameters,
         signingExtEnabled,
-        commitBoostApiParameters);
+        commitBoostApiParameters,
+        enclaveSignerParameters);
   }
 
   private void logNetworkSpecInformation() {
@@ -288,6 +291,7 @@ public class Eth2SubCommand extends ModeSubCommand {
     validateAwsSecretsManageParameters();
     validateGcpSecretManagerParameters();
     commitBoostApiParameters.validateParameters();
+    enclaveSignerParameters.validate();
   }
 
   private void validateGcpSecretManagerParameters() {
@@ -412,6 +416,11 @@ public class Eth2SubCommand extends ModeSubCommand {
 
   public SlashingProtectionParameters getSlashingProtectionParameters() {
     return slashingProtectionParameters;
+  }
+
+  @VisibleForTesting
+  public PicoCliEnclaveSignerParameters getEnclaveSignerParameters() {
+    return enclaveSignerParameters;
   }
 
   @VisibleForTesting
