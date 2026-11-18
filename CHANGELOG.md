@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+### Security
+
+### Upcoming Breaking Changes
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Features Added
+
+### CI/Build Enhancements
+
+---
 ## 26.11.0
 ### Security
 - Guava upgraded to 33.7.2-jre to fix CVE-2026-102554, and snappy-java pinned to 1.1.10.9 to fix CVE-2026-93451 and CVE-2026-108106 (transitive via besu and teku). [#1285][PR_1285]
