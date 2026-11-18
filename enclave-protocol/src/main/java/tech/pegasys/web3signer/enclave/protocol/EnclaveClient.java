@@ -218,6 +218,7 @@ public final class EnclaveClient implements Closeable {
     Payloads.checkSign(publicKey, message);
     requireOpen();
     startDispatchers();
+    requireOpen();
     final Call call = new Call(publicKey, message);
     if (!queue.offer(call)) {
       throw new EnclaveUnavailableException("Enclave signer request queue is full");
@@ -246,12 +247,14 @@ public final class EnclaveClient implements Closeable {
     if (started) {
       return;
     }
+    // STATUS outside the lock: a slow or unreachable enclave must not queue the other first callers
+    // and close() behind it. Concurrent first callers may each ask; only one starts the threads.
+    final int count =
+        options.connections() > 0 ? options.connections() : Math.max(1, status().cpus());
     synchronized (dispatchers) {
       if (started || closed) {
         return;
       }
-      final int count =
-          options.connections() > 0 ? options.connections() : Math.max(1, status().cpus());
       for (int i = 0; i < count; i++) {
         final Dispatcher dispatcher = new Dispatcher();
         dispatcher.thread =
@@ -305,6 +308,10 @@ public final class EnclaveClient implements Closeable {
       Exception failure = null;
       for (int attempt = 0; attempt < 2; attempt++) {
         if (connection == null) {
+          if (closed) {
+            fail(pending, new EnclaveUnavailableException("Enclave client is closed"));
+            return;
+          }
           if (attempt == 0 && System.nanoTime() < nextConnectAt) {
             fail(pending, new EnclaveUnavailableException("Enclave signer not connected"));
             return;
@@ -314,6 +321,12 @@ public final class EnclaveClient implements Closeable {
           } catch (final IOException | RuntimeException e) {
             nextConnectAt = System.nanoTime() + RECONNECT_DELAY_NANOS;
             fail(pending, e);
+            return;
+          }
+          if (closed) {
+            // close() may have run while connecting and could not see this connection
+            dropConnection();
+            fail(pending, new EnclaveUnavailableException("Enclave client is closed"));
             return;
           }
         }

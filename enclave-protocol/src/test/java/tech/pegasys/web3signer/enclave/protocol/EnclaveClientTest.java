@@ -228,6 +228,69 @@ class EnclaveClientTest {
   }
 
   @Test
+  void firstCallersDoNotQueueBehindAnUnreachableEnclave() throws Exception {
+    // connections = 0: the first sign asks the enclave for its cpus, two attempts of 300 ms
+    final EnclaveClient client =
+        new EnclaveClient(
+            timeout -> {
+              sleep(300);
+              throw new IOException("unreachable");
+            },
+            "unreachable",
+            new EnclaveClient.Options(0, 8, 1000));
+    resources.add(client);
+
+    final int calls = 8;
+    final CountDownLatch start = new CountDownLatch(1);
+    final long started;
+    try (ExecutorService callers = Executors.newFixedThreadPool(calls)) {
+      final List<Future<byte[]>> results = new ArrayList<>();
+      for (int i = 0; i < calls; i++) {
+        final byte[] message = message(i);
+        results.add(
+            callers.submit(
+                () -> {
+                  start.await();
+                  return client.sign(PUBLIC_KEY, message);
+                }));
+      }
+      started = System.nanoTime();
+      start.countDown();
+      for (final Future<byte[]> result : results) {
+        assertThatThrownBy(() -> result.get(30, TimeUnit.SECONDS))
+            .hasCauseInstanceOf(EnclaveUnavailableException.class);
+      }
+    }
+    // in parallel about 600 ms; one after the other under a lock 8 x 600 ms
+    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(2500L);
+  }
+
+  @Test
+  void closeFailsAnInFlightCallWithoutReconnecting() throws Exception {
+    final CountDownLatch received = new CountDownLatch(1);
+    final ScriptedServer[] self = new ScriptedServer[1];
+    self[0] =
+        server(
+            (connection, index) -> {
+              self[0].read(connection);
+              received.countDown();
+              while (true) {
+                self[0].read(connection); // never answers
+              }
+            });
+    final EnclaveClient client = client(self[0], new EnclaveClient.Options(1, 8, 10_000));
+    try (ExecutorService caller = Executors.newSingleThreadExecutor()) {
+      final Future<byte[]> result = caller.submit(() -> client.sign(PUBLIC_KEY, message(1)));
+      assertThat(received.await(5, TimeUnit.SECONDS)).isTrue();
+      client.close();
+      assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
+          .hasCauseInstanceOf(EnclaveUnavailableException.class)
+          .hasRootCauseMessage("Enclave client is closed");
+    }
+    assertThat(self[0].connectionCount()).isEqualTo(1);
+  }
+
+  @Test
   void fullQueueFailsTheCallAtOnce() throws Exception {
     final ScriptedServer[] self = new ScriptedServer[1];
     self[0] =
