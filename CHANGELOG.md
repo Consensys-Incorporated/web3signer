@@ -30,7 +30,7 @@ These options are deprecated and will be removed in a future release. Using them
 - Compiler warnings fail the build again. [#1283][PR_1283]
 - Hashicorp Vault acceptance tests run against the `hashicorp/vault` 2.2.1 image via Testcontainers instead of a downloaded 1.9.2 binary. [#1277][PR_1277]
 - Removed the Cloudsmith and jitpack Maven repositories; `errorprone-checks` now resolves from Maven Central (`io.consensys.protocols:errorprone-checks:1.1.2`) and the unused `java-cid` dependency was dropped. [#1288][PR_1288]
-- Gradle wrapper upgraded to 9.9.1. [#1287][PR_1287], [#1297][PR_1297]
+- Gradle wrapper upgraded to 9.9.1. [#1297][PR_1297]
 - AWS tests run in CI against [MiniStack](https://github.com/ministackorg/ministack), which replaces LocalStack. [#1276][PR_1276]
 - GCP Secret Manager acceptance tests run again in CI, against a Testcontainers instance of the offline [gcp-secret-manager-emulator](https://github.com/blackwell-systems/gcp-secret-manager-emulator) instead of real Google Cloud. [#1275][PR_1275]
 - The default Docker image copies its JRE from the digest-pinned `eclipse-temurin:25-jre` image (Temurin 25.0.5+8) instead of downloading the Adoptium release tarball, now that the official image carries the eMudhra CA fix. [#1249][PR_1249]
@@ -41,7 +41,6 @@ These options are deprecated and will be removed in a future release. Using them
 [PR_1283]: https://github.com/Consensys-Incorporated/web3signer/pull/1283
 [PR_1285]: https://github.com/Consensys-Incorporated/web3signer/pull/1285
 [PR_1288]: https://github.com/Consensys-Incorporated/web3signer/pull/1288
-[PR_1287]: https://github.com/Consensys-Incorporated/web3signer/pull/1287
 [PR_1275]: https://github.com/Consensys-Incorporated/web3signer/pull/1275
 [PR_1249]: https://github.com/Consensys-Incorporated/web3signer/pull/1249
 [PR_1282]: https://github.com/Consensys-Incorporated/web3signer/pull/1282
