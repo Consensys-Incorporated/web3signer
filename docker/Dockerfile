@@ -13,7 +13,7 @@ ARG DIST_SOURCE=${DIST_FROM_TAR:-gradle}
 # The source tree is bind-mounted (not copied) so it never lands in a layer; .git
 # must be in the build context for correct version information, and the version
 # calculation runs the git CLI, which the JDK image does not ship.
-FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk@sha256:83f4a7fc27df94dcc7b8de04d14cbbba8da14406f921e966969c3b09000aa507 AS dist-gradle
+FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk@sha256:884a2f8692cc1e2c7e21f95914adf0ae0eafee9a7eb663a12169cc44468256ec AS dist-gradle
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git && \
     rm -rf /var/lib/apt/lists/*
@@ -25,14 +25,14 @@ RUN --mount=type=bind,target=/src,rw \
     cp build/distributions/web3signer-*.tar.gz /dist/web3signer.tar.gz
 
 # Use a pre-built distribution from the build context.
-FROM alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS dist-tar
+FROM alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS dist-tar
 ARG TAR_FILE
 COPY ${TAR_FILE} /dist/web3signer.tar.gz
 
 FROM dist-${DIST_SOURCE} AS dist
 
 # Validate and extract the distribution
-FROM alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS app-extract
+FROM alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS app-extract
 COPY --from=dist /dist/web3signer.tar.gz /tmp/web3signer.tar.gz
 RUN gzip -t /tmp/web3signer.tar.gz || (echo "ERROR: web3signer distribution is not a valid gzip archive" && exit 1) && \
     mkdir -p /opt/web3signer && \
@@ -40,7 +40,7 @@ RUN gzip -t /tmp/web3signer.tar.gz || (echo "ERROR: web3signer distribution is n
     rm /tmp/web3signer.tar.gz
 
 # Final image with Ubuntu base for latest security patches
-FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
 
 ARG BUILD_DATE
 ARG VCS_REF
@@ -76,7 +76,7 @@ RUN apt-get update && \
     useradd --system --no-create-home --shell /bin/false web3signer
 
 # Copy full JRE from Eclipse Temurin (no module complexity, all features available)
-COPY --from=eclipse-temurin:25-jre@sha256:ecdc0adb37bde1a281c4d245a3cd535004b1fc8322d560f5b09463b248c81df0 /opt/java/openjdk /opt/java/openjdk
+COPY --from=eclipse-temurin:25-jre@sha256:945247f9d092703e0c6be92243ef3c51640229e23ab34d353c8dcdc73e6cd4e6 /opt/java/openjdk /opt/java/openjdk
 COPY --from=app-extract --chown=web3signer:web3signer /opt/web3signer /opt/web3signer
 
 USER web3signer
