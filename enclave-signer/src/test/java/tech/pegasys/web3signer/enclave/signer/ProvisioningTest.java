@@ -236,6 +236,23 @@ class ProvisioningTest {
   }
 
   @Test
+  void aRejectedEntryDoesNotBlockAValidOneForTheSameKey() {
+    final byte[] dek = TestEnvelopes.randomBytes(32);
+    final BLSKeyPair key = TestKeys.random(1).get(0);
+    final SealedKey good = TestEnvelopes.seal(dek, publicKey(key), secret(key));
+    final byte[] badTag = good.ciphertext().clone();
+    badTag[47] ^= 1;
+    final SealedKey bad = new SealedKey(good.publicKey(), good.nonce(), badTag);
+    try (ProvisioningSession session = client.openProvisioningSession()) {
+      release(session, dek);
+      assertThat(session.loadKeys(List.of(bad, good))).isEqualTo(new LoadResult(1, 0, 1));
+    }
+    final Bytes root = Bytes.random(32);
+    assertThat(Bytes.wrap(client.sign(publicKey(key), root.toArrayUnsafe())))
+        .isEqualTo(BLS.sign(key.getSecretKey(), root).toBytesCompressed());
+  }
+
+  @Test
   void loadKeysValidatesItsFraming() throws IOException {
     final byte[] dek = TestEnvelopes.randomBytes(32);
     try (ProvisioningSession session = client.openProvisioningSession()) {

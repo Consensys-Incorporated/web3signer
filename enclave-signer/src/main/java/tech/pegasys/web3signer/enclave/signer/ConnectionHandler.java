@@ -205,16 +205,22 @@ final class ConnectionHandler {
     final int at = reserve(SIGN_RESPONSE_SIZE);
     Frames.putHeader(out, at, Protocol.SIGN | RESPONSE_FLAG, requestId, 1 + SIGNATURE_SIZE);
     out[at + OVERHEAD] = OK;
-    server
-        .blst()
-        .sign(
-            scratch,
-            secret,
-            in,
-            payload + PUBLIC_KEY_SIZE + 2,
-            payloadLength - PUBLIC_KEY_SIZE - 2,
-            out,
-            at + OVERHEAD + 1);
+    try {
+      server
+          .blst()
+          .sign(
+              scratch,
+              secret,
+              in,
+              payload + PUBLIC_KEY_SIZE + 2,
+              payloadLength - PUBLIC_KEY_SIZE - 2,
+              out,
+              at + OVERHEAD + 1);
+    } catch (final RuntimeException e) {
+      // take the OK frame back, so that only the error response goes out for this request
+      outLength = at;
+      throw e;
+    }
   }
 
   private void status(final int requestId, final int payloadLength) throws IOException {
@@ -349,13 +355,16 @@ final class ConnectionHandler {
         for (int i = 0; i < count; i++) {
           final int entry = payload + 4 + i * Protocol.SEALED_KEY_SIZE;
           final byte[] publicKey = Arrays.copyOfRange(in, entry, entry + PUBLIC_KEY_SIZE);
-          if (keys.contains(publicKey) || !seen.add(HexFormat.of().formatHex(publicKey))) {
+          final String publicKeyHex = HexFormat.of().formatHex(publicKey);
+          if (keys.contains(publicKey) || seen.contains(publicKeyHex)) {
             duplicates++;
             continue;
           }
           final MemorySegment scalar =
               scalars.asSlice((long) acceptedCount * Blst.SCALAR_SIZE, Blst.SCALAR_SIZE);
           if (opener.open(in, entry, scalar)) {
+            // only an accepted entry claims its key: a rejected one must not block a valid one
+            seen.add(publicKeyHex);
             System.arraycopy(
                 publicKey, 0, accepted, acceptedCount * PUBLIC_KEY_SIZE, PUBLIC_KEY_SIZE);
             acceptedCount++;

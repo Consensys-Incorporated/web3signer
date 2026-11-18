@@ -228,6 +228,10 @@ public final class EnclaveClient implements Closeable {
     if (!queue.offer(call)) {
       throw new EnclaveUnavailableException("Enclave signer request queue is full");
     }
+    if (closed && queue.remove(call)) {
+      // close() drained the queue before this call arrived; nobody would take it
+      throw new EnclaveUnavailableException("Enclave client is closed");
+    }
     try {
       return call.result.get(options.requestTimeoutMillis(), TimeUnit.MILLISECONDS);
     } catch (final TimeoutException e) {
