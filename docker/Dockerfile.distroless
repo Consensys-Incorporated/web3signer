@@ -118,6 +118,9 @@ ENTRYPOINT [ \
   "java", \
   "-XX:-UsePerfData", \
   "-Dvertx.disableFileCPResolving=true", \
+  "-XX:-UseBASE64Intrinsics", \
+  "-XX:+UnlockDiagnosticVMOptions", \
+  "-XX:-ReduceAllocationMerges", \
   "-Dlog4j.shutdownHookEnabled=false", \
   "-Dlog4j2.formatMsgNoLookups=true", \
   "-Dlog4j.skipJansi=true", \
