@@ -61,6 +61,9 @@ public final class KeyProvisioner {
       final KeyReleaseBroker broker,
       final EnclaveClient client,
       final Options options) {
+    if (bundle.keys().isEmpty()) {
+      throw new EnclaveHostException("The key bundle contains no keys; nothing to provision");
+    }
     try (ProvisioningSession session = connect(client, options.waitSeconds())) {
       final EnclaveStatus status = session.status();
       if (status.protocolVersion() != Protocol.VERSION) {
@@ -132,19 +135,33 @@ public final class KeyProvisioner {
         session.status();
         return session;
       } catch (final EnclaveUnavailableException e) {
-        if (session != null) {
-          session.close();
-        }
-        if (System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(RETRY_MILLIS) > deadline) {
+        closeQuietly(session, e);
+        final long remaining = deadline - System.nanoTime();
+        if (remaining <= 0) {
           throw e;
         }
+        try {
+          TimeUnit.NANOSECONDS.sleep(
+              Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(RETRY_MILLIS)));
+        } catch (final InterruptedException ie) {
+          Thread.currentThread().interrupt();
+          throw new EnclaveHostException("Interrupted while waiting for the enclave", ie);
+        }
+      } catch (final RuntimeException e) {
+        closeQuietly(session, e);
+        throw e;
       }
-      try {
-        Thread.sleep(RETRY_MILLIS);
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new EnclaveHostException("Interrupted while waiting for the enclave", e);
-      }
+    }
+  }
+
+  private static void closeQuietly(final ProvisioningSession session, final Exception cause) {
+    if (session == null) {
+      return;
+    }
+    try {
+      session.close();
+    } catch (final RuntimeException closeFailure) {
+      cause.addSuppressed(closeFailure);
     }
   }
 }

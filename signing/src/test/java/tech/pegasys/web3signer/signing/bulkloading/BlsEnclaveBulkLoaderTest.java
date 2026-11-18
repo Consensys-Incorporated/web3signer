@@ -97,6 +97,26 @@ class BlsEnclaveBulkLoaderTest {
   }
 
   @Test
+  void keepsTheLastLoadedSignersWithAnErrorWhenTheEnclaveStopsAnswering() {
+    final InProcessEnclaveSigner enclave = new InProcessEnclaveSigner();
+    try (BlsEnclaveBulkLoader loader =
+        new BlsEnclaveBulkLoader(new Parameters(enclave.address().toString()))) {
+      EnclaveTestKeys.provision(enclave.address(), EnclaveTestKeys.randomKeys(2));
+      final MappedResults<ArtifactSigner> loaded = loader.load();
+      assertThat(loaded.getErrorCount()).isZero();
+      assertThat(loaded.getValues()).hasSize(2);
+
+      enclave.close();
+
+      final MappedResults<ArtifactSigner> reloaded = loader.load();
+      assertThat(reloaded.getErrorCount()).isEqualTo(1);
+      assertThat(reloaded.getValues()).containsExactlyElementsOf(loaded.getValues());
+    } finally {
+      enclave.close();
+    }
+  }
+
+  @Test
   void returnsAnErrorResultWhenNothingListens() {
     try (BlsEnclaveBulkLoader loader =
         new BlsEnclaveBulkLoader(new Parameters("tcp:127.0.0.1:1"))) {

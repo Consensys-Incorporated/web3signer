@@ -13,10 +13,13 @@
 package tech.pegasys.web3signer.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import tech.pegasys.web3signer.enclave.host.EnclaveTestKeys;
 import tech.pegasys.web3signer.enclave.signer.InProcessEnclaveSigner;
 import tech.pegasys.web3signer.signing.bulkloading.BlsEnclaveBulkLoader;
+import tech.pegasys.web3signer.signing.bulkloading.BlsEnclaveBulkLoader.EnclaveSignerStatus;
 import tech.pegasys.web3signer.signing.config.EnclaveSignerParameters;
 
 import java.util.concurrent.ExecutorService;
@@ -96,6 +99,33 @@ class EnclaveSignerHealthCheckTest {
       assertThat(status.isOk()).isFalse();
       assertThat(status.getData().getLong("keys")).isZero();
     }
+  }
+
+  @Test
+  void downWithTheErrorWhenTheProbeThrowsThenAnswersTheNextCheck() throws Exception {
+    final BlsEnclaveBulkLoader loader = mock(BlsEnclaveBulkLoader.class);
+    when(loader.status())
+        .thenThrow(new ExceptionInInitializerError("probe failed"))
+        .thenReturn(new EnclaveSignerStatus(3, "00"));
+    final EnclaveSignerHealthCheck check = new EnclaveSignerHealthCheck(loader, executor);
+
+    final Status failed = run(check);
+    assertThat(failed.isOk()).isFalse();
+    assertThat(failed.getData().getString("error")).isEqualTo("probe failed");
+
+    final Status next = run(check);
+    assertThat(next.isOk()).isTrue();
+    assertThat(next.getData().getLong("keys")).isEqualTo(3);
+  }
+
+  @Test
+  void downWhenTheExecutorRejectsTheProbe() throws Exception {
+    executor.shutdown();
+    final Status status =
+        run(new EnclaveSignerHealthCheck(mock(BlsEnclaveBulkLoader.class), executor));
+
+    assertThat(status.isOk()).isFalse();
+    assertThat(status.getData().getString("error")).isEqualTo("Health check is shut down");
   }
 
   private static Status run(final EnclaveSignerHealthCheck check) throws Exception {

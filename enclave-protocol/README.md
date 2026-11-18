@@ -134,7 +134,8 @@ Invariants:
 - **`SIGN`** goes through dispatcher threads, each with its own connection. A dispatcher takes the
   calls already queued, up to `maxBatch` (default 8), sends them in one write and reads the answers
   in order. With `connections = 0` (the default) the client starts one dispatcher per CPU that
-  `STATUS` reports, at most 64.
+  `STATUS` reports, at most 32 (the signer accepts 64 connections; the rest stay free for `STATUS`,
+  `GET_PUBLIC_KEYS` and provisioning).
 - **Retries:** after an I/O error or a mismatched answer, a dispatcher reconnects once and resends
   the unanswered calls. `STATUS` and `GET_PUBLIC_KEYS` use a short-lived connection and retry once.
   Provisioning is never retried.

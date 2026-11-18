@@ -21,10 +21,30 @@ nitro-cli run-enclave --enclave-name "$ENCLAVE_NAME" --eif-path "$EIF" \
 "$WEB3SIGNER" enclave provision --address="vsock:$ENCLAVE_CID:$ENCLAVE_PORT" --bundle="$BUNDLE" \
   --aws-region="$AWS_REGION" --wait-seconds=60
 
-running() {
-  nitro-cli describe-enclaves |
-    jq -e --arg n "$ENCLAVE_NAME" 'any(.[]; .EnclaveName == $n and .State == "RUNNING")' >/dev/null
+# 0: running, 1: not running, 2: could not tell (nitro-cli or jq failed)
+enclave_state() {
+  local out rc=0
+  out=$(nitro-cli describe-enclaves) || return 2
+  jq -e --arg n "$ENCLAVE_NAME" 'any(.[]; .EnclaveName == $n and .State == "RUNNING")' \
+    >/dev/null <<<"$out" || rc=$?
+  case "$rc" in
+    0 | 1) return "$rc" ;;
+    *) return 2 ;;
+  esac
 }
-while running; do sleep 5; done
+
+# A failed query says nothing about the enclave: only a successful query that does not list it
+# ends this script, so that a nitro-cli hiccup never makes systemd replace a healthy enclave.
+while true; do
+  rc=0
+  enclave_state || rc=$?
+  if [ "$rc" -eq 1 ]; then
+    break
+  fi
+  if [ "$rc" -eq 2 ]; then
+    echo "could not query the state of enclave $ENCLAVE_NAME; trying again" >&2
+  fi
+  sleep 5
+done
 echo "enclave $ENCLAVE_NAME is no longer running" >&2
 exit 1

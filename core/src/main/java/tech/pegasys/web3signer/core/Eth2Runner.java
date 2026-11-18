@@ -172,9 +172,8 @@ public class Eth2Runner extends Runner {
     registerClose(signerLoader);
 
     if (enclaveSignerParameters.isEnabled()) {
-      final BlsEnclaveBulkLoader loader = new BlsEnclaveBulkLoader(enclaveSignerParameters);
-      registerClose(loader);
-      enclaveBulkLoader = Optional.of(loader);
+      // closed by run() after the HTTP server stops, so in-flight signing requests can finish
+      enclaveBulkLoader = Optional.of(new BlsEnclaveBulkLoader(enclaveSignerParameters));
     }
 
     return List.of(
@@ -323,7 +322,15 @@ public class Eth2Runner extends Runner {
 
   @Override
   public void run() {
-    super.run();
+    try {
+      super.run();
+    } catch (final RuntimeException | Error e) {
+      enclaveBulkLoader.ifPresent(BlsEnclaveBulkLoader::close);
+      throw e;
+    }
+    // after Runner.run() registered the Vert.x shutdown: the HTTP server stops before the enclave
+    // client closes, so in-flight signing requests can finish
+    enclaveBulkLoader.ifPresent(this::registerClose);
     scheduleAndExecuteInitialDbPruning();
     slashingProtectionContext.ifPresent(this::scheduleDbHealthCheck);
     enclaveBulkLoader.ifPresent(this::registerEnclaveSignerHealthCheck);
@@ -332,6 +339,7 @@ public class Eth2Runner extends Runner {
   private void registerEnclaveSignerHealthCheck(final BlsEnclaveBulkLoader loader) {
     super.registerHealthCheckProcedure(
         ENCLAVE_SIGNER,
+        EnclaveSignerHealthCheck.TIMEOUT_MILLIS,
         new EnclaveSignerHealthCheck(
             loader, createSingleThreadScheduledExecutor("enclave-signer-health-check")));
   }

@@ -291,6 +291,34 @@ class EnclaveClientTest {
   }
 
   @Test
+  void timedOutCallsGiveTheirQueueSlotsBack() throws Exception {
+    // the only dispatcher hangs in connect: nothing ever takes a call off the queue again
+    final CountDownLatch release = new CountDownLatch(1);
+    final EnclaveClient client =
+        new EnclaveClient(
+            timeout -> {
+              try {
+                release.await();
+              } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+              }
+              throw new IOException("gone");
+            },
+            "hanging",
+            new EnclaveClient.Options(1, 8, 1));
+    try {
+      for (int i = 0; i < EnclaveClient.QUEUE_CAPACITY + 10; i++) {
+        assertThatThrownBy(() -> client.sign(PUBLIC_KEY, message(1)))
+            .isInstanceOf(EnclaveUnavailableException.class)
+            .hasMessageContaining("did not answer");
+      }
+    } finally {
+      release.countDown();
+      client.close();
+    }
+  }
+
+  @Test
   void fullQueueFailsTheCallAtOnce() throws Exception {
     final ScriptedServer[] self = new ScriptedServer[1];
     self[0] =

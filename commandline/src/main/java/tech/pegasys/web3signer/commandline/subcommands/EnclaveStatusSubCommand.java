@@ -72,11 +72,13 @@ public class EnclaveStatusSubCommand extends EnclaveSubCommand.Tool {
         } catch (final EnclaveUnavailableException e) {
           problem = e.getMessage();
         }
-        if (System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(RETRY_MILLIS) > deadline) {
+        final long remaining = deadline - System.nanoTime();
+        if (remaining <= 0) {
           spec.commandLine().getErr().println("Error: " + problem);
           return 1;
         }
-        Thread.sleep(RETRY_MILLIS);
+        TimeUnit.NANOSECONDS.sleep(
+            Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(RETRY_MILLIS)));
       }
     }
   }

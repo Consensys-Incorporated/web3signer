@@ -29,13 +29,22 @@ import io.vertx.ext.healthchecks.Status;
 
 /**
  * Live health check of the enclave signer: asks it for {@code STATUS} on every check. UP with
- * {@code {"keys": <count>, "boot-id": <hex>}} when it answers and holds keys, DOWN otherwise.
+ * {@code {"keys": <count>, "boot-id": <hex>}} when it answers and holds keys, DOWN otherwise, with
+ * {@code {"error": <message>}} when the check itself fails.
  *
  * <p>The blocking {@code STATUS} call runs on {@code executor}, never on the event loop, and checks
  * that arrive while one is running share its result, so a hung enclave signer occupies one thread
- * at most. The health check procedure timeout bounds how long a request waits.
+ * at most. Register it with {@link #TIMEOUT_MILLIS}, which bounds how long a request waits.
  */
 public class EnclaveSignerHealthCheck implements Handler<Promise<Status>> {
+  /**
+   * Health check procedure timeout. {@link BlsEnclaveBulkLoader#status()} tries twice; each try is
+   * bounded by about 1 s (500 ms write and read) against a hung enclave signer and by about 2 s
+   * (the kernel's vsock connect timeout) against a missing one, so a DOWN answer arrives within 4
+   * s.
+   */
+  public static final long TIMEOUT_MILLIS = 5_000;
+
   private final BlsEnclaveBulkLoader enclave;
   private final Executor executor;
   private final AtomicReference<CompletableFuture<Status>> running = new AtomicReference<>();
@@ -49,8 +58,9 @@ public class EnclaveSignerHealthCheck implements Handler<Promise<Status>> {
   public void handle(final Promise<Status> promise) {
     final Context context = Vertx.currentContext();
     check()
-        .thenAccept(
-            status -> {
+        .whenComplete(
+            (result, failure) -> {
+              final Status status = failure == null ? result : down(failure);
               if (context == null) {
                 promise.tryComplete(status);
               } else {
@@ -68,15 +78,22 @@ public class EnclaveSignerHealthCheck implements Handler<Promise<Status>> {
     try {
       executor.execute(
           () -> {
-            final Status status = probe();
-            running.set(null);
-            next.complete(status);
+            try {
+              finish(next, probe());
+            } catch (final Throwable e) {
+              finish(next, down(e));
+              throw e;
+            }
           });
     } catch (final RejectedExecutionException e) {
-      running.set(null);
-      next.complete(Status.KO(new JsonObject().put("error", "Health check is shut down")));
+      finish(next, Status.KO(new JsonObject().put("error", "Health check is shut down")));
     }
     return next;
+  }
+
+  private void finish(final CompletableFuture<Status> probe, final Status status) {
+    running.compareAndSet(probe, null);
+    probe.complete(status);
   }
 
   private Status probe() {
@@ -86,7 +103,12 @@ public class EnclaveSignerHealthCheck implements Handler<Promise<Status>> {
           new JsonObject().put("keys", status.keyCount()).put("boot-id", status.bootId());
       return status.keyCount() > 0 ? Status.OK(data) : Status.KO(data);
     } catch (final RuntimeException e) {
-      return Status.KO(new JsonObject().put("error", e.getMessage()));
+      return down(e);
     }
+  }
+
+  private static Status down(final Throwable failure) {
+    final String message = failure.getMessage();
+    return Status.KO(new JsonObject().put("error", message != null ? message : failure.toString()));
   }
 }

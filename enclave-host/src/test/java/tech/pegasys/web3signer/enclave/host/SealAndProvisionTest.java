@@ -155,6 +155,42 @@ class SealAndProvisionTest {
   }
 
   @Test
+  void sealingSkipsJsonFilesThatAreNotKeystores() throws IOException {
+    final Path keystores = Files.createDirectory(dir.resolve("keystores"));
+    final BLSKeyPair key = EnclaveTestKeys.randomKeys(1).get(0);
+    writeKeystore(keystores, "keystore-m_12381_3600_0_0_0", key, "secret password");
+    Files.writeString(
+        keystores.resolve("deposit_data-1700000000.json"), "[{\"pubkey\":\"ab\",\"amount\":1}]");
+    // A trailing newline is harmless: EIP-2335 strips control codes from passwords.
+    final Path passwordFile = Files.writeString(dir.resolve("password.txt"), "secret password\n");
+    final List<BLSKeyPair> collected =
+        KeySealer.collect(new KeySealer.Sources(keystores, passwordFile, null, null));
+    assertThat(collected).containsExactly(key);
+  }
+
+  @Test
+  void sealingFailsOnMalformedJson() throws IOException {
+    final Path keystores = Files.createDirectory(dir.resolve("keystores"));
+    Files.writeString(keystores.resolve("key.json"), "{\"crypto\": ");
+    final Path passwordFile = Files.writeString(dir.resolve("password.txt"), "x");
+    assertThatThrownBy(
+            () -> KeySealer.collect(new KeySealer.Sources(keystores, passwordFile, null, null)))
+        .isInstanceOf(EnclaveHostException.class)
+        .hasMessageContaining("Cannot parse");
+  }
+
+  @Test
+  void provisioningAnEmptyBundleFailsBeforeContactingTheEnclave() {
+    try (DevKeyReleaseBroker broker = new DevKeyReleaseBroker(masterKey())) {
+      final KeyBundle empty = KeySealer.seal(List.of(), broker);
+      assertThatThrownBy(() -> KeyProvisioner.provision(empty, broker, client, OPTIONS))
+          .isInstanceOf(EnclaveHostException.class)
+          .hasMessageContaining("no keys");
+    }
+    assertThat(client.status().keyCount()).isZero();
+  }
+
+  @Test
   void sealingFailsOnADuplicateKey() throws IOException {
     final String secret =
         EnclaveTestKeys.randomKeys(1).get(0).getSecretKey().toBytes().toHexString();

@@ -375,8 +375,9 @@ web3signer enclave seal --platform=aws-nitro --aws-region="$AWS_REGION" \
 shred -u raw-keys.txt
 ```
 
-Sealing fails on a keystore it cannot decrypt, on a duplicate key and on an empty input. It prints
-the number of keys and the KMS key ARN, never a secret.
+Sealing fails on a keystore it cannot decrypt, on a file that is not valid JSON, on a duplicate key
+and on an empty input. Other JSON files in the keystores directory, such as `deposit_data-*.json`,
+are skipped with a warning. It prints the number of keys and the KMS key ARN, never a secret.
 
 The bundle holds no plaintext secret and can live on the parent's disk. Copy it to the parent and
 install it as `$BUNDLE`:
@@ -679,10 +680,13 @@ What to watch:
 - `web3signer enclave status --address=vsock:16:5000 --min-keys=<expected keys>` exits non-zero when
   the enclave is unreachable or holds fewer keys.
 - `/healthcheck` asks the enclave for its status on every call. Its `enclave-signer` check is UP with
-  the enclave's `keys` and `boot-id` while the enclave answers and holds keys, and DOWN otherwise;
-  any DOWN check makes the overall status DOWN (HTTP 503). It also reports
+  the enclave's `keys` and `boot-id` while the enclave answers and holds keys, and DOWN otherwise,
+  with an `error` when the enclave does not answer (within about 4 s for a missing enclave). Any
+  DOWN check makes the overall status DOWN (HTTP 503). It also reports
   `keys-check/enclave-bulk-loading` with `keys-loaded` and `error-count` from the last key load,
   and the database check.
+- A `/reload` while the enclave is down keeps the enclave keys of the last successful load and
+  reports `error-count` 1; signing them answers `Signer unavailable` until the enclave is back.
 
 ## Troubleshoot
 

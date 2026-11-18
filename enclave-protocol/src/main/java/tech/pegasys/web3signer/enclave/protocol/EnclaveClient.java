@@ -47,8 +47,11 @@ public final class EnclaveClient implements Closeable {
   static final long RECONNECT_DELAY_NANOS = TimeUnit.MILLISECONDS.toNanos(200);
   private static final long POLL_MILLIS = 100;
 
-  /** Upper bound of dispatchers when their number comes from the enclave's {@code cpus}. */
-  static final int MAX_DEFAULT_CONNECTIONS = 64;
+  /**
+   * Upper bound of dispatchers when their number comes from the enclave's {@code cpus}. Below the
+   * signer's connection limit (64), so that control and provisioning connections still get in.
+   */
+  static final int MAX_DEFAULT_CONNECTIONS = 32;
 
   /**
    * Client settings.
@@ -245,6 +248,7 @@ public final class EnclaveClient implements Closeable {
           new EnclaveUnavailableException(
               "Enclave signer did not answer within " + options.requestTimeoutMillis() + " ms");
       if (call.result.completeExceptionally(timeout)) {
+        queue.remove(call); // free its slot if no dispatcher has taken it yet
         throw timeout;
       }
       // the dispatcher answered between the timeout and here: keep its answer
@@ -254,6 +258,7 @@ public final class EnclaveClient implements Closeable {
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
       call.result.completeExceptionally(e);
+      queue.remove(call);
       throw new EnclaveUnavailableException("Interrupted while waiting for the enclave signer", e);
     }
   }

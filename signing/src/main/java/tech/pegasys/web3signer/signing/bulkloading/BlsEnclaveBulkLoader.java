@@ -36,6 +36,10 @@ import org.apache.logging.log4j.Logger;
  * returned signer shares; it is created on the first {@link #load()} and closed by {@link
  * #close()}. Also answers {@link #status()} for the health check, through a second client with a
  * short timeout so that a hung enclave signer cannot hold the check for long.
+ *
+ * <p>A failed {@link #load()} returns the signers of the last successful one, with an error, so
+ * that a reload during an enclave signer outage keeps its keys known: signing them fails as
+ * unavailable rather than as unknown keys.
  */
 public class BlsEnclaveBulkLoader implements Closeable {
   private static final Logger LOG = LogManager.getLogger();
@@ -53,6 +57,7 @@ public class BlsEnclaveBulkLoader implements Closeable {
   private EnclaveClient client;
   private EnclaveClient statusClient;
   private boolean closed;
+  private volatile List<ArtifactSigner> lastLoaded = List.of();
 
   public BlsEnclaveBulkLoader(final EnclaveSignerParameters parameters) {
     this.parameters = parameters;
@@ -117,7 +122,7 @@ public class BlsEnclaveBulkLoader implements Closeable {
             enclave.target(),
             status.protocolVersion(),
             Protocol.VERSION);
-        return MappedResults.errorResult();
+        return failedLoad();
       }
       final List<ArtifactSigner> signers = new ArrayList<>();
       for (final byte[] publicKey : enclave.publicKeys()) {
@@ -129,11 +134,20 @@ public class BlsEnclaveBulkLoader implements Closeable {
           status.platformName(),
           status.version(),
           signers.size());
+      lastLoaded = List.copyOf(signers);
       return MappedResults.newInstance(signers, 0);
     } catch (final RuntimeException e) {
       LOG.error("Unable to load keys from the enclave signer: {}", e.getMessage());
-      return MappedResults.errorResult();
+      return failedLoad();
     }
+  }
+
+  private MappedResults<ArtifactSigner> failedLoad() {
+    final List<ArtifactSigner> previous = lastLoaded;
+    if (!previous.isEmpty()) {
+      LOG.warn("Keeping {} enclave signer keys from the last successful load", previous.size());
+    }
+    return MappedResults.newInstance(new ArrayList<>(previous), 1);
   }
 
   @Override

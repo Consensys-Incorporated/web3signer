@@ -34,6 +34,10 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 
@@ -43,6 +47,8 @@ import org.apache.tuweni.bytes.Bytes32;
  * operator's machine; never prints or logs a secret.
  */
 public final class KeySealer {
+  private static final Logger LOG = LogManager.getLogger(KeySealer.class);
+  private static final ObjectMapper JSON = new ObjectMapper();
   private static final SecureRandom RANDOM = new SecureRandom();
 
   private KeySealer() {}
@@ -110,6 +116,10 @@ public final class KeySealer {
     }
     final List<BLSKeyPair> keys = new ArrayList<>();
     for (final Path file : files) {
+      if (!looksLikeKeystore(file)) {
+        LOG.warn("Skipping {}: not an EIP-2335 keystore (no crypto section)", file);
+        continue;
+      }
       final String name = file.getFileName().toString();
       final Path passwordFile =
           sources.keystoresPasswordFile() != null
@@ -127,6 +137,20 @@ public final class KeySealer {
       }
     }
     return keys;
+  }
+
+  /**
+   * Whether {@code file} is a JSON object with a {@code crypto} section, as every EIP-2335 keystore
+   * is. Other valid JSON (such as staking-deposit-cli {@code deposit_data-*.json}) is skipped;
+   * malformed JSON fails, so a damaged keystore is never dropped silently.
+   */
+  private static boolean looksLikeKeystore(final Path file) {
+    try {
+      final JsonNode root = JSON.readTree(file.toFile());
+      return root != null && root.isObject() && root.has("crypto");
+    } catch (final IOException e) {
+      throw new EnclaveHostException("Cannot parse " + file + " as JSON", e);
+    }
   }
 
   private static List<BLSKeyPair> fromRawKeysFile(final Path file) {

@@ -9,6 +9,8 @@ Group=web3signer
 Environment=JAVA_HOME=/usr/lib/jvm/java-25-amazon-corretto.x86_64
 EnvironmentFile=/etc/web3signer/web3signer.env
 ExecStartPre=/opt/web3signer/bin/web3signer enclave status --address=vsock:16:5000 --wait-seconds=120 --min-keys=1
+# covers ExecStartPre: the default of 90 s would end the 120 s wait for the enclave keys early
+TimeoutStartSec=180
 ExecStart=/opt/web3signer/bin/web3signer --config-file=/etc/web3signer/config.yaml eth2
 Restart=on-failure
 RestartSec=5
