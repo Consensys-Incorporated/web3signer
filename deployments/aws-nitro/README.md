@@ -107,20 +107,25 @@ Have ready:
   Amazon RDS.
 - Three IAM identities for the roles above, with the permissions listed in step 3.
 
-Sizing, as measured on an `m5.xlarge` (Intel Xeon Platinum 8175M):
+Sizing, as measured on an `m5.xlarge` (Intel Xeon Platinum 8175M) with 10,000 keys in the enclave:
 
-- An enclave with 2 vCPUs is one physical core. One BLS signature took 453 µs; the core signed about
-  2,200 signatures per second, whether one or two threads signed.
-- A round trip between Web3Signer and the enclave took 205 µs. Web3Signer sends several requests
-  per round trip under load; with 8 per round trip the enclave reached 2,060 signatures per second.
+- An enclave with 2 vCPUs is one physical core. One BLS signature took 452 µs.
+- One signing request from the parent took 715 µs at the median (p99 about 1.1 ms): the vsock hop
+  adds about 265 µs to the signature.
+- With the default settings Web3Signer sends up to 8 requests per write. Under load the enclave then
+  signed 2,150 to 2,160 signatures per second, close to what its core can compute. More connections
+  added only tail latency.
+- Debug and production mode signed at the same rate.
 - Enclave memory comes in the steps of the allocator's reservation (1 GiB with hugepages). The signer
   left about 800 MB of 1024 MiB unused. The enclave image is about 80 MB.
-- The enclave accepted connections about 2.3 s after `nitro-cli run-enclave` started.
+- The enclave accepted connections about 2.3 s after `nitro-cli run-enclave` started. Provisioning
+  10,000 keys took about 2 s; after `systemctl restart web3signer-enclave` the keys were back about
+  8 s later.
 
 ## Names
 
 The commands below use these variables. Set them in every shell you use and fill in the values in
-`<angle brackets>`.
+`<angle brackets>`. The commands work in bash and zsh.
 
 ```bash
 export AWS_REGION=<region>                       # region of the instance and of the KMS keys
@@ -132,11 +137,15 @@ BUNDLE=/etc/web3signer-enclave/keys.bundle.json
 W3S=/opt/web3signer/bin/web3signer
 export ADMIN_ARN=<ARN of the KMS key administrator role>
 export OPERATOR_ARN=<ARN of the sealing operator role>
-export PARENT_ROLE_ARN=arn:aws:iam::$ACCOUNT:role/<role of the parent instance profile>
+export PARENT_ROLE_ARN=arn:aws:iam::${ACCOUNT}:role/<role of the parent instance profile>   # braces: zsh reads $ACCOUNT:r as a modifier
 ```
 
 `PARENT_ROLE_ARN` is the IAM role of the instance profile, not the session ARN that
 `aws sts get-caller-identity` prints on the instance (`…:assumed-role/<role>/<instance id>`).
+
+If you paste commands into a terminal that wraps long lines, for example an SSM Session Manager
+session, paste one command at a time. A command broken across lines with `\` needs Unix line endings
+to work.
 
 ## 1. Prepare the parent instance
 
@@ -208,6 +217,10 @@ machine with `nitro-cli`; the Web3Signer distribution can also be built elsewher
    ./gradlew distTar
    sudo tar -xzf build/distributions/web3signer-*.tar.gz -C /opt/web3signer --strip-components=1
    ```
+
+   The version string comes from the nearest release tag. If you build from a fork without the
+   newer tags, fetch them first (`git fetch https://github.com/Consensys/web3signer.git --tags`),
+   or the version shows an old release.
 
 2. Build the enclave image. `docker/Dockerfile.enclave` builds the signer and a minimal Java runtime;
    `nitro-cli` turns the Docker image into an EIF:
@@ -289,7 +302,12 @@ You create two keys:
    id=$(aws kms create-key --description "web3signer enclave signer: production" \
           --policy file://w3s-enclave-prod-policy.json --query KeyMetadata.KeyId --output text)
    aws kms create-alias --alias-name alias/w3s-enclave-prod --target-key-id "$id"
+   echo "$id"            # the key id, needed to change the key policy later
+   aws kms describe-key --key-id alias/w3s-enclave-prod --query KeyMetadata.KeyState    # "Enabled"
    ```
+
+   `create-alias` prints nothing when it succeeds. Running it again fails with
+   `AlreadyExistsException`, which is harmless.
 
 Options:
 
@@ -319,10 +337,18 @@ The operator's machine needs:
 - the Web3Signer distribution (Java 25);
 - network access to the KMS endpoint of `$AWS_REGION`;
 - AWS credentials for `OPERATOR_ARN`, found through the AWS SDK default credential chain:
-  environment variables, a profile (`AWS_PROFILE`, including IAM Identity Center profiles after
-  `aws sso login`), or an instance role. Within the key's account no IAM policy is needed: the key
-  policy grants `kms:GenerateDataKey`, and nothing else. An operator identity in another account
-  also needs an IAM policy that allows `kms:GenerateDataKey` on the key.
+  environment variables, a profile with static keys or a role to assume, or an instance role.
+  Within the key's account no IAM policy is needed: the key policy grants `kms:GenerateDataKey`,
+  and nothing else. An operator identity in another account also needs an IAM policy that allows
+  `kms:GenerateDataKey` on the key.
+
+  The distribution cannot use an IAM Identity Center (SSO) profile directly. Export its credentials
+  into the shell after `aws sso login`, and export them again when they expire (after about an hour
+  KMS answers `The security token included in the request is expired`):
+
+  ```bash
+  eval "$(aws configure export-credentials --profile <profile> --format env)"
+  ```
 
 Sealing creates a new data key in KMS, encrypts each BLS key with it, and writes the bundle. The
 keystores are decrypted in memory only; no secret is written to disk. Afterwards the operator cannot
@@ -420,10 +446,24 @@ debug key accepts.
    |---|---|---|
    | The parent role cannot open the data key | The `aws kms decrypt` command of the trial, against the production bundle | `AccessDeniedException` |
    | A debug enclave gets nothing | Terminate, start the same EIF with `--debug-mode`, run `provision` | KMS `AccessDeniedException`, zero keys loaded |
-   | Another image gets nothing | Rebuild the image with any change, run it in production mode, run `provision` | KMS `AccessDeniedException` |
+   | Another image gets nothing | Build a changed image as below, run it in production mode, run `provision` | KMS `AccessDeniedException`, zero keys loaded |
 
-3. Start the production enclave again and provision it. Never seal real validator keys under the
-   debug key.
+   The enclave image has no shell, so change it by adding a file:
+
+   ```bash
+   mkdir ~/chg && echo changed > ~/chg/x
+   printf 'FROM web3signer-enclave\nCOPY x /x\n' > ~/chg/Dockerfile
+   docker build -t web3signer-enclave:changed ~/chg
+   nitro-cli build-enclave --docker-uri web3signer-enclave:changed --output-file ~/changed.eif
+   ```
+
+   The PCR0 it prints differs from yours. In all three checks KMS answers that `no resource-based
+   policy allows the kms:Decrypt action`: the message is the same whether the parent asks alone or
+   with an attestation document that the policy does not accept. Afterwards delete `~/chg`,
+   `~/changed.eif` and the image `web3signer-enclave:changed`.
+
+3. Terminate the test enclave, start the production enclave again and provision it. Never seal real
+   validator keys under the debug key.
 
 If you will run the enclave with the systemd units of step 8, terminate the enclave you started by
 hand now. Only the user that started an enclave can terminate it.
@@ -513,21 +553,13 @@ can reach over TLS works the same way.
 
 Run this step as the administrator of the parent instance.
 
-1. Install the configuration file. `deployments/aws-nitro/config.yaml.example` holds the same
-   settings; replace `<db-host>` there, or write the file directly:
+1. Install the configuration file from `deployments/aws-nitro/config.yaml.example` and put in your
+   database endpoint:
 
    ```bash
-   sudo tee /etc/web3signer/config.yaml >/dev/null <<EOF
-   http-listen-host: "127.0.0.1"
-   http-listen-port: 9000
-   key-config-path: "/var/lib/web3signer/keys"
-   metrics-enabled: true
-   eth2.network: "hoodi"
-   eth2.slashing-protection-db-url: "jdbc:postgresql://$DB_HOST:5432/web3signer?sslmode=verify-full&sslrootcert=/etc/web3signer/rds-global-bundle.pem"
-   eth2.slashing-protection-db-username: "web3signer"
-   eth2.Xenclave-signer-enabled: true
-   eth2.Xenclave-signer-address: "vsock:16:5000"
-   EOF
+   sudo install -m 0644 ~/web3signer/deployments/aws-nitro/config.yaml.example /etc/web3signer/config.yaml
+   sudo sed -i "s/<db-host>/$DB_HOST/" /etc/web3signer/config.yaml
+   grep db-url /etc/web3signer/config.yaml
    ```
 
    - `key-config-path` points at an empty directory, so no key is loaded from disk.
@@ -551,27 +583,35 @@ Run this step as the administrator of the parent instance.
    ```
 
 4. Sign test messages, **with throwaway keys only**: the database remembers every slashable message
-   it signed. The fork values below are Hoodi's; change them for another network.
+   it signed. The fork values below are Hoodi's; change them for another network. The request
+   bodies are written to files, which keeps every command short:
 
    ```bash
    PK=$(curl -s http://127.0.0.1:9000/api/v1/eth2/publicKeys | jq -r '.[0]')
-   ZERO=0x$(printf '0%.0s' {1..64})
-   FORK='{"fork":{"previous_version":"0x60000910","current_version":"0x70000910","epoch":"50688"},"genesis_validators_root":"0x212f13fc4df078b6cb7db228f1c8307566dcecf900867401a92023d7ba99cb5f"}'
+   URL=http://127.0.0.1:9000/api/v1/eth2/sign/$PK
+   GVR=0x212f13fc4df078b6cb7db228f1c8307566dcecf900867401a92023d7ba99cb5f
+   FV='{"previous_version":"0x60000910","current_version":"0x70000910","epoch":"50688"}'
+   jq -n --argjson f "$FV" --arg g "$GVR" '{fork: $f, genesis_validators_root: $g}' > fork.json
 
    # Not slashable: exercises the enclave only
-   curl -s -X POST "http://127.0.0.1:9000/api/v1/eth2/sign/$PK" \
-     -H 'Content-Type: application/json' -H 'Accept: application/json' \
-     -d "{\"type\":\"RANDAO_REVEAL\",\"fork_info\":$FORK,\"randao_reveal\":{\"epoch\":\"60000\"}}"
+   jq -n --slurpfile fi fork.json \
+     '{type: "RANDAO_REVEAL", fork_info: $fi[0], randao_reveal: {epoch: "60000"}}' > randao.json
+   curl -s -H 'Content-Type: application/json' -d @randao.json "$URL"; echo
 
    # Slashable: same target epoch, different block root. The second request must be refused
+   ZERO=0x$(printf '0%.0s' {1..64})
    att() {
-     curl -s -o /dev/null -w '%{http_code}\n' -X POST "http://127.0.0.1:9000/api/v1/eth2/sign/$PK" \
-       -H 'Content-Type: application/json' \
-       -d "{\"type\":\"ATTESTATION\",\"fork_info\":$FORK,\"attestation\":{\"slot\":\"1920032\",\"index\":\"0\",\"beacon_block_root\":\"$1\",\"source\":{\"epoch\":\"60000\",\"root\":\"$ZERO\"},\"target\":{\"epoch\":\"60001\",\"root\":\"$ZERO\"}}}"
+     jq -n --slurpfile fi fork.json --arg r "$1" --arg z "$ZERO" '{type: "ATTESTATION",
+       fork_info: $fi[0], attestation: {slot: "1920032", index: "0", beacon_block_root: $r,
+       source: {epoch: "60000", root: $z}, target: {epoch: "60001", root: $z}}}' > att.json
+     curl -s -o /dev/null -w '%{http_code}\n' -H 'Content-Type: application/json' -d @att.json "$URL"
    }
    att 0x$(printf '1%.0s' {1..64})        # 200
    att 0x$(printf '2%.0s' {1..64})        # 412
    ```
+
+   The order of `/publicKeys` can change when Web3Signer restarts. To compare signatures across a
+   restart, keep `$PK` instead of reading `.[0]` again.
 
 5. Stop the foreground Web3Signer with Ctrl-C.
 
@@ -613,9 +653,9 @@ make the set-up permanent:
 What happens:
 
 - **On a reboot**, both units start. The enclave is started and provisioned before Web3Signer starts.
-- **When the enclave stops**, `web3signer-enclave.service` starts and provisions a new one. Web3Signer
-  keeps running; signing requests fail with HTTP 500 until the keys are loaded again, then work
-  without a Web3Signer restart.
+- **When the enclave stops**, `web3signer-enclave.service` starts and provisions a new one, about
+  8 s later with 10,000 keys. Web3Signer keeps running; signing requests fail with HTTP 500 until
+  the keys are loaded again, then work without a Web3Signer restart.
 
 ## Operate
 
@@ -623,7 +663,7 @@ What happens:
 |---|---|
 | Add keys | Seal a bundle with the new keys (or all keys), install it as `$BUNDLE`, run `web3signer enclave provision` again (it is additive), then `curl -X POST http://127.0.0.1:9000/reload` |
 | Remove keys | Install a bundle without them, `sudo systemctl restart web3signer-enclave`, then `curl -X POST http://127.0.0.1:9000/reload` |
-| New enclave image | Build it, read its PCR0, have the key administrator update the production key policy (`policy w3s-enclave-prod "<new PCR0>"`, then `aws kms put-key-policy --key-id alias/w3s-enclave-prod --policy-name default --policy file://w3s-enclave-prod-policy.json`), install the EIF, `sudo systemctl restart web3signer-enclave`. The bundle stays valid |
+| New enclave image | Build it, read its PCR0, have the key administrator update the production key policy (`policy w3s-enclave-prod "<new PCR0>"`, then `aws kms put-key-policy --key-id <key id> --policy-name default --policy file://w3s-enclave-prod-policy.json`; `put-key-policy` takes the key id or ARN, not an alias: `aws kms describe-key --key-id alias/w3s-enclave-prod --query KeyMetadata.KeyId`), install the EIF, `sudo systemctl restart web3signer-enclave`. The bundle stays valid |
 | New Web3Signer version | Replace `/opt/web3signer`, apply any new migrations with Flyway as in step 6, `sudo systemctl restart web3signer` |
 
 What to back up:
@@ -651,12 +691,14 @@ What to watch:
 | `nitro-cli` fails with a permission error under systemd | The service user is not in group `ne`, or cannot write `/var/log/nitro_enclaves` | Check `id web3signer`. As a fallback run `web3signer-enclave.service` as root |
 | `enclave status` cannot connect | The signer is not up yet, wrong CID or port, or the command runs inside a container | `nitro-cli describe-enclaves` shows the CID. Run the tools on the host |
 | `provision` stops with `ATTESTATION_FAILED` | The enclave could not obtain an attestation document | Start the enclave in debug mode, run `provision` again and report the console output |
-| `provision` fails in KMS with `AccessDeniedException` | The PCR0 in the key policy differs from the enclave's (debug mode reports zeros; the image was rebuilt), wrong role ARN, wrong encryption context, wrong region | Compare the policy with `nitro-cli describe-enclaves`. The CloudTrail `Decrypt` event records what KMS saw in `attestationDocumentEnclaveImageDigest` and the `attestationDocumentEnclavePCR…` fields ([reference](https://docs.aws.amazon.com/kms/latest/developerguide/ct-nitro-enclave.html)); the digest there is base64, the policy holds hex. Reading it needs `cloudtrail:LookupEvents` |
+| `provision` fails in KMS with `AccessDeniedException ... no resource-based policy allows the kms:Decrypt action` | The PCR0 in the key policy differs from the enclave's (debug mode reports zeros; the image was rebuilt), wrong role ARN, wrong encryption context, wrong region | Compare the policy with `nitro-cli describe-enclaves`. The CloudTrail `Decrypt` event records what KMS saw in `attestationDocumentEnclaveImageDigest` and the `attestationDocumentEnclavePCR…` fields ([reference](https://docs.aws.amazon.com/kms/latest/developerguide/ct-nitro-enclave.html)); the digest there is base64, the policy holds hex. Reading it needs `cloudtrail:LookupEvents` |
+| `put-key-policy` fails with `MalformedPolicyDocumentException ... invalid principals` | A role ARN in the policy is wrong, for example `$ACCOUNT:role` in zsh, which expands as `$ACCOUNT` with the `:r` modifier | Write `${ACCOUNT}`, regenerate the policy and check the ARNs in it |
+| `seal` fails with `The security token included in the request is expired` | Exported SSO credentials expired | Run `aws sso login` and export the credentials again (step 4) |
 | `provision` aborts on the policy check | The parent role can decrypt the data key without an enclave | Remove every other statement or grant that allows `kms:Decrypt` on the key |
 | `provision` fails with `UNWRAP_FAILED` | KMS's answer was not in the expected form | Run `provision` again with `--Xdump-release-blob=<file>` and report the file. It is encrypted to a key that no longer exists |
 | Every entry rejected | The bundle was sealed under another KMS key | Seal again with the key whose policy matches this enclave |
 | Web3Signer shows zero enclave keys | It started before provisioning finished | `curl -X POST http://127.0.0.1:9000/reload`. The systemd units avoid this |
-| Signing returns 500 right after an enclave restart | The keys are not loaded yet | Wait for `web3signer-enclave.service`. Web3Signer needs no restart |
+| Signing returns 500 while the enclave is down or restarting | The enclave is gone or its keys are not loaded yet. Web3Signer logs `EnclaveUnavailableException: Enclave signer did not answer within 2000 ms` | Wait for `web3signer-enclave.service`. Web3Signer needs no restart |
 | Web3Signer cannot reach the database | Security group, subnet routing, or a host name that does not match the certificate | Use the RDS endpoint name, never an IP address, with `sslmode=verify-full` |
 | Web3Signer reports a database version error | Migrations missing | Run Flyway again. The version must be 12 |
 
