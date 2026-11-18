@@ -10,6 +10,7 @@
 ### Bugs Fixed
 
 ### Features Added
+- Experimental enclave signer for eth2 (AWS Nitro Enclaves): BLS keys exist in plaintext only inside the enclave, and Web3Signer signs through it. Enabled with the hidden `--Xenclave-signer-*` options of `eth2`; keys are sealed, loaded and checked with the `web3signer enclave` subcommands (`seal`, `provision`, `status`, `bench`). Slashing protection stays in Web3Signer. `/healthcheck` reports the enclave's live status as `enclave-signer`, and signing while the enclave is down answers 500 with `Signer unavailable: ...`. The options can change without notice. Deployment guide: `deployments/aws-nitro/README.md`.
 
 ### CI/Build Enhancements
 
@@ -32,7 +33,6 @@ These options are deprecated and will be removed in a future release. Using them
   - Eth1 downstream web3 provider: `--downstream-http-tls-truststore-file` and `--downstream-http-tls-truststore-password-file`. Requires `--downstream-http-tls-enabled`. Cannot be combined with `--downstream-http-tls-known-servers-file` or `--downstream-http-tls-ca-auth-enabled`.
   - Hashicorp Vault signing metadata: `tlsTruststoreFile` and `tlsTruststorePasswordFile`. Requires `tlsEnabled: true`. Cannot be combined with `tlsKnownServersPath`. Relative paths resolve against the key config directory.
 - Docker images can now be built without a local Java install: when the `TAR_FILE` build argument is omitted, `docker/Dockerfile` and `docker/Dockerfile.distroless` build the distribution from source inside Docker. Building from a pre-built `TAR_FILE` remains the recommended path. See `docker/README.md`. [#1249][PR_1249]
-- Experimental enclave signer for eth2 (AWS Nitro Enclaves): BLS keys exist in plaintext only inside the enclave, and Web3Signer signs through it. Enabled with the hidden `--Xenclave-signer-*` options of `eth2`; keys are sealed, loaded and checked with the `web3signer enclave` subcommands (`seal`, `provision`, `status`, `bench`). Slashing protection stays in Web3Signer. `/healthcheck` reports the enclave's live status as `enclave-signer`, and signing while the enclave is down answers 500 with `Signer unavailable: ...`. The options can change without notice. Deployment guide: `deployments/aws-nitro/README.md`.
 
 ### Bugs Fixed
 - Hashicorp key files for the same Vault shared one HTTP client, even with different TLS settings. The first key file loaded decided the trust for all of them. Key files with different TLS settings now get separate clients. [#1282][PR_1282]
