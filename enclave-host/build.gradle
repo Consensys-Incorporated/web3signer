@@ -39,6 +39,9 @@ dependencies {
   implementation 'software.amazon.awssdk:kms'
   implementation 'tech.pegasys.teku.internal:bls'
 
+  // IAM Identity Center profiles in the default credentials chain, for `enclave seal`.
+  runtimeOnly 'software.amazon.awssdk:sso'
+  runtimeOnly 'software.amazon.awssdk:ssooidc'
   runtimeOnly 'tech.pegasys:jblst'
 
   testImplementation testFixtures(project(':enclave-signer'))

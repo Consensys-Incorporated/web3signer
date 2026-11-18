@@ -111,6 +111,26 @@ class AwsKmsKeyReleaseBrokerTest {
   }
 
   @Test
+  void releaseExplainsAnAccessDeniedAndKeepsTheKmsMessage() {
+    final KmsException denied = kmsError("AccessDeniedException");
+    when(kms.decrypt(any(DecryptRequest.class))).thenThrow(denied);
+    assertThatThrownBy(() -> broker.release(DEK, new byte[] {7}))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("KMS refused to release the data key to the enclave")
+        .hasMessageContaining("--debug-mode")
+        .hasMessageContaining("PCR0")
+        .hasMessageContaining("KMS said: " + denied.getMessage())
+        .hasCause(denied);
+  }
+
+  @Test
+  void releasePassesOtherKmsErrorsThrough() {
+    final KmsException notFound = kmsError("NotFoundException");
+    when(kms.decrypt(any(DecryptRequest.class))).thenThrow(notFound);
+    assertThatThrownBy(() -> broker.release(DEK, new byte[] {7})).isSameAs(notFound);
+  }
+
+  @Test
   void policyCheckIsADryRunWithoutRecipient() {
     when(kms.decrypt(any(DecryptRequest.class))).thenThrow(kmsError("AccessDeniedException"));
     broker.assertAttestationRequired(DEK);

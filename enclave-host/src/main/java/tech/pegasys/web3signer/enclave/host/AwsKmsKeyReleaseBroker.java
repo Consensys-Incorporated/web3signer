@@ -87,18 +87,32 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
 
   @Override
   public byte[] release(final KeyBundle.Dek dek, final byte[] attestationDocument) {
-    final DecryptResponse response =
-        kms.decrypt(
-            DecryptRequest.builder()
-                .ciphertextBlob(SdkBytes.fromByteArray(dek.wrapped()))
-                .encryptionContext(dek.encryptionContext())
-                .keyId(dek.keyId())
-                .recipient(
-                    RecipientInfo.builder()
-                        .attestationDocument(SdkBytes.fromByteArray(attestationDocument))
-                        .keyEncryptionAlgorithm(KeyEncryptionMechanism.RSAES_OAEP_SHA_256)
-                        .build())
-                .build());
+    final DecryptResponse response;
+    try {
+      response =
+          kms.decrypt(
+              DecryptRequest.builder()
+                  .ciphertextBlob(SdkBytes.fromByteArray(dek.wrapped()))
+                  .encryptionContext(dek.encryptionContext())
+                  .keyId(dek.keyId())
+                  .recipient(
+                      RecipientInfo.builder()
+                          .attestationDocument(SdkBytes.fromByteArray(attestationDocument))
+                          .keyEncryptionAlgorithm(KeyEncryptionMechanism.RSAES_OAEP_SHA_256)
+                          .build())
+                  .build());
+    } catch (final KmsException e) {
+      if (isAccessDenied(e)) {
+        throw new IllegalStateException(
+            "KMS refused to release the data key to the enclave: the key policy does not accept"
+                + " this enclave's attestation. Check that the enclave runs without --debug-mode"
+                + " and that the PCR0 in the key policy matches the image (nitro-cli describe-eif)."
+                + " KMS said: "
+                + e.getMessage(),
+            e);
+      }
+      throw e;
+    }
     if (response.plaintext() != null && response.plaintext().asByteArray().length > 0) {
       throw new IllegalStateException(
           "KMS returned the data key in plaintext although a recipient was given; aborting");
@@ -123,14 +137,18 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
       throw new IllegalStateException(
           "This principal can decrypt the data key without attestation; fix the KMS key policy");
     } catch (final KmsException e) {
-      if (e.awsErrorDetails() != null
-          && "AccessDeniedException".equals(e.awsErrorDetails().errorCode())) {
+      if (isAccessDenied(e)) {
         return;
       }
       throw new IllegalStateException("KMS key policy check failed: " + e.getMessage(), e);
     }
     throw new IllegalStateException(
         "KMS accepted a dry-run Decrypt without attestation; fix the KMS key policy");
+  }
+
+  private static boolean isAccessDenied(final KmsException e) {
+    return e.awsErrorDetails() != null
+        && "AccessDeniedException".equals(e.awsErrorDetails().errorCode());
   }
 
   @Override
