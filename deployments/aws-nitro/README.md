@@ -8,8 +8,9 @@ for each signature. AWS KMS releases the keys only to an enclave image you have 
 approved.
 
 > **Status: experimental.** The `--Xenclave-signer-*` options are hidden and can change without
-> notice. The building blocks of this deployment were tried on an `m5.xlarge` with Amazon Linux 2023
-> and nitro-cli 1.5.0 in `us-east-1`. The guide as a whole has not yet been followed end to end.
+> notice. The guide was followed end to end on 2026-11-18 in `us-east-1`, on an `m5.xlarge` with
+> Amazon Linux 2023.12.20261109 (kernel 6.18.56), Nitro CLI 1.5.0, Docker 25.0.14, Amazon Corretto
+> 25.0.5 and RDS for PostgreSQL 17.9, with 10,000 test keys on the Hoodi network.
 
 ## What it protects and what it does not
 
