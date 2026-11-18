@@ -14,11 +14,14 @@ package tech.pegasys.web3signer.signing.bulkloading;
 
 import tech.pegasys.web3signer.enclave.protocol.EnclaveAddress;
 import tech.pegasys.web3signer.enclave.protocol.EnclaveClient;
+import tech.pegasys.web3signer.enclave.protocol.EnclaveException;
 import tech.pegasys.web3signer.enclave.protocol.EnclaveStatus;
+import tech.pegasys.web3signer.enclave.protocol.EnclaveUnavailableException;
 import tech.pegasys.web3signer.enclave.protocol.Protocol;
 import tech.pegasys.web3signer.keystorage.common.MappedResults;
 import tech.pegasys.web3signer.signing.ArtifactSigner;
 import tech.pegasys.web3signer.signing.EnclaveBlsArtifactSigner;
+import tech.pegasys.web3signer.signing.SignerUnavailableException;
 import tech.pegasys.web3signer.signing.config.EnclaveSignerParameters;
 
 import java.io.Closeable;
@@ -31,13 +34,24 @@ import org.apache.logging.log4j.Logger;
 /**
  * Loads one signer per key held by an enclave signer. Owns the {@link EnclaveClient} that every
  * returned signer shares; it is created on the first {@link #load()} and closed by {@link
- * #close()}.
+ * #close()}. Also answers {@link #status()} for the health check, through a second client with a
+ * short timeout so that a hung enclave signer cannot hold the check for long.
  */
 public class BlsEnclaveBulkLoader implements Closeable {
   private static final Logger LOG = LogManager.getLogger();
+  private static final int STATUS_TIMEOUT_MILLIS = 500;
+
+  /**
+   * Answer of the enclave signer to {@code STATUS}.
+   *
+   * @param keyCount number of keys the enclave signer holds
+   * @param bootId random id the enclave signer chose at start, as hex
+   */
+  public record EnclaveSignerStatus(long keyCount, String bootId) {}
 
   private final EnclaveSignerParameters parameters;
   private EnclaveClient client;
+  private EnclaveClient statusClient;
   private boolean closed;
 
   public BlsEnclaveBulkLoader(final EnclaveSignerParameters parameters) {
@@ -45,9 +59,7 @@ public class BlsEnclaveBulkLoader implements Closeable {
   }
 
   private synchronized EnclaveClient client() {
-    if (closed) {
-      throw new IllegalStateException("Enclave bulk loader is closed");
-    }
+    requireOpen();
     if (client == null) {
       client =
           EnclaveClient.create(
@@ -58,6 +70,41 @@ public class BlsEnclaveBulkLoader implements Closeable {
                   parameters.getRequestTimeoutMillis()));
     }
     return client;
+  }
+
+  private synchronized EnclaveClient statusClient() {
+    requireOpen();
+    if (statusClient == null) {
+      // only used for status(), which opens a short-lived connection and starts no dispatcher
+      statusClient =
+          EnclaveClient.create(
+              EnclaveAddress.parseConnect(parameters.getAddress()),
+              new EnclaveClient.Options(
+                  1, 1, Math.min(STATUS_TIMEOUT_MILLIS, parameters.getRequestTimeoutMillis())));
+    }
+    return statusClient;
+  }
+
+  private void requireOpen() {
+    if (closed) {
+      throw new IllegalStateException("Enclave bulk loader is closed");
+    }
+  }
+
+  /**
+   * Asks the enclave signer for its status. Blocks for at most two connection attempts, each
+   * bounded by {@value #STATUS_TIMEOUT_MILLIS} ms (or the configured request timeout, if shorter)
+   * per connect, write and read.
+   *
+   * @throws SignerUnavailableException when the enclave signer does not answer
+   */
+  public EnclaveSignerStatus status() {
+    try {
+      final EnclaveStatus status = statusClient().status();
+      return new EnclaveSignerStatus(status.keyCount(), status.bootId());
+    } catch (final EnclaveUnavailableException | EnclaveException e) {
+      throw EnclaveBlsArtifactSigner.unavailable(e);
+    }
   }
 
   public MappedResults<ArtifactSigner> load() {
@@ -95,6 +142,10 @@ public class BlsEnclaveBulkLoader implements Closeable {
     if (client != null) {
       client.close();
       client = null;
+    }
+    if (statusClient != null) {
+      statusClient.close();
+      statusClient = null;
     }
   }
 }

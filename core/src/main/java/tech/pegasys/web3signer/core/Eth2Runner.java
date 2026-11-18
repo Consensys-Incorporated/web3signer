@@ -12,6 +12,7 @@
  */
 package tech.pegasys.web3signer.core;
 
+import static tech.pegasys.web3signer.core.config.HealthCheckNames.ENCLAVE_SIGNER;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_AWS_BULK_LOADING;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_AZURE_BULK_LOADING;
 import static tech.pegasys.web3signer.core.config.HealthCheckNames.KEYS_CHECK_CONFIG_FILE_LOADING;
@@ -325,6 +326,14 @@ public class Eth2Runner extends Runner {
     super.run();
     scheduleAndExecuteInitialDbPruning();
     slashingProtectionContext.ifPresent(this::scheduleDbHealthCheck);
+    enclaveBulkLoader.ifPresent(this::registerEnclaveSignerHealthCheck);
+  }
+
+  private void registerEnclaveSignerHealthCheck(final BlsEnclaveBulkLoader loader) {
+    super.registerHealthCheckProcedure(
+        ENCLAVE_SIGNER,
+        new EnclaveSignerHealthCheck(
+            loader, createSingleThreadScheduledExecutor("enclave-signer-health-check")));
   }
 
   private void scheduleDbHealthCheck(final SlashingProtectionContext protectionContext) {

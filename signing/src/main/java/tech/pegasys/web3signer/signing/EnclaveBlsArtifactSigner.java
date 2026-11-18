@@ -14,6 +14,9 @@ package tech.pegasys.web3signer.signing;
 
 import tech.pegasys.teku.bls.BLSSignature;
 import tech.pegasys.web3signer.enclave.protocol.EnclaveClient;
+import tech.pegasys.web3signer.enclave.protocol.EnclaveException;
+import tech.pegasys.web3signer.enclave.protocol.EnclaveUnavailableException;
+import tech.pegasys.web3signer.enclave.protocol.Protocol;
 import tech.pegasys.web3signer.signing.util.IdentifierUtils;
 
 import java.util.HexFormat;
@@ -40,11 +43,38 @@ public class EnclaveBlsArtifactSigner implements ArtifactSigner {
     return identifier;
   }
 
+  /**
+   * @throws SignerUnavailableException when the enclave signer cannot be reached, times out, or
+   *     does not hold the key (an enclave signer restarted but not provisioned yet)
+   */
   @Override
   public BlsArtifactSignature sign(final Bytes message) {
-    final byte[] signature = client.sign(publicKey, message.toArrayUnsafe());
+    final byte[] signature;
+    try {
+      signature = client.sign(publicKey, message.toArrayUnsafe());
+    } catch (final EnclaveUnavailableException e) {
+      throw unavailable(e);
+    } catch (final EnclaveException e) {
+      if (e.status() == Protocol.UNKNOWN_KEY) {
+        throw unavailable(e);
+      }
+      throw e;
+    }
     // lazy: no point decompression
     return new BlsArtifactSignature(BLSSignature.fromBytesCompressed(Bytes.wrap(signature)));
+  }
+
+  /** Wraps an enclave failure; the message carries the failure's and its root cause's messages. */
+  public static SignerUnavailableException unavailable(final RuntimeException e) {
+    String rootCauseMessage = null;
+    for (Throwable cause = e.getCause(); cause != null; cause = cause.getCause()) {
+      if (cause.getMessage() != null) {
+        rootCauseMessage = cause.getMessage();
+      }
+    }
+    final String message =
+        rootCauseMessage == null ? e.getMessage() : e.getMessage() + ": " + rootCauseMessage;
+    return new SignerUnavailableException("Signer unavailable: " + message, e);
   }
 
   @Override
