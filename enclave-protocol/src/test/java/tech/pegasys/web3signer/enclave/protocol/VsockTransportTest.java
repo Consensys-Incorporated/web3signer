@@ -25,6 +25,7 @@ import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
@@ -136,6 +137,46 @@ class VsockTransportTest {
 
       right.close();
       assertThat(left.read(new byte[1], 0, 1)).isEqualTo(-1);
+    }
+  }
+
+  /**
+   * Closing wakes a blocked reader, and the closed connection never reaches the socket that gets
+   * its descriptor number next.
+   */
+  @Test
+  void closeWakesAReaderAndNeverTouchesAReusedDescriptor() throws Throwable {
+    final int[] fds = socketPair();
+    final VsockConnection left = new VsockConnection(fds[0]);
+    final VsockConnection right = new VsockConnection(fds[1]);
+    final CompletableFuture<Integer> reader =
+        CompletableFuture.supplyAsync(
+            () -> {
+              try {
+                return left.read(new byte[1], 0, 1);
+              } catch (final IOException e) {
+                throw new IllegalStateException(e);
+              }
+            });
+    Thread.sleep(200); // let the reader block in read(2)
+    left.close();
+    assertThat(reader.get(5, TimeUnit.SECONDS)).isEqualTo(-1);
+    right.close();
+
+    // the kernel hands out the lowest free numbers: the new pair normally gets the old ones
+    final int[] reused = socketPair();
+    final VsockConnection newLeft = new VsockConnection(reused[0]);
+    final VsockConnection newRight = new VsockConnection(reused[1]);
+    try (newLeft;
+        newRight) {
+      Assumptions.assumeTrue(reused[0] == fds[0] || reused[1] == fds[0], "number not reused");
+      final VsockConnection peerOfReused = reused[0] == fds[0] ? newRight : newLeft;
+      VsockNative.setTimeouts(reused[0] == fds[0] ? reused[1] : reused[0], 200);
+
+      assertThatThrownBy(() -> left.write(new byte[] {42}, 0, 1))
+          .isInstanceOf(SocketException.class);
+      assertThatThrownBy(() -> peerOfReused.read(new byte[1], 0, 1))
+          .isInstanceOf(SocketTimeoutException.class);
     }
   }
 

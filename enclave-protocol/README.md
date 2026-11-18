@@ -134,12 +134,16 @@ Invariants:
 - **`SIGN`** goes through dispatcher threads, each with its own connection. A dispatcher takes the
   calls already queued, up to `maxBatch` (default 8), sends them in one write and reads the answers
   in order. With `connections = 0` (the default) the client starts one dispatcher per CPU that
-  `STATUS` reports.
+  `STATUS` reports, at most 64.
 - **Retries:** after an I/O error or a mismatched answer, a dispatcher reconnects once and resends
   the unanswered calls. `STATUS` and `GET_PUBLIC_KEYS` use a short-lived connection and retry once.
   Provisioning is never retried.
 - **Timeouts:** each call waits at most `requestTimeoutMillis` (default 2000 ms); connect, read and
-  write use the same limit. The queue holds 4,096 calls; a full queue fails a call at once.
+  write use the same limit, except a vsock connect, which the kernel bounds at about 2 s. The queue
+  holds 4,096 calls; a full queue fails a call at once.
+- **Closing:** a connection can be closed while another thread is inside a call on it. The socket is
+  shut down at once, which wakes that thread; the descriptor and the native buffers are freed when
+  the call returns, so a descriptor number is never reused under a running call.
 - **Failures:** `EnclaveUnavailableException` when the enclave cannot answer (timeout, full queue,
   connection failure, closed client); `EnclaveException` with the status when it refuses.
 

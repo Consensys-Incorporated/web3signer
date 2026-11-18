@@ -19,19 +19,18 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.net.SocketException;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /** {@link Listener} on a vsock socket bound to any CID. */
 public final class VsockListener implements Listener {
   private static final int BACKLOG = 128;
 
-  private final int fd;
+  private final Arena arena = Arena.ofShared();
+  private final MemorySegment capture = VsockNative.allocateCapture(arena);
+  private final SharedFd shared;
   private final EnclaveAddress address;
-  private final MemorySegment capture = VsockNative.allocateCapture(Arena.ofAuto());
-  private final AtomicBoolean closed = new AtomicBoolean();
 
   private VsockListener(final int fd, final int port) {
-    this.fd = fd;
+    this.shared = new SharedFd(fd, arena);
     this.address =
         EnclaveAddress.vsock(EnclaveAddress.VMADDR_CID_ANY, Integer.toUnsignedLong(port));
   }
@@ -64,25 +63,27 @@ public final class VsockListener implements Listener {
   @Override
   public Connection accept() throws IOException {
     while (true) {
-      if (closed.get()) {
-        throw new SocketException("Listener closed");
-      }
-      final int connection;
+      final int fd = shared.acquire(); // throws once the listener is closed
       try {
-        connection =
-            (int) Handles.ACCEPT.invokeExact(capture, fd, MemorySegment.NULL, MemorySegment.NULL);
-      } catch (final Throwable t) {
-        throw new IOException(t);
-      }
-      if (connection >= 0) {
-        return new VsockConnection(connection);
-      }
-      final int errno = VsockNative.errno(capture);
-      if (closed.get()) {
-        throw new SocketException("Listener closed");
-      }
-      if (errno != VsockNative.EINTR) {
-        throw new ErrnoException("accept", errno);
+        final int connection;
+        try {
+          connection =
+              (int) Handles.ACCEPT.invokeExact(capture, fd, MemorySegment.NULL, MemorySegment.NULL);
+        } catch (final Throwable t) {
+          throw new IOException(t);
+        }
+        if (connection >= 0) {
+          return new VsockConnection(connection);
+        }
+        final int errno = VsockNative.errno(capture);
+        if (shared.isClosed()) {
+          throw new SocketException("Listener closed");
+        }
+        if (errno != VsockNative.EINTR) {
+          throw new ErrnoException("accept", errno);
+        }
+      } finally {
+        shared.release();
       }
     }
   }
@@ -94,9 +95,6 @@ public final class VsockListener implements Listener {
 
   @Override
   public void close() {
-    if (closed.compareAndSet(false, true)) {
-      VsockNative.shutdownQuietly(fd);
-      VsockNative.closeQuietly(fd);
-    }
+    shared.close();
   }
 }

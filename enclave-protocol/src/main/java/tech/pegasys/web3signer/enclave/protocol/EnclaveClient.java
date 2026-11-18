@@ -47,12 +47,17 @@ public final class EnclaveClient implements Closeable {
   static final long RECONNECT_DELAY_NANOS = TimeUnit.MILLISECONDS.toNanos(200);
   private static final long POLL_MILLIS = 100;
 
+  /** Upper bound of dispatchers when their number comes from the enclave's {@code cpus}. */
+  static final int MAX_DEFAULT_CONNECTIONS = 64;
+
   /**
    * Client settings.
    *
-   * @param connections dispatcher connections; 0 means the enclave's {@code cpus}
+   * @param connections dispatcher connections; 0 means the enclave's {@code cpus}, at most {@value
+   *     #MAX_DEFAULT_CONNECTIONS}
    * @param maxBatch largest number of {@code SIGN} requests in one write
-   * @param requestTimeoutMillis timeout of one request, and of connect, read and write
+   * @param requestTimeoutMillis timeout of one request, and of connect, read and write; a vsock
+   *     connect is bounded by the kernel instead (about 2 s)
    */
   public record Options(int connections, int maxBatch, int requestTimeoutMillis) {
     public static final Options DEFAULT = new Options(0, 8, 2000);
@@ -224,7 +229,8 @@ public final class EnclaveClient implements Closeable {
     requireOpen();
     startDispatchers();
     requireOpen();
-    final Call call = new Call(publicKey, message);
+    // copies: a dispatcher may still encode the call after this method has given up on it
+    final Call call = new Call(publicKey.clone(), message.clone());
     if (!queue.offer(call)) {
       throw new EnclaveUnavailableException("Enclave signer request queue is full");
     }
@@ -273,7 +279,9 @@ public final class EnclaveClient implements Closeable {
     // STATUS outside the lock: a slow or unreachable enclave must not queue the other first callers
     // and close() behind it. Concurrent first callers may each ask; only one starts the threads.
     final int count =
-        options.connections() > 0 ? options.connections() : Math.max(1, status().cpus());
+        options.connections() > 0
+            ? options.connections()
+            : Math.clamp(status().cpus(), 1, MAX_DEFAULT_CONNECTIONS);
     synchronized (dispatchers) {
       if (started || closed) {
         return;

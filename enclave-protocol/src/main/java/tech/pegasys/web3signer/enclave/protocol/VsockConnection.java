@@ -21,28 +21,27 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.net.SocketTimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * {@link Connection} on a vsock stream socket: blocking fd I/O through native bounce buffers.
- * {@code ECONNRESET}, {@code ENOTCONN} and a read of 0 bytes all mean the peer is gone.
+ * {@code ECONNRESET}, {@code ENOTCONN} and a read of 0 bytes all mean the peer is gone. Another
+ * thread may close it while a call runs: the descriptor and the buffers are freed when that call
+ * returns ({@link SharedFd}).
  */
 public final class VsockConnection implements Connection {
   private static final int BUFFER_SIZE = 64 * 1024;
 
-  private final int fd;
-  // Automatic arena: a thread may still be inside a native call when another thread closes.
-  private final Arena arena = Arena.ofAuto();
+  private final Arena arena = Arena.ofShared();
   private final MemorySegment readCapture = VsockNative.allocateCapture(arena);
   private final MemorySegment writeCapture = VsockNative.allocateCapture(arena);
   private final MemorySegment in = arena.allocate(BUFFER_SIZE, 8);
   private final MemorySegment out = arena.allocate(BUFFER_SIZE, 8);
-  private final AtomicBoolean closed = new AtomicBoolean();
+  private final SharedFd shared;
   private int inPosition;
   private int inLimit;
 
   VsockConnection(final int fd) {
-    this.fd = fd;
+    this.shared = new SharedFd(fd, arena);
   }
 
   /**
@@ -84,17 +83,22 @@ public final class VsockConnection implements Connection {
     if (length == 0) {
       return 0;
     }
-    if (inPosition == inLimit && !fill()) {
-      return -1;
+    final int fd = shared.acquire();
+    try {
+      if (inPosition == inLimit && !fill(fd)) {
+        return -1;
+      }
+      final int n = Math.min(length, inLimit - inPosition);
+      MemorySegment.copy(in, JAVA_BYTE, inPosition, buffer, offset, n);
+      inPosition += n;
+      return n;
+    } finally {
+      shared.release();
     }
-    final int n = Math.min(length, inLimit - inPosition);
-    MemorySegment.copy(in, JAVA_BYTE, inPosition, buffer, offset, n);
-    inPosition += n;
-    return n;
   }
 
   /** Reads into the native buffer. Returns false at the end of the stream. */
-  private boolean fill() throws IOException {
+  private boolean fill(final int fd) throws IOException {
     while (true) {
       final long n;
       try {
@@ -124,6 +128,16 @@ public final class VsockConnection implements Connection {
 
   @Override
   public void write(final byte[] buffer, final int offset, final int length) throws IOException {
+    final int fd = shared.acquire();
+    try {
+      writeAll(fd, buffer, offset, length);
+    } finally {
+      shared.release();
+    }
+  }
+
+  private void writeAll(final int fd, final byte[] buffer, final int offset, final int length)
+      throws IOException {
     int done = 0;
     while (done < length) {
       final int chunk = Math.min(length - done, BUFFER_SIZE);
@@ -154,10 +168,6 @@ public final class VsockConnection implements Connection {
 
   @Override
   public void close() {
-    if (closed.compareAndSet(false, true)) {
-      // shutdown wakes a thread blocked in read before the descriptor goes away
-      VsockNative.shutdownQuietly(fd);
-      VsockNative.closeQuietly(fd);
-    }
+    shared.close();
   }
 }

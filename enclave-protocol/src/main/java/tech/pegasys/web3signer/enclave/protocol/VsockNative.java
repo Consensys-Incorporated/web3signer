@@ -36,6 +36,7 @@ import java.util.Locale;
 final class VsockNative {
   static final int AF_VSOCK = 40;
   static final int SOCK_STREAM = 1;
+  static final int SOCK_CLOEXEC = 0x80000;
   static final int SOL_SOCKET = 1;
   static final int SO_RCVTIMEO = 20;
   static final int SO_SNDTIMEO = 21;
@@ -140,7 +141,8 @@ final class VsockNative {
     requireLinux();
     try (Arena arena = Arena.ofConfined()) {
       final MemorySegment capture = allocateCapture(arena);
-      final int fd = (int) Handles.SOCKET.invokeExact(capture, AF_VSOCK, SOCK_STREAM, 0);
+      final int fd =
+          (int) Handles.SOCKET.invokeExact(capture, AF_VSOCK, SOCK_STREAM | SOCK_CLOEXEC, 0);
       if (fd < 0) {
         throw new ErrnoException("socket(AF_VSOCK)", errno(capture));
       }
