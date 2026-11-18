@@ -257,9 +257,13 @@ public final class EnclaveClient implements Closeable {
       throw signFailure(e.getCause());
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      call.result.completeExceptionally(e);
-      queue.remove(call);
-      throw new EnclaveUnavailableException("Interrupted while waiting for the enclave signer", e);
+      if (call.result.completeExceptionally(e)) {
+        queue.remove(call); // free its slot if no dispatcher has taken it yet
+        throw new EnclaveUnavailableException(
+            "Interrupted while waiting for the enclave signer", e);
+      }
+      // the dispatcher answered between the interrupt and here: keep its answer
+      return completed(call.result);
     }
   }
 
