@@ -120,6 +120,7 @@ dependencyManagement {
         exclude group: 'commons-lang', name: 'commons-lang'
       }
       entry 'unsigned'
+      entry 'ssz'
       entry 'async'
       entry ('networks') {
         // CVE-2025-48924
