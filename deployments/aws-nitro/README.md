@@ -338,17 +338,17 @@ The operator's machine needs:
 - the Web3Signer distribution (Java 25);
 - network access to the KMS endpoint of `$AWS_REGION`;
 - AWS credentials for `OPERATOR_ARN`, found through the AWS SDK default credential chain:
-  environment variables, a profile with static keys or a role to assume, or an instance role.
-  Within the key's account no IAM policy is needed: the key policy grants `kms:GenerateDataKey`,
-  and nothing else. An operator identity in another account also needs an IAM policy that allows
-  `kms:GenerateDataKey` on the key.
+  environment variables, a profile with static keys, a role to assume or IAM Identity Center
+  (SSO), or an instance role. Within the key's account no IAM policy is needed: the key policy
+  grants `kms:GenerateDataKey`, and nothing else. An operator identity in another account also
+  needs an IAM policy that allows `kms:GenerateDataKey` on the key.
 
-  The distribution cannot use an IAM Identity Center (SSO) profile directly. Export its credentials
-  into the shell after `aws sso login`, and export them again when they expire (after about an hour
-  KMS answers `The security token included in the request is expired`):
+  For an IAM Identity Center profile, log in first and select the profile; the SDK takes the token
+  from the SSO cache and refreshes the role credentials itself:
 
   ```bash
-  eval "$(aws configure export-credentials --profile <profile> --format env)"
+  aws sso login --profile <profile>
+  export AWS_PROFILE=<profile>
   ```
 
 Sealing creates a new data key in KMS, encrypts each BLS key with it, and writes the bundle. The
@@ -580,7 +580,7 @@ Run this step as the administrator of the parent instance.
    ```bash
    curl -s http://127.0.0.1:9000/upcheck                                  # OK
    curl -s http://127.0.0.1:9000/api/v1/eth2/publicKeys | jq length       # number of keys
-   curl -s http://127.0.0.1:9000/healthcheck | jq                         # keys-check/enclave-bulk-loading UP
+   curl -s http://127.0.0.1:9000/healthcheck | jq                         # status UP, enclave-signer UP
    ```
 
 4. Sign test messages, **with throwaway keys only**: the database remembers every slashable message
@@ -678,8 +678,11 @@ What to watch:
 
 - `web3signer enclave status --address=vsock:16:5000 --min-keys=<expected keys>` exits non-zero when
   the enclave is unreachable or holds fewer keys.
-- `/healthcheck` reports `keys-check/enclave-bulk-loading` with `keys-loaded` and `error-count`, and
-  the database check.
+- `/healthcheck` asks the enclave for its status on every call. Its `enclave-signer` check is UP with
+  the enclave's `keys` and `boot-id` while the enclave answers and holds keys, and DOWN otherwise;
+  any DOWN check makes the overall status DOWN (HTTP 503). It also reports
+  `keys-check/enclave-bulk-loading` with `keys-loaded` and `error-count` from the last key load,
+  and the database check.
 
 ## Troubleshoot
 
@@ -692,14 +695,14 @@ What to watch:
 | `nitro-cli` fails with a permission error under systemd | The service user is not in group `ne`, or cannot write `/var/log/nitro_enclaves` | Check `id web3signer`. As a fallback run `web3signer-enclave.service` as root |
 | `enclave status` cannot connect | The signer is not up yet, wrong CID or port, or the command runs inside a container | `nitro-cli describe-enclaves` shows the CID. Run the tools on the host |
 | `provision` stops with `ATTESTATION_FAILED` | The enclave could not obtain an attestation document | Start the enclave in debug mode, run `provision` again and report the console output |
-| `provision` fails in KMS with `AccessDeniedException ... no resource-based policy allows the kms:Decrypt action` | The PCR0 in the key policy differs from the enclave's (debug mode reports zeros; the image was rebuilt), wrong role ARN, wrong encryption context, wrong region | Compare the policy with `nitro-cli describe-enclaves`. The CloudTrail `Decrypt` event records what KMS saw in `attestationDocumentEnclaveImageDigest` and the `attestationDocumentEnclavePCR…` fields ([reference](https://docs.aws.amazon.com/kms/latest/developerguide/ct-nitro-enclave.html)); the digest there is base64, the policy holds hex. Reading it needs `cloudtrail:LookupEvents` |
+| `provision` fails with `KMS refused to release the data key to the enclave ... KMS said: ... no resource-based policy allows the kms:Decrypt action` | The PCR0 in the key policy differs from the enclave's (debug mode reports zeros; the image was rebuilt), wrong role ARN, wrong encryption context, wrong region | Compare the policy with `nitro-cli describe-enclaves`. The CloudTrail `Decrypt` event records what KMS saw in `attestationDocumentEnclaveImageDigest` and the `attestationDocumentEnclavePCR…` fields ([reference](https://docs.aws.amazon.com/kms/latest/developerguide/ct-nitro-enclave.html)); the digest there is base64, the policy holds hex. Reading it needs `cloudtrail:LookupEvents` |
 | `put-key-policy` fails with `MalformedPolicyDocumentException ... invalid principals` | A role ARN in the policy is wrong, for example `$ACCOUNT:role` in zsh, which expands as `$ACCOUNT` with the `:r` modifier | Write `${ACCOUNT}`, regenerate the policy and check the ARNs in it |
-| `seal` fails with `The security token included in the request is expired` | Exported SSO credentials expired | Run `aws sso login` and export the credentials again (step 4) |
+| `seal` fails with `The security token included in the request is expired` | The IAM Identity Center session expired | Run `aws sso login --profile <profile>` again (step 4) |
 | `provision` aborts on the policy check | The parent role can decrypt the data key without an enclave | Remove every other statement or grant that allows `kms:Decrypt` on the key |
 | `provision` fails with `UNWRAP_FAILED` | KMS's answer was not in the expected form | Run `provision` again with `--Xdump-release-blob=<file>` and report the file. It is encrypted to a key that no longer exists |
 | Every entry rejected | The bundle was sealed under another KMS key | Seal again with the key whose policy matches this enclave |
 | Web3Signer shows zero enclave keys | It started before provisioning finished | `curl -X POST http://127.0.0.1:9000/reload`. The systemd units avoid this |
-| Signing returns 500 while the enclave is down or restarting | The enclave is gone or its keys are not loaded yet. Web3Signer logs `EnclaveUnavailableException: Enclave signer did not answer within 2000 ms` | Wait for `web3signer-enclave.service`. Web3Signer needs no restart |
+| Signing returns 500 `Signer unavailable: ...` while the enclave is down or restarting | The enclave is gone, or it was restarted and its keys are not loaded yet. Web3Signer logs one warning per request, for example `Signer unavailable: Enclave signer did not answer within 2000 ms` | Wait for `web3signer-enclave.service`; `/healthcheck` shows `enclave-signer` UP again once the keys are loaded. Web3Signer needs no restart |
 | Web3Signer cannot reach the database | Security group, subnet routing, or a host name that does not match the certificate | Use the RDS endpoint name, never an IP address, with `sslmode=verify-full` |
 | Web3Signer reports a database version error | Migrations missing | Run Flyway again. The version must be 12 |
 
