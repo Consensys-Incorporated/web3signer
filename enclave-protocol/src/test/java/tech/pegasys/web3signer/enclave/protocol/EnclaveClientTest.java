@@ -346,6 +346,24 @@ class EnclaveClientTest {
   }
 
   @Test
+  void wrongResponseTypeDropsTheConnectionAndRetries() throws IOException {
+    final ScriptedServer[] self = new ScriptedServer[1];
+    self[0] =
+        server(
+            (connection, index) -> {
+              final Frame request = self[0].read(connection);
+              final byte[] response = ScriptedServer.statusResponse(request, 2);
+              if (index == 0) {
+                response[4] = (byte) (Protocol.SIGN | Protocol.RESPONSE_FLAG);
+              }
+              connection.write(response, 0, response.length);
+            });
+    final EnclaveClient client = client(self[0], new EnclaveClient.Options(1, 8, 5000));
+    assertThat(client.status().cpus()).isEqualTo(2);
+    assertThat(self[0].connectionCount()).isEqualTo(2);
+  }
+
+  @Test
   void refusalIsReportedWithItsStatus() throws IOException {
     final ScriptedServer[] self = new ScriptedServer[1];
     self[0] =

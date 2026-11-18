@@ -23,6 +23,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -181,6 +182,10 @@ public final class EnclaveClient implements Closeable {
     if (response.requestId() != requestId) {
       throw new ProtocolMismatchException("Response for request " + response.requestId());
     }
+    if (response.type() != (opcode | Protocol.RESPONSE_FLAG)) {
+      throw new ProtocolMismatchException(
+          "Response type 0x" + Integer.toHexString(response.type()) + " for request " + requestId);
+    }
     Payloads.requireOk(response, opcode);
     return response;
   }
@@ -229,18 +234,32 @@ public final class EnclaveClient implements Closeable {
       final EnclaveUnavailableException timeout =
           new EnclaveUnavailableException(
               "Enclave signer did not answer within " + options.requestTimeoutMillis() + " ms");
-      call.result.completeExceptionally(timeout);
-      throw timeout;
-    } catch (final ExecutionException e) {
-      if (e.getCause() instanceof EnclaveException refused) {
-        throw new EnclaveException(refused.status(), "Enclave signer refused to sign");
+      if (call.result.completeExceptionally(timeout)) {
+        throw timeout;
       }
-      throw new EnclaveUnavailableException("Signing through " + target + " failed", e.getCause());
+      // the dispatcher answered between the timeout and here: keep its answer
+      return completed(call.result);
+    } catch (final ExecutionException e) {
+      throw signFailure(e.getCause());
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
       call.result.completeExceptionally(e);
       throw new EnclaveUnavailableException("Interrupted while waiting for the enclave signer", e);
     }
+  }
+
+  private byte[] completed(final CompletableFuture<byte[]> result) {
+    if (result.state() == Future.State.SUCCESS) {
+      return result.resultNow();
+    }
+    throw signFailure(result.exceptionNow());
+  }
+
+  private RuntimeException signFailure(final Throwable cause) {
+    if (cause instanceof EnclaveException refused) {
+      return new EnclaveException(refused.status(), "Enclave signer refused to sign");
+    }
+    return new EnclaveUnavailableException("Signing through " + target + " failed", cause);
   }
 
   private void startDispatchers() {
