@@ -45,6 +45,9 @@ public interface KeyReleaseBroker extends AutoCloseable {
     }
   }
 
+  /** The bundle {@code provider} this broker wraps and releases data keys for. */
+  String provider();
+
   /** The {@code platform} the enclave must report for this provider. */
   int expectedPlatform();
 

@@ -64,6 +64,14 @@ public final class KeyProvisioner {
     if (bundle.keys().isEmpty()) {
       throw new EnclaveHostException("The key bundle contains no keys; nothing to provision");
     }
+    if (!broker.provider().equals(bundle.dek().provider())) {
+      throw new EnclaveHostException(
+          "The bundle was sealed with provider "
+              + bundle.dek().provider()
+              + ", but the "
+              + broker.provider()
+              + " broker was given");
+    }
     try (ProvisioningSession session = connect(client, options.waitSeconds())) {
       final EnclaveStatus status = session.status();
       if (status.protocolVersion() != Protocol.VERSION) {
@@ -72,9 +80,9 @@ public final class KeyProvisioner {
       }
       if (status.platform() != broker.expectedPlatform()) {
         throw new EnclaveHostException(
-            "Bundle provider "
-                + bundle.dek().provider()
-                + " needs an enclave on platform "
+            "The "
+                + broker.provider()
+                + " broker releases data keys only to an enclave on platform "
                 + Protocol.platformName(broker.expectedPlatform())
                 + ", but the enclave runs "
                 + status.platformName());

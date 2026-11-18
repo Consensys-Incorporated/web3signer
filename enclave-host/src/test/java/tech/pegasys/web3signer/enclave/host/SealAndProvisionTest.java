@@ -34,6 +34,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.tuweni.bytes.Bytes;
 import org.junit.jupiter.api.AfterEach;
@@ -252,7 +253,7 @@ class SealAndProvisionTest {
   }
 
   @Test
-  void platformMustMatchTheProvider() {
+  void bundleProviderMustMatchTheBroker() {
     final AwsKmsKeyReleaseBroker aws =
         new AwsKmsKeyReleaseBroker(
             org.mockito.Mockito.mock(software.amazon.awssdk.services.kms.KmsClient.class), "k");
@@ -260,8 +261,29 @@ class SealAndProvisionTest {
       final KeyBundle bundle = KeySealer.seal(EnclaveTestKeys.randomKeys(1), dev);
       assertThatThrownBy(() -> KeyProvisioner.provision(bundle, aws, client, OPTIONS))
           .isInstanceOf(EnclaveHostException.class)
-          .hasMessageContaining("aws-nitro");
+          .hasMessage("The bundle was sealed with provider dev, but the aws-kms broker was given");
     }
+  }
+
+  @Test
+  void enclavePlatformMustMatchTheBroker() {
+    final software.amazon.awssdk.services.kms.KmsClient kms =
+        org.mockito.Mockito.mock(software.amazon.awssdk.services.kms.KmsClient.class);
+    final AwsKmsKeyReleaseBroker aws = new AwsKmsKeyReleaseBroker(kms, "k");
+    try (DevKeyReleaseBroker dev = new DevKeyReleaseBroker(masterKey())) {
+      final KeyBundle sealed = KeySealer.seal(EnclaveTestKeys.randomKeys(1), dev);
+      final KeyBundle awsBundle =
+          new KeyBundle(
+              1,
+              new KeyBundle.Dek(KeyBundle.Dek.PROVIDER_AWS_KMS, "k", Map.of(), new byte[] {1}),
+              sealed.keys());
+      assertThatThrownBy(() -> KeyProvisioner.provision(awsBundle, aws, client, OPTIONS))
+          .isInstanceOf(EnclaveHostException.class)
+          .hasMessage(
+              "The aws-kms broker releases data keys only to an enclave on platform aws-nitro,"
+                  + " but the enclave runs dev");
+    }
+    org.mockito.Mockito.verifyNoInteractions(kms);
   }
 
   @Test

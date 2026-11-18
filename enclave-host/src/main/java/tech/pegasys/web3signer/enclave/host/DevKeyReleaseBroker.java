@@ -75,6 +75,11 @@ public final class DevKeyReleaseBroker implements KeyReleaseBroker {
   }
 
   @Override
+  public String provider() {
+    return KeyBundle.Dek.PROVIDER_DEV;
+  }
+
+  @Override
   public int expectedPlatform() {
     return Protocol.PLATFORM_DEV;
   }

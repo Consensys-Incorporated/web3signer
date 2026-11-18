@@ -56,6 +56,11 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
   }
 
   @Override
+  public String provider() {
+    return KeyBundle.Dek.PROVIDER_AWS_KMS;
+  }
+
+  @Override
   public int expectedPlatform() {
     return Protocol.PLATFORM_AWS_NITRO;
   }
