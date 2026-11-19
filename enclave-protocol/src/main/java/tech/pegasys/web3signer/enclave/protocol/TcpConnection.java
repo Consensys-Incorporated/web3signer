@@ -18,6 +18,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /** {@link Connection} over a TCP socket with {@code TCP_NODELAY} and buffered input. */
 public final class TcpConnection implements Connection {
@@ -26,9 +30,15 @@ public final class TcpConnection implements Connection {
   private final Socket socket;
   private final InputStream in;
   private final OutputStream out;
+  private final int writeTimeoutMillis;
+  private volatile boolean writeTimedOut;
 
-  TcpConnection(final Socket socket) throws IOException {
+  /**
+   * @param writeTimeoutMillis limit of one {@link #write}; 0 waits forever
+   */
+  TcpConnection(final Socket socket, final int writeTimeoutMillis) throws IOException {
     this.socket = socket;
+    this.writeTimeoutMillis = writeTimeoutMillis;
     socket.setTcpNoDelay(true);
     this.in = new BufferedInputStream(socket.getInputStream(), BUFFER_SIZE);
     this.out = socket.getOutputStream();
@@ -37,7 +47,7 @@ public final class TcpConnection implements Connection {
   /**
    * Connects to {@code host:port}.
    *
-   * @param timeoutMillis connect and read timeout; 0 waits forever
+   * @param timeoutMillis connect, read and write timeout; 0 waits forever
    */
   public static TcpConnection connect(final String host, final int port, final int timeoutMillis)
       throws IOException {
@@ -45,7 +55,7 @@ public final class TcpConnection implements Connection {
     try {
       socket.connect(new InetSocketAddress(host, port), timeoutMillis);
       socket.setSoTimeout(timeoutMillis);
-      return new TcpConnection(socket);
+      return new TcpConnection(socket, timeoutMillis);
     } catch (final IOException | RuntimeException e) {
       socket.close();
       throw e;
@@ -57,9 +67,49 @@ public final class TcpConnection implements Connection {
     return in.read(buffer, offset, length);
   }
 
+  /**
+   * Java sockets have no send timeout, so a write that outlasts the limit is ended by closing the
+   * socket, which wakes the blocked writer. The connection is unusable afterwards.
+   */
   @Override
   public void write(final byte[] buffer, final int offset, final int length) throws IOException {
-    out.write(buffer, offset, length);
+    if (writeTimeoutMillis == 0) {
+      out.write(buffer, offset, length);
+      return;
+    }
+    final ScheduledFuture<?> watchdog =
+        WriteWatchdog.EXECUTOR.schedule(
+            this::expireWrite, writeTimeoutMillis, TimeUnit.MILLISECONDS);
+    try {
+      out.write(buffer, offset, length);
+    } catch (final IOException e) {
+      if (writeTimedOut) {
+        throw new SocketTimeoutException("Write timed out after " + writeTimeoutMillis + " ms");
+      }
+      throw e;
+    } finally {
+      watchdog.cancel(false);
+    }
+  }
+
+  private void expireWrite() {
+    writeTimedOut = true;
+    close();
+  }
+
+  /** One daemon thread for all connections, started on the first timed write. */
+  private static final class WriteWatchdog {
+    static final ScheduledThreadPoolExecutor EXECUTOR =
+        new ScheduledThreadPoolExecutor(
+            1,
+            runnable ->
+                Thread.ofPlatform().name("tcp-write-watchdog").daemon(true).unstarted(runnable));
+
+    static {
+      EXECUTOR.setRemoveOnCancelPolicy(true);
+    }
+
+    private WriteWatchdog() {}
   }
 
   @Override

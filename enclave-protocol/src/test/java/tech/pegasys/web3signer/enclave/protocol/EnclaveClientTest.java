@@ -159,6 +159,49 @@ class EnclaveClientTest {
   }
 
   @Test
+  void concurrentFirstCallersAskForTheCpusOnce() throws Exception {
+    final ScriptedServer[] self = new ScriptedServer[1];
+    self[0] =
+        server(
+            (connection, index) -> {
+              while (true) {
+                final Frame request = self[0].read(connection);
+                final byte[] response;
+                if (request.type() == Protocol.STATUS) {
+                  sleep(200); // every first caller arrives while the first STATUS is out
+                  response = ScriptedServer.statusResponse(request, 2);
+                } else {
+                  response = ScriptedServer.signResponse(request);
+                }
+                connection.write(response, 0, response.length);
+              }
+            });
+    final EnclaveClient client = client(self[0], EnclaveClient.Options.DEFAULT);
+    final int calls = 16;
+    final CountDownLatch start = new CountDownLatch(1);
+    try (ExecutorService callers = Executors.newFixedThreadPool(calls)) {
+      final List<Future<byte[]>> results = new ArrayList<>();
+      for (int i = 0; i < calls; i++) {
+        final byte[] message = message(i);
+        results.add(
+            callers.submit(
+                () -> {
+                  start.await();
+                  return client.sign(PUBLIC_KEY, message);
+                }));
+      }
+      start.countDown();
+      for (int i = 0; i < calls; i++) {
+        assertThat(results.get(i).get(10, TimeUnit.SECONDS))
+            .isEqualTo(ScriptedServer.fakeSignature(message(i)));
+      }
+    }
+    assertThat(self[0].received.stream().filter(frame -> frame.type() == Protocol.STATUS))
+        .hasSize(1);
+    assertThat(client.dispatcherCount()).isEqualTo(2);
+  }
+
+  @Test
   void unansweredCallsAreResentOnceAfterADrop() throws IOException {
     final ScriptedServer[] self = new ScriptedServer[1];
     self[0] =

@@ -43,7 +43,7 @@ public final class TcpListener implements Listener {
   public Connection accept() throws IOException {
     final Socket socket = serverSocket.accept();
     try {
-      return new TcpConnection(socket);
+      return new TcpConnection(socket, 0);
     } catch (final IOException | RuntimeException e) {
       socket.close();
       throw e;

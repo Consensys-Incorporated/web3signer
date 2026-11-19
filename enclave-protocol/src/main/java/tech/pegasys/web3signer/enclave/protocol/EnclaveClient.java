@@ -27,6 +27,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
@@ -94,6 +95,11 @@ public final class EnclaveClient implements Closeable {
   private final List<Dispatcher> dispatchers = new ArrayList<>();
   private final LongAdder writes = new LongAdder();
   private final LongAdder requests = new LongAdder();
+
+  /** The one {@code STATUS} that sizes the dispatchers; null until asked or after it failed. */
+  private final AtomicReference<CompletableFuture<Integer>> dispatcherSizing =
+      new AtomicReference<>();
+
   private volatile boolean started;
   private volatile boolean closed;
 
@@ -285,12 +291,8 @@ public final class EnclaveClient implements Closeable {
     if (started) {
       return;
     }
-    // STATUS outside the lock: a slow or unreachable enclave must not queue the other first callers
-    // and close() behind it. Concurrent first callers may each ask; only one starts the threads.
-    final int count =
-        options.connections() > 0
-            ? options.connections()
-            : Math.clamp(status().cpus(), 1, MAX_DEFAULT_CONNECTIONS);
+    // Sized outside the lock: a slow or unreachable enclave must not queue close() behind it.
+    final int count = dispatcherTarget();
     synchronized (dispatchers) {
       if (started || closed) {
         return;
@@ -302,6 +304,39 @@ public final class EnclaveClient implements Closeable {
         dispatchers.add(dispatcher);
       }
       started = true;
+    }
+  }
+
+  /**
+   * The number of dispatchers. With {@code connections = 0} the first caller asks the enclave and
+   * concurrent first callers wait for that answer, so a burst of first signs opens one {@code
+   * STATUS} connection rather than one each. A failed ask fails its waiters too; the next caller
+   * asks again.
+   */
+  private int dispatcherTarget() {
+    if (options.connections() > 0) {
+      return options.connections();
+    }
+    final CompletableFuture<Integer> mine = new CompletableFuture<>();
+    final CompletableFuture<Integer> asked = dispatcherSizing.compareAndExchange(null, mine);
+    if (asked == null) {
+      try {
+        mine.complete(Math.clamp(status().cpus(), 1, MAX_DEFAULT_CONNECTIONS));
+      } catch (final RuntimeException | Error e) {
+        dispatcherSizing.set(null);
+        mine.completeExceptionally(e);
+        throw e;
+      }
+      return mine.resultNow();
+    }
+    try {
+      return asked.get();
+    } catch (final ExecutionException e) {
+      throw new EnclaveUnavailableException(
+          "Enclave signer at " + target + " unavailable", e.getCause());
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new EnclaveUnavailableException("Interrupted while waiting for the enclave signer", e);
     }
   }
 
