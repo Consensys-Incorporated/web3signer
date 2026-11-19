@@ -1,0 +1,121 @@
+/*
+ * Copyright 2026 Consensys Incorporated.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+apply plugin: 'java-library'
+apply plugin: 'java-test-fixtures'
+
+jar {
+  archiveBaseName = 'web3signer-enclave-signer'
+  manifest {
+    attributes(
+      'Specification-Title': archiveBaseName,
+      'Specification-Version': project.version,
+      'Implementation-Title': archiveBaseName,
+      'Implementation-Version': buildVersion,
+      'Main-Class': 'tech.pegasys.web3signer.enclave.signer.EnclaveSignerApp'
+      )
+  }
+}
+
+// libblst.so for the enclave image comes from the jblst jar, through a configuration of its own
+// so that jblst never reaches runtimeClasspath.
+configurations {
+  enclaveNative {
+    canBeConsumed = false
+    canBeResolved = true
+    transitive = false
+  }
+}
+
+// The enclave runs this jar and enclave-protocol, nothing else (see verifyEnclaveClasspath).
+dependencies {
+  enclaveNative 'tech.pegasys:jblst'
+
+  implementation project(':enclave-protocol')
+
+  testImplementation 'tech.pegasys.teku.internal:bls'
+  testImplementation 'io.consensys.tuweni:tuweni-bytes'
+  testImplementation 'org.bouncycastle:bcprov-jdk18on'
+  testImplementation 'org.bouncycastle:bcpkix-jdk18on'
+  testImplementation 'org.assertj:assertj-core'
+  testImplementation 'org.junit.jupiter:junit-jupiter-api'
+  testImplementation 'org.junit.jupiter:junit-jupiter-params'
+  testRuntimeOnly 'tech.pegasys:jblst'
+  testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
+  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+  testFixturesApi project(':enclave-protocol')
+  testFixturesRuntimeOnly 'tech.pegasys:jblst'
+}
+
+// -PenclaveArch=amd64|arm64 (Docker's TARGETARCH); unset or empty means the build machine's arch
+def enclaveNativeDirectory = providers.gradleProperty('enclaveArch')
+  .orElse('')
+  .map { String arch ->
+    def effective = arch ?: System.getProperty('os.arch')
+    switch (effective) {
+      case 'amd64':
+      case 'x86_64':
+        return 'Linux/amd64'
+      case 'arm64':
+      case 'aarch64':
+        return 'Linux/aarch64'
+      default:
+        throw new GradleException("Unsupported enclave architecture: ${effective}")
+    }
+  }
+
+// Contents of the enclave image: lib/ (this jar and enclave-protocol) and native/libblst.so
+tasks.register('enclaveImage', Sync) {
+  description = 'Assembles the files of the enclave image in build/enclave-image.'
+  group = 'build'
+  into layout.buildDirectory.dir('enclave-image')
+  into('lib') {
+    from tasks.named('jar')
+    from configurations.runtimeClasspath
+  }
+  inputs.property('enclaveNativeDirectory', enclaveNativeDirectory)
+  from({ zipTree(configurations.enclaveNative.singleFile) }) {
+    include "supranational/blst/${enclaveNativeDirectory.get()}/libblst.so"
+    eachFile { it.path = "native/${it.name}" }
+  }
+  includeEmptyDirs = false
+}
+
+// Trusted code inventory: the enclave's runtime classpath is enclave-protocol and nothing else.
+def verifyEnclaveClasspath = tasks.register('verifyEnclaveClasspath') {
+  description = 'Fails when runtimeClasspath holds anything but the enclave-protocol project.'
+  group = 'verification'
+  def runtime = configurations.runtimeClasspath
+  def selfPath = project.path
+  doLast {
+    def components = runtime.incoming.resolutionResult.allComponents
+      .collect { it.id }
+      .findAll { !(it instanceof ProjectComponentIdentifier && it.projectPath == selfPath) }
+    def unexpected = components.findAll {
+      !(it instanceof ProjectComponentIdentifier && it.projectPath == ':enclave-protocol')
+    }
+    if (components.size() != 1 || !unexpected.isEmpty()) {
+      throw new GradleException(
+        "enclave-signer runtimeClasspath must contain :enclave-protocol only, found: ${components*.displayName}")
+    }
+  }
+}
+tasks.named('check') { dependsOn verifyEnclaveClasspath }
+// The Docker build runs enclaveImage alone, so the image must not skip the guard either.
+tasks.named('enclaveImage') { dependsOn verifyEnclaveClasspath }
+
+// Doclint as for the rest of the repository, except for missing comments.
+javadoc {
+  options.addStringOption('Xdoclint:all,-missing', '-quiet')
+}
