@@ -24,6 +24,14 @@ import java.net.SocketException;
 public final class VsockListener implements Listener {
   private static final int BACKLOG = 128;
 
+  /**
+   * How often a blocked {@link #accept()} wakes to see whether the listener was closed. shutdown(2)
+   * on a listening vsock socket fails with ENOTCONN and does not wake accept(2), and {@link
+   * SharedFd} closes the descriptor only after accept returns, so accept runs with this receive
+   * timeout instead.
+   */
+  private static final int ACCEPT_WAKE_MILLIS = 200;
+
   private final Arena arena = Arena.ofShared();
   private final MemorySegment capture = VsockNative.allocateCapture(arena);
   private final SharedFd shared;
@@ -50,6 +58,7 @@ public final class VsockListener implements Listener {
       if (rc != 0) {
         throw new ErrnoException("listen", VsockNative.errno(capture));
       }
+      VsockNative.setTimeouts(fd, ACCEPT_WAKE_MILLIS);
       return new VsockListener(fd, port);
     } catch (final IOException | RuntimeException e) {
       VsockNative.closeQuietly(fd);
@@ -73,19 +82,30 @@ public final class VsockListener implements Listener {
           throw new IOException(t);
         }
         if (connection >= 0) {
-          return new VsockConnection(connection);
+          return accepted(connection);
         }
         final int errno = VsockNative.errno(capture);
         if (shared.isClosed()) {
           throw new SocketException("Listener closed");
         }
-        if (errno != VsockNative.EINTR) {
+        if (errno != VsockNative.EINTR && errno != VsockNative.EAGAIN) {
           throw new ErrnoException("accept", errno);
         }
       } finally {
         shared.release();
       }
     }
+  }
+
+  /** Clears the listener's wake-up timeout in case the accepted socket inherited it. */
+  private static Connection accepted(final int fd) throws IOException {
+    try {
+      VsockNative.setTimeouts(fd, 0);
+    } catch (final IOException | RuntimeException e) {
+      VsockNative.closeQuietly(fd);
+      throw e;
+    }
+    return new VsockConnection(fd);
   }
 
   @Override

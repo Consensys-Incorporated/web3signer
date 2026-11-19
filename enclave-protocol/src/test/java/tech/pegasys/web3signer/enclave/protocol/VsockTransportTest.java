@@ -102,6 +102,30 @@ class VsockTransportTest {
     }
   }
 
+  @Test
+  void closeWakesABlockedAccept() throws Exception {
+    final VsockListener listener;
+    try {
+      listener = VsockListener.bind(20_000 + random.nextInt(20_000));
+    } catch (final VsockNative.ErrnoException e) {
+      Assumptions.assumeTrue(e.errno() != EAFNOSUPPORT, "no AF_VSOCK support");
+      throw e;
+    }
+    final CompletableFuture<Connection> accepted =
+        CompletableFuture.supplyAsync(
+            () -> {
+              try {
+                return listener.accept();
+              } catch (final IOException e) {
+                throw new java.util.concurrent.CompletionException(e);
+              }
+            });
+    Thread.sleep(200); // let accept block
+    listener.close();
+    assertThatThrownBy(() -> accepted.get(5, TimeUnit.SECONDS))
+        .hasCauseInstanceOf(SocketException.class);
+  }
+
   /**
    * The fd I/O of {@link VsockConnection} on a local stream socket pair: the same read, write,
    * timeout and end-of-stream paths as on vsock, runnable without a vsock transport.
