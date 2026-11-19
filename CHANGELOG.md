@@ -12,7 +12,10 @@
 ### Features Added
 
 ### CI/Build Enhancements
-- Postgres-backed tests start one embedded Postgres per test JVM and give each test a new database cloned from a migrated template, instead of starting a Postgres per test. This removes the embedded-Postgres startup timeouts and the macOS shared-memory failures.
+- Postgres-backed tests start one embedded Postgres per test JVM and give each test a new database cloned from a migrated template, instead of starting a Postgres per test. This removes the embedded-Postgres startup timeouts and the macOS shared-memory failures. [#1312][PR_1312]
+
+<!-- Link references for the entries above; not changelog entries. -->
+[PR_1312]: https://github.com/Consensys-Incorporated/web3signer/pull/1312
 
 ---
 ## 26.11.0
