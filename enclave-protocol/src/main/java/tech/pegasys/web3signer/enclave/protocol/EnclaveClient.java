@@ -297,7 +297,8 @@ public final class EnclaveClient implements Closeable {
       if (started || closed) {
         return;
       }
-      for (int i = 0; i < count; i++) {
+      // starts only the missing ones: after a failed Thread.start the next caller tops up the set
+      for (int i = dispatchers.size(); i < count; i++) {
         final Dispatcher dispatcher = new Dispatcher();
         dispatcher.thread =
             Thread.ofPlatform().name("enclave-dispatcher-" + i).daemon(true).start(dispatcher::run);
