@@ -37,7 +37,6 @@ import tech.pegasys.web3signer.core.config.TlsOptions;
 import tech.pegasys.web3signer.core.config.client.ClientTlsOptions;
 import tech.pegasys.web3signer.dsl.signer.SignerConfiguration;
 import tech.pegasys.web3signer.dsl.signer.WatermarkRepairParameters;
-import tech.pegasys.web3signer.dsl.utils.DatabaseUtil;
 import tech.pegasys.web3signer.signing.config.AwsVaultParameters;
 import tech.pegasys.web3signer.signing.config.AzureKeyVaultParameters;
 import tech.pegasys.web3signer.signing.config.GcpSecretManagerParameters;
@@ -52,6 +51,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import com.google.common.collect.Lists;
+import db.DatabaseUtil;
 import org.apache.commons.lang3.tuple.Pair;
 
 public class CmdLineParamsDefaultImpl implements CmdLineParamsBuilder {
