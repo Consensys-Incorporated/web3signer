@@ -264,72 +264,76 @@ public class DeleteKeystoresAcceptanceTest extends KeyManagerTestBase {
             .withKeyManagerApiEnabled(true)
             .build();
     final Signer signer2 = new Signer(signer2Configuration, null);
-    signer2.start();
-    signer2.awaitStartupCompletion();
+    try {
+      signer2.start();
+      signer2.awaitStartupCompletion();
 
-    // both signers should have all keys loaded
-    callListKeys(signer)
-        .then()
-        .statusCode(200)
-        .contentType(ContentType.JSON)
-        .body("data.size()", is(2))
-        .and()
-        .body("data[0].validating_pubkey", is(firstPubkey))
-        .body("data[1].validating_pubkey", is(secondPubKey));
+      // both signers should have all keys loaded
+      callListKeys(signer)
+          .then()
+          .statusCode(200)
+          .contentType(ContentType.JSON)
+          .body("data.size()", is(2))
+          .and()
+          .body("data[0].validating_pubkey", is(firstPubkey))
+          .body("data[1].validating_pubkey", is(secondPubKey));
 
-    callListKeys(signer2)
-        .then()
-        .statusCode(200)
-        .contentType(ContentType.JSON)
-        .body("data.size()", is(2))
-        .and()
-        .body("data[0].validating_pubkey", is(firstPubkey))
-        .body("data[1].validating_pubkey", is(secondPubKey));
+      callListKeys(signer2)
+          .then()
+          .statusCode(200)
+          .contentType(ContentType.JSON)
+          .body("data.size()", is(2))
+          .and()
+          .body("data[0].validating_pubkey", is(firstPubkey))
+          .body("data[1].validating_pubkey", is(secondPubKey));
 
-    String json =
-        callDeleteKeystores(composeRequestBody())
-            .then()
-            .contentType(ContentType.JSON)
-            .assertThat()
-            .statusCode(200)
-            .body("data[0].status", is("deleted"))
-            .extract()
-            .path("slashing_protection");
+      String json =
+          callDeleteKeystores(composeRequestBody())
+              .then()
+              .contentType(ContentType.JSON)
+              .assertThat()
+              .statusCode(200)
+              .body("data[0].status", is("deleted"))
+              .extract()
+              .path("slashing_protection");
 
-    assertThat(mapper.readTree(json)).isEqualTo(mapper.readTree(SINGLE_ENTRY_SLASHING_DATA));
+      assertThat(mapper.readTree(json)).isEqualTo(mapper.readTree(SINGLE_ENTRY_SLASHING_DATA));
 
-    // after deleting on first signer, it should only have the 2nd key
-    callListKeys()
-        .then()
-        .statusCode(200)
-        .contentType(ContentType.JSON)
-        .body("data.size()", is(1))
-        .and()
-        .body("data[0].validating_pubkey", is(secondPubKey));
+      // after deleting on first signer, it should only have the 2nd key
+      callListKeys()
+          .then()
+          .statusCode(200)
+          .contentType(ContentType.JSON)
+          .body("data.size()", is(1))
+          .and()
+          .body("data[0].validating_pubkey", is(secondPubKey));
 
-    // keys on the second signer should be unaffected
-    callListKeys(signer2)
-        .then()
-        .statusCode(200)
-        .contentType(ContentType.JSON)
-        .body("data.size()", is(2))
-        .and()
-        .body("data[0].validating_pubkey", is(firstPubkey))
-        .body("data[1].validating_pubkey", is(secondPubKey));
+      // keys on the second signer should be unaffected
+      callListKeys(signer2)
+          .then()
+          .statusCode(200)
+          .contentType(ContentType.JSON)
+          .body("data.size()", is(2))
+          .and()
+          .body("data[0].validating_pubkey", is(firstPubkey))
+          .body("data[1].validating_pubkey", is(secondPubKey));
 
-    final Eth2SigningRequestBody attestationRequest =
-        Eth2RequestUtils.createCannedRequest(ArtifactType.ATTESTATION);
-    // signing should fail on first signer since the key doesn't exist anymore
-    signer.eth2Sign(firstPubkey, attestationRequest, ContentType.TEXT).then().statusCode(404);
-    // signing should fail on second signer since it has been disabled in the database
-    signer2.eth2Sign(firstPubkey, attestationRequest, ContentType.TEXT).then().statusCode(412);
+      final Eth2SigningRequestBody attestationRequest =
+          Eth2RequestUtils.createCannedRequest(ArtifactType.ATTESTATION);
+      // signing should fail on first signer since the key doesn't exist anymore
+      signer.eth2Sign(firstPubkey, attestationRequest, ContentType.TEXT).then().statusCode(404);
+      // signing should fail on second signer since it has been disabled in the database
+      signer2.eth2Sign(firstPubkey, attestationRequest, ContentType.TEXT).then().statusCode(412);
 
-    final Eth2SigningRequestBody blockRequest =
-        Eth2RequestUtils.createCannedRequest(ArtifactType.BLOCK_V2);
-    // signing should fail on first signer since the key doesn't exist anymore
-    signer.eth2Sign(firstPubkey, blockRequest, ContentType.TEXT).then().statusCode(404);
-    // signing should fail on second signer since it has been disabled in the database
-    signer2.eth2Sign(firstPubkey, blockRequest, ContentType.TEXT).then().statusCode(412);
+      final Eth2SigningRequestBody blockRequest =
+          Eth2RequestUtils.createCannedRequest(ArtifactType.BLOCK_V2);
+      // signing should fail on first signer since the key doesn't exist anymore
+      signer.eth2Sign(firstPubkey, blockRequest, ContentType.TEXT).then().statusCode(404);
+      // signing should fail on second signer since it has been disabled in the database
+      signer2.eth2Sign(firstPubkey, blockRequest, ContentType.TEXT).then().statusCode(412);
+    } finally {
+      signer2.shutdown();
+    }
   }
 
   @Test

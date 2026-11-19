@@ -102,27 +102,33 @@ public class SlashingPruningAcceptanceTest extends AcceptanceTestBase {
         .withSlashingPruningInterval(1)
         .withKeyStoreDirectory(prunerSignerDirectory);
     final Signer pruningSigner = new Signer(signerBuilder.build(), null);
-    pruningSigner.start();
-    pruningSigner.awaitStartupCompletion();
+    try {
+      pruningSigner.start();
+      pruningSigner.awaitStartupCompletion();
 
-    final List<Map<String, Object>> attestations = getAttestations(jdbi);
-    final Map<String, Object> expectedHeadAttestation = attestationsBeforePruning.get(1);
-    assertThat(attestations).hasSize(1);
-    assertThat(attestations.get(0).get("validator_id"))
-        .isEqualTo(expectedHeadAttestation.get("validator_id"));
-    assertThat(attestations.get(0).get("source_epoch"))
-        .isEqualTo(expectedHeadAttestation.get("source_epoch"));
-    assertThat(attestations.get(0).get("target_epoch"))
-        .isEqualTo(expectedHeadAttestation.get("target_epoch"));
-    assertThat(attestations.get(0).get("signing_root"))
-        .isEqualTo(expectedHeadAttestation.get("signing_root"));
+      final List<Map<String, Object>> attestations = getAttestations(jdbi);
+      final Map<String, Object> expectedHeadAttestation = attestationsBeforePruning.get(1);
+      assertThat(attestations).hasSize(1);
+      assertThat(attestations.get(0).get("validator_id"))
+          .isEqualTo(expectedHeadAttestation.get("validator_id"));
+      assertThat(attestations.get(0).get("source_epoch"))
+          .isEqualTo(expectedHeadAttestation.get("source_epoch"));
+      assertThat(attestations.get(0).get("target_epoch"))
+          .isEqualTo(expectedHeadAttestation.get("target_epoch"));
+      assertThat(attestations.get(0).get("signing_root"))
+          .isEqualTo(expectedHeadAttestation.get("signing_root"));
 
-    final List<Map<String, Object>> blocks = getSignedBlocks(jdbi);
-    final Map<String, Object> expectedHeadBlock = blocksBeforePruning.get(1);
-    assertThat(blocks).hasSize(1);
-    assertThat(blocks.get(0).get("validator_id")).isEqualTo(expectedHeadBlock.get("validator_id"));
-    assertThat(blocks.get(0).get("slot")).isEqualTo(expectedHeadBlock.get("slot"));
-    assertThat(blocks.get(0).get("signing_root")).isEqualTo(expectedHeadBlock.get("signing_root"));
+      final List<Map<String, Object>> blocks = getSignedBlocks(jdbi);
+      final Map<String, Object> expectedHeadBlock = blocksBeforePruning.get(1);
+      assertThat(blocks).hasSize(1);
+      assertThat(blocks.get(0).get("validator_id"))
+          .isEqualTo(expectedHeadBlock.get("validator_id"));
+      assertThat(blocks.get(0).get("slot")).isEqualTo(expectedHeadBlock.get("slot"));
+      assertThat(blocks.get(0).get("signing_root"))
+          .isEqualTo(expectedHeadBlock.get("signing_root"));
+    } finally {
+      pruningSigner.shutdown();
+    }
   }
 
   private List<Map<String, Object>> getSignedBlocks(final Jdbi jdbi) {
