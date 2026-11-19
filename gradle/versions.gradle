@@ -185,6 +185,8 @@ dependencyManagement {
       entry 'secretsmanager'
       entry 'sts'
       entry 'kms'
+      entry 'sso'
+      entry 'ssooidc'
     }
 
     dependencySet(group: 'com.squareup.okhttp3', version: '5.5.0') {

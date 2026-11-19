@@ -15,6 +15,8 @@ package tech.pegasys.web3signer.core.service.http.handlers;
 import static io.vertx.core.http.HttpHeaders.CONTENT_TYPE;
 import static tech.pegasys.web3signer.core.service.http.handlers.ContentTypes.JSON_UTF_8;
 
+import tech.pegasys.web3signer.signing.SignerUnavailableException;
+
 import java.util.Optional;
 
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -28,8 +30,10 @@ import org.apache.logging.log4j.Logger;
 /**
  * Router level error handler. Renders every routing failure that no route specific failure handler
  * has answered as a JSON {@code ErrorResponse} ({@code {"code": <status>, "message": "<http reason
- * phrase or ErrorResponseException message>"}}), instead of Vert.x's default plain text reason
- * phrase / HTML 404 page. Also records the failure in the log.
+ * phrase or ErrorResponseException / SignerUnavailableException message>"}}), instead of Vert.x's
+ * default plain text reason phrase / HTML 404 page. Also records the failure in the log: a {@link
+ * SignerUnavailableException} (an expected, transient condition) as one warning line without stack
+ * trace, other server errors with their stack trace.
  */
 public class JsonErrorHandler implements Handler<RoutingContext> {
 
@@ -48,9 +52,10 @@ public class JsonErrorHandler implements Handler<RoutingContext> {
       return;
     }
 
+    final Throwable failure = context.failure();
     final String message =
-        context.failure() instanceof ErrorResponseException errorResponse
-            ? errorResponse.getMessage()
+        failure instanceof ErrorResponseException || failure instanceof SignerUnavailableException
+            ? failure.getMessage()
             : HttpResponseStatus.valueOf(statusCode).reasonPhrase();
     response
         .setStatusCode(statusCode)
@@ -59,7 +64,13 @@ public class JsonErrorHandler implements Handler<RoutingContext> {
   }
 
   private static void logFailure(final RoutingContext context, final int statusCode) {
-    if (statusCode >= 500) {
+    if (context.failure() instanceof SignerUnavailableException unavailable) {
+      LOG.warn(
+          "Failed request: {} ({}): {}",
+          getRequestUri(context),
+          statusCode,
+          unavailable.getMessage());
+    } else if (statusCode >= 500) {
       LOG.error("Failed request: {} ({})", getRequestUri(context), statusCode, context.failure());
     } else if (LOG.isDebugEnabled()) {
       LOG.debug("Failed request: {} ({})", getRequestUri(context), statusCode, context.failure());

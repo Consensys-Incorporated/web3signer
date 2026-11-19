@@ -279,6 +279,11 @@ public abstract class Runner implements Runnable, AutoCloseable {
     healthCheckHandler.register(name, procedure);
   }
 
+  protected void registerHealthCheckProcedure(
+      final String name, final long timeoutMillis, final Handler<Promise<Status>> procedure) {
+    healthCheckHandler.register(name, timeoutMillis, procedure);
+  }
+
   private void registerHttpHostAllowListHandler(final Router router) {
     router.route().handler(new HostAllowListHandler(baseConfig.getHttpHostAllowList()));
   }

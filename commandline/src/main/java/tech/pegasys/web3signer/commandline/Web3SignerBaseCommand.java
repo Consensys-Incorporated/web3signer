@@ -25,6 +25,7 @@ import tech.pegasys.web3signer.commandline.config.PicoCliTlsServerOptions;
 import tech.pegasys.web3signer.commandline.config.PicoCliTlsServerOptionsValidator;
 import tech.pegasys.web3signer.commandline.convertor.MetricCategoryConverter;
 import tech.pegasys.web3signer.commandline.logging.LoggingFormat;
+import tech.pegasys.web3signer.commandline.subcommands.EnclaveSubCommand;
 import tech.pegasys.web3signer.commandline.subcommands.XHelpSubCommand;
 import tech.pegasys.web3signer.common.Web3SignerMetricCategory;
 import tech.pegasys.web3signer.common.config.SignerLoaderConfig;
@@ -69,7 +70,7 @@ import picocli.CommandLine.Spec;
     descriptionHeading = "%nDescription:%n%n",
     optionListHeading = "%nOptions:%n",
     footerHeading = "%n",
-    subcommands = {HelpCommand.class, XHelpSubCommand.class},
+    subcommands = {HelpCommand.class, XHelpSubCommand.class, EnclaveSubCommand.class},
     footer =
         "Unstable options are omitted from this help. Run 'web3signer -X' to list them.%n%n"
             + "Web3Signer is licensed under the Apache License 2.0")
