@@ -57,6 +57,8 @@ dependencies {
   testImplementation 'org.flywaydb:flyway-database-postgresql'
   testImplementation 'org.jdbi:jdbi3-core'
   testImplementation 'org.zeroturnaround:zt-exec'
+  testImplementation (testFixtures(project(":enclave-host")))
+  testImplementation (testFixtures(project(":enclave-signer")))
   testImplementation (testFixtures(project(":keystorage")))
   testImplementation (testFixtures(project(":slashing-protection")))
   testImplementation (testFixtures(project(":signing")))

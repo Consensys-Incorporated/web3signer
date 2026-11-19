@@ -1,0 +1,36 @@
+{
+  "Version": "2012-10-17",
+  "Id": "web3signer-enclave",
+  "Statement": [
+    {
+      "Sid": "KeyAdministration",
+      "Effect": "Allow",
+      "Principal": { "AWS": "${ADMIN_ARN}" },
+      "Action": [
+        "kms:DescribeKey", "kms:GetKeyPolicy", "kms:PutKeyPolicy", "kms:CreateAlias", "kms:UpdateAlias",
+        "kms:DeleteAlias", "kms:TagResource", "kms:UntagResource", "kms:ListResourceTags", "kms:EnableKey",
+        "kms:DisableKey", "kms:ScheduleKeyDeletion", "kms:CancelKeyDeletion"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SealWithADataKey",
+      "Effect": "Allow",
+      "Principal": { "AWS": "${OPERATOR_ARN}" },
+      "Action": "kms:GenerateDataKey",
+      "Resource": "*",
+      "Condition": { "StringEquals": { "kms:EncryptionContext:purpose": "web3signer-enclave-bls-keys" } }
+    },
+    {
+      "Sid": "DecryptOnlyForTheMeasuredEnclave",
+      "Effect": "Allow",
+      "Principal": { "AWS": "${PARENT_ROLE_ARN}" },
+      "Action": "kms:Decrypt",
+      "Resource": "*",
+      "Condition": {
+        "StringEqualsIgnoreCase": { "kms:RecipientAttestation:ImageSha384": "${PCR0}" },
+        "StringEquals": { "kms:EncryptionContext:purpose": "web3signer-enclave-bls-keys" }
+      }
+    }
+  ]
+}

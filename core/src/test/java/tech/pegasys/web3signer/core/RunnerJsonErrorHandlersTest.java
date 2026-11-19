@@ -15,6 +15,7 @@ package tech.pegasys.web3signer.core;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import tech.pegasys.web3signer.core.service.http.handlers.ErrorResponseException;
+import tech.pegasys.web3signer.signing.SignerUnavailableException;
 
 import java.util.concurrent.TimeUnit;
 
@@ -56,6 +57,13 @@ class RunnerJsonErrorHandlersTest {
     router
         .get("/custom")
         .handler(ctx -> ctx.fail(404, new ErrorResponseException("Unknown pubkey")));
+    router
+        .get("/signer-unavailable")
+        .blockingHandler(
+            ctx -> {
+              throw new SignerUnavailableException(
+                  "Signer unavailable: Enclave signer did not answer within 2000 ms", null);
+            });
     router.post("/consumes").consumes("application/json").handler(ctx -> ctx.response().end());
     server =
         vertx
@@ -94,6 +102,16 @@ class RunnerJsonErrorHandlersTest {
 
     assertThat(reply.status()).isEqualTo(404);
     assertThat(reply.body()).isEqualTo("{\"code\":404,\"message\":\"Unknown pubkey\"}");
+  }
+
+  @Test
+  void signerUnavailableExceptionThrownByAHandlerIsAServerErrorWithItsMessage() throws Exception {
+    final Reply reply = send(HttpMethod.GET, "/signer-unavailable", null, null);
+
+    assertThat(reply.status()).isEqualTo(500);
+    assertThat(reply.body())
+        .isEqualTo(
+            "{\"code\":500,\"message\":\"Signer unavailable: Enclave signer did not answer within 2000 ms\"}");
   }
 
   @Test

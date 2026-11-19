@@ -52,6 +52,8 @@ dependencies {
 
   // Test dependencies
   testImplementation (testFixtures(project(":signing")))
+  testImplementation (testFixtures(project(":enclave-signer")))
+  testImplementation (testFixtures(project(":enclave-host")))
   testImplementation 'tech.pegasys.teku.internal:networks'
   testImplementation 'io.vertx:vertx-junit5'
   testImplementation 'org.assertj:assertj-core'
