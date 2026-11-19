@@ -56,7 +56,12 @@ public class XHelpSubCommandTest {
           "--Xazure-authority-host-override",
           "--Xazure-trust-certificate-override",
           "--Xgcp-endpoint-override",
-          "--Xkey-manager-skip-keystore-storage");
+          "--Xkey-manager-skip-keystore-storage",
+          "--Xenclave-signer-enabled",
+          "--Xenclave-signer-address",
+          "--Xenclave-signer-connections",
+          "--Xenclave-signer-max-batch",
+          "--Xenclave-signer-request-timeout-ms");
 
   /** The only unstable options on the eth1 subtree. */
   private static final List<String> ETH1_OPTIONS =
@@ -64,6 +69,9 @@ public class XHelpSubCommandTest {
           "--Xazure-endpoint-override",
           "--Xazure-authority-host-override",
           "--Xazure-trust-certificate-override");
+
+  /** The only unstable option on the enclave subtree. */
+  private static final List<String> ENCLAVE_OPTIONS = List.of("--Xdump-release-blob");
 
   private StringWriter commandOutput;
   private StringWriter commandError;
@@ -114,8 +122,11 @@ public class XHelpSubCommandTest {
         option -> assertThat(output).as(description + " - " + option).contains(option));
     ETH1_OPTIONS.forEach(
         option -> assertThat(output).as(description + " - " + option).contains(option));
+    ENCLAVE_OPTIONS.forEach(
+        option -> assertThat(output).as(description + " - " + option).contains(option));
 
-    assertThat(unstableOptionLines(output)).hasSize(ETH2_OPTIONS.size() + ETH1_OPTIONS.size());
+    assertThat(unstableOptionLines(output))
+        .hasSize(ETH2_OPTIONS.size() + ETH1_OPTIONS.size() + ENCLAVE_OPTIONS.size());
   }
 
   private static Stream<Arguments> provideRootVariations() {
