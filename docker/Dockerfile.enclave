@@ -2,7 +2,7 @@
 
 # Image of the Web3Signer enclave signer, for `nitro-cli build-enclave`.
 # The runtime is a jlink'ed java.base, the signer and protocol jars, and libblst.so from the jblst jar.
-FROM eclipse-temurin:25-jdk@sha256:83f4a7fc27df94dcc7b8de04d14cbbba8da14406f921e966969c3b09000aa507 AS build
+FROM eclipse-temurin:25-jdk@sha256:884a2f8692cc1e2c7e21f95914adf0ae0eafee9a7eb663a12169cc44468256ec AS build
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
