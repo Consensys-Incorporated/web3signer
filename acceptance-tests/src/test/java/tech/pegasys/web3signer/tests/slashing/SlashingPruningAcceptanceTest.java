@@ -20,8 +20,6 @@ import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.web3signer.BLSTestUtil;
 import tech.pegasys.web3signer.dsl.signer.Signer;
 import tech.pegasys.web3signer.dsl.signer.SignerConfigurationBuilder;
-import tech.pegasys.web3signer.dsl.utils.DatabaseUtil;
-import tech.pegasys.web3signer.dsl.utils.DatabaseUtil.TestDatabaseInfo;
 import tech.pegasys.web3signer.dsl.utils.Eth2RequestUtils;
 import tech.pegasys.web3signer.dsl.utils.MetadataFileHelpers;
 import tech.pegasys.web3signer.signing.KeyType;
@@ -32,6 +30,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
+import db.DatabaseUtil;
+import db.DatabaseUtil.TestDatabaseInfo;
 import org.apache.tuweni.bytes.Bytes32;
 import org.jdbi.v3.core.Jdbi;
 import org.junit.jupiter.api.Test;
@@ -51,7 +51,7 @@ public class SlashingPruningAcceptanceTest extends AcceptanceTestBase {
       throws IOException {
     final TestDatabaseInfo testDatabaseInfo = DatabaseUtil.create();
     final String dbUrl = testDatabaseInfo.databaseUrl();
-    final Jdbi jdbi = testDatabaseInfo.getJdbi();
+    final Jdbi jdbi = testDatabaseInfo.jdbi();
 
     final Path dataSignerKeyConfigFile = dataSignerDirectory.resolve("keyfile.yaml");
     METADATA_FILE_HELPERS.createUnencryptedYamlFileAt(

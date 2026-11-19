@@ -12,11 +12,10 @@
  */
 package tech.pegasys.web3signer.slashingprotection;
 
+import static db.DatabaseUtil.MIGRATIONS_LOCATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import tech.pegasys.web3signer.slashingprotection.dao.DatabaseVersionDao;
-
-import java.util.Optional;
 
 import db.DatabaseUtil;
 import db.DatabaseUtil.TestDatabaseInfo;
@@ -32,8 +31,12 @@ public class DatabaseVersionIntegrationTest {
   @Test
   void ensureDatabaseVersionMatchesNumberOfMigrations() {
     final TestDatabaseInfo testDatabaseInfo = DatabaseUtil.create();
-    final Optional<Flyway> flyway = testDatabaseInfo.getFlyway();
-    final int countMigrations = flyway.get().info().applied().length;
+    final Flyway flyway =
+        Flyway.configure()
+            .locations(MIGRATIONS_LOCATION)
+            .dataSource(testDatabaseInfo.dataSource())
+            .load();
+    final int countMigrations = flyway.info().applied().length;
 
     final DatabaseVersionDao databaseVersionDao = new DatabaseVersionDao();
     final Jdbi jdbi = Jdbi.create(testDatabaseInfo.databaseUrl(), DB_USERNAME, DB_PASSWORD);

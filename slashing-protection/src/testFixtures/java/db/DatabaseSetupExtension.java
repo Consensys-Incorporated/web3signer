@@ -12,78 +12,39 @@
  */
 package db;
 
-import db.DatabaseUtil.TestDatabaseInfo;
-import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import org.jdbi.v3.core.Handle;
 import org.jdbi.v3.core.Jdbi;
-import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ExtensionContext.Namespace;
-import org.junit.jupiter.api.extension.ExtensionContext.Store;
 import org.junit.jupiter.api.extension.ParameterContext;
-import org.junit.jupiter.api.extension.ParameterResolutionException;
 import org.junit.jupiter.api.extension.ParameterResolver;
 
-public class DatabaseSetupExtension
-    implements BeforeEachCallback, AfterEachCallback, ParameterResolver {
+/**
+ * Gives each test a new migrated database, injectable as a {@link Jdbi} or an open {@link Handle};
+ * JUnit closes the handle with the test's store.
+ */
+public class DatabaseSetupExtension implements BeforeEachCallback, ParameterResolver {
 
-  private static final String DB_CONTEXT_KEY = "db";
+  private static final Namespace NAMESPACE = Namespace.create(DatabaseSetupExtension.class);
 
   @Override
   public void beforeEach(final ExtensionContext context) {
-    final TestDatabaseInfo testDatabaseInfo = DatabaseUtil.create();
-    final Handle handle = testDatabaseInfo.getJdbi().open();
-    storeDbContext(context, testDatabaseInfo, handle);
-  }
-
-  @Override
-  public void afterEach(final ExtensionContext context) throws Exception {
-    final TestDbContext dbContext = getDbContext(context);
-    dbContext.db().close();
-    dbContext.handle().close();
+    final Jdbi jdbi = DatabaseUtil.create().jdbi();
+    context.getStore(NAMESPACE).put(Jdbi.class, jdbi);
+    context.getStore(NAMESPACE).put(Handle.class, jdbi.open());
   }
 
   @Override
   public boolean supportsParameter(
-      final ParameterContext parameterContext, final ExtensionContext extensionContext)
-      throws ParameterResolutionException {
+      final ParameterContext parameterContext, final ExtensionContext extensionContext) {
     final Class<?> type = parameterContext.getParameter().getType();
-    return type.equals(Handle.class)
-        || type.equals(Jdbi.class)
-        || type.equals(EmbeddedPostgres.class);
+    return type.equals(Handle.class) || type.equals(Jdbi.class);
   }
 
   @Override
   public Object resolveParameter(
-      final ParameterContext parameterContext, final ExtensionContext extensionContext)
-      throws ParameterResolutionException {
-    final TestDbContext dbContext = getDbContext(extensionContext);
-    final Class<?> type = parameterContext.getParameter().getType();
-    if (type.equals(Handle.class)) {
-      return dbContext.handle();
-    } else if (type.equals(Jdbi.class)) {
-      return dbContext.jdbi();
-    } else if (type.equals(EmbeddedPostgres.class)) {
-      return dbContext.db();
-    } else {
-      throw new RuntimeException("Unknown parameter type " + type);
-    }
+      final ParameterContext parameterContext, final ExtensionContext extensionContext) {
+    return extensionContext.getStore(NAMESPACE).get(parameterContext.getParameter().getType());
   }
-
-  private TestDbContext getDbContext(final ExtensionContext extensionContext) {
-    return (TestDbContext) extensionContext.getStore(Namespace.GLOBAL).get(DB_CONTEXT_KEY);
-  }
-
-  private void storeDbContext(
-      final ExtensionContext context,
-      final TestDatabaseInfo testDatabaseInfo,
-      final Handle handle) {
-    final TestDbContext dbContext =
-        new TestDbContext(testDatabaseInfo.getDb(), testDatabaseInfo.getJdbi(), handle);
-    final Store store = context.getStore(Namespace.GLOBAL);
-    store.put(DB_CONTEXT_KEY, dbContext);
-  }
-
-  private record TestDbContext(EmbeddedPostgres db, Jdbi jdbi, Handle handle) {}
 }

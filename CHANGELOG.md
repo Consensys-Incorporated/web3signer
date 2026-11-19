@@ -12,6 +12,7 @@
 ### Features Added
 
 ### CI/Build Enhancements
+- Postgres-backed tests start one embedded Postgres per test JVM and give each test a new database cloned from a migrated template, instead of starting a Postgres per test. This removes the embedded-Postgres startup timeouts and the macOS shared-memory failures.
 
 ---
 ## 26.11.0

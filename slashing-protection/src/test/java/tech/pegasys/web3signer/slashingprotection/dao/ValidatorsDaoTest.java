@@ -113,14 +113,14 @@ public class ValidatorsDaoTest {
   @Test
   public void isEnabledReturnsTrueForExistingValidator() {
     final TestDatabaseInfo testDatabaseInfo = DatabaseUtil.createWithoutMigration();
-    final Jdbi jdbi = testDatabaseInfo.getJdbi();
+    final Jdbi jdbi = testDatabaseInfo.jdbi();
 
     try (Handle handle = jdbi.open()) {
       final String versionBeforeEnableFlag = String.valueOf(VALIDATOR_ENABLE_FLAG_VERSION - 1);
       final Flyway flywayBeforeValidatorEnableFlag =
           Flyway.configure()
               .locations(MIGRATIONS_LOCATION)
-              .dataSource(testDatabaseInfo.getDb().getPostgresDatabase())
+              .dataSource(testDatabaseInfo.dataSource())
               .target(versionBeforeEnableFlag)
               .load();
       flywayBeforeValidatorEnableFlag.migrate();
@@ -130,7 +130,7 @@ public class ValidatorsDaoTest {
       final Flyway flywayLatest =
           Flyway.configure()
               .locations(MIGRATIONS_LOCATION)
-              .dataSource(testDatabaseInfo.getDb().getPostgresDatabase())
+              .dataSource(testDatabaseInfo.dataSource())
               .load();
       flywayLatest.migrate();
       assertThat(new ValidatorsDao().isEnabled(handle, 1)).isTrue();
