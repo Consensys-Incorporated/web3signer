@@ -26,6 +26,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
@@ -306,6 +307,54 @@ class EnclaveClientTest {
     }
     // in parallel about 600 ms; one after the other under a lock 8 x 600 ms
     assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(2500L);
+  }
+
+  /** A client with {@code connections = 0} whose connector hangs until the test ends. */
+  private EnclaveClient clientOfAHungEnclave(
+      final int requestTimeoutMillis, final CountDownLatch connecting) {
+    final CountDownLatch release = new CountDownLatch(1);
+    resources.add(release::countDown);
+    final EnclaveClient client =
+        new EnclaveClient(
+            timeout -> {
+              connecting.countDown();
+              try {
+                release.await(); // ignores the timeout, like a stuck connect or read
+              } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+              }
+              throw new IOException("hung");
+            },
+            "hung",
+            new EnclaveClient.Options(0, 8, requestTimeoutMillis));
+    resources.add(client);
+    return client;
+  }
+
+  @Test
+  void firstSignWaitsForTheEnclaveCpusNoLongerThanTheRequestTimeout() throws Exception {
+    final EnclaveClient client = clientOfAHungEnclave(300, new CountDownLatch(1));
+    final FutureTask<byte[]> result = new FutureTask<>(() -> client.sign(PUBLIC_KEY, message(1)));
+    final long start = System.nanoTime();
+    Thread.ofVirtual().start(result);
+    assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
+        .hasCauseInstanceOf(EnclaveUnavailableException.class)
+        .cause()
+        .hasMessageContaining("300 ms");
+    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)).isBetween(250L, 1000L);
+  }
+
+  @Test
+  void closeWakesAFirstSignWaitingForTheEnclaveCpus() throws Exception {
+    final CountDownLatch connecting = new CountDownLatch(1);
+    final EnclaveClient client = clientOfAHungEnclave(60_000, connecting);
+    final FutureTask<byte[]> result = new FutureTask<>(() -> client.sign(PUBLIC_KEY, message(1)));
+    Thread.ofVirtual().start(result);
+    assertThat(connecting.await(5, TimeUnit.SECONDS)).isTrue();
+    client.close();
+    assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
+        .hasCauseInstanceOf(EnclaveUnavailableException.class)
+        .hasRootCauseMessage("Enclave client is closed");
   }
 
   @Test

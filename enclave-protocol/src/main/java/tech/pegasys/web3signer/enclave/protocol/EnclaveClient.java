@@ -308,35 +308,46 @@ public final class EnclaveClient implements Closeable {
   }
 
   /**
-   * The number of dispatchers. With {@code connections = 0} the first caller asks the enclave and
-   * concurrent first callers wait for that answer, so a burst of first signs opens one {@code
-   * STATUS} connection rather than one each. A failed ask fails its waiters too; the next caller
-   * asks again.
+   * The number of dispatchers. With {@code connections = 0} the client asks the enclave for its
+   * {@code cpus} on a background thread, and every first caller waits for that one answer, so a
+   * burst of first signs opens one {@code STATUS} connection rather than one each. The wait is
+   * bounded by {@code requestTimeoutMillis} and ends when the client closes. A failed ask fails its
+   * waiters too; the next caller asks again.
    */
   private int dispatcherTarget() {
     if (options.connections() > 0) {
       return options.connections();
     }
-    final CompletableFuture<Integer> mine = new CompletableFuture<>();
-    final CompletableFuture<Integer> asked = dispatcherSizing.compareAndExchange(null, mine);
-    if (asked == null) {
-      try {
-        mine.complete(Math.clamp(status().cpus(), 1, MAX_DEFAULT_CONNECTIONS));
-      } catch (final RuntimeException | Error e) {
-        dispatcherSizing.set(null);
-        mine.completeExceptionally(e);
-        throw e;
+    CompletableFuture<Integer> sizing = dispatcherSizing.get();
+    if (sizing == null) {
+      final CompletableFuture<Integer> mine = new CompletableFuture<>();
+      sizing = dispatcherSizing.compareAndExchange(null, mine);
+      if (sizing == null) {
+        sizing = mine;
+        Thread.ofVirtual().name("enclave-sizing").start(() -> askCpus(mine));
       }
-      return mine.resultNow();
     }
     try {
-      return asked.get();
+      return sizing.get(options.requestTimeoutMillis(), TimeUnit.MILLISECONDS);
+    } catch (final TimeoutException e) {
+      throw new EnclaveUnavailableException(
+          "Enclave signer did not answer within " + options.requestTimeoutMillis() + " ms");
     } catch (final ExecutionException e) {
+      requireOpen();
       throw new EnclaveUnavailableException(
           "Enclave signer at " + target + " unavailable", e.getCause());
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new EnclaveUnavailableException("Interrupted while waiting for the enclave signer", e);
+    }
+  }
+
+  private void askCpus(final CompletableFuture<Integer> sizing) {
+    try {
+      sizing.complete(Math.clamp(status().cpus(), 1, MAX_DEFAULT_CONNECTIONS));
+    } catch (final Throwable e) {
+      dispatcherSizing.compareAndSet(sizing, null);
+      sizing.completeExceptionally(e);
     }
   }
 
@@ -490,6 +501,11 @@ public final class EnclaveClient implements Closeable {
   @Override
   public void close() {
     closed = true;
+    final CompletableFuture<Integer> sizing = dispatcherSizing.get();
+    if (sizing != null) {
+      // wakes first callers waiting for the enclave's cpus; the ask itself ends on its own timeouts
+      sizing.completeExceptionally(new EnclaveUnavailableException("Enclave client is closed"));
+    }
     final List<Dispatcher> stopping;
     synchronized (dispatchers) {
       stopping = List.copyOf(dispatchers);
