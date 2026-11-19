@@ -1,0 +1,16 @@
+Real answers of AWS KMS to Decrypt with a Nitro Enclaves attestation document as Recipient.
+
+Recorded on 2026-11-16 in us-east-1, from a throwaway probe enclave on an m5.xlarge parent instance
+(Amazon Linux 2023, nitro-cli 1.5.0) and a symmetric KMS key made for the test.
+
+debug.*        enclave in debug mode: PCR0 of zeros in the attestation document and in the key policy
+production.*   enclave in production mode: the image's PCR0 in the attestation document and in the key policy
+
+*.cms.hex      CiphertextForRecipient exactly as KMS returned it: CMS EnvelopedData in BER, 493 bytes
+*.pkcs8.hex    the RSA-2048 private key the probe enclave generated for that call, PKCS#8 DER.
+               The probe exported it on purpose. The real signer never does
+*.content.hex  what the unwrap must produce: 48 bytes, the 32-byte data key followed by one PKCS#7
+               padding block (16 bytes of 0x10)
+
+The data key is the same in both sets. It came from one GenerateDataKey call made for this test and was
+never used to seal anything. The RSA keys existed only inside that probe enclave.

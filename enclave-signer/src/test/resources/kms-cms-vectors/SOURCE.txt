@@ -1,0 +1,3 @@
+Source: https://github.com/aws/aws-nitro-enclaves-sdk-c/blob/main/tests/kmstool-enclaves/cms_test.c (Apache-2.0, Copyright Amazon.com, Inc.)
+input_ber*.hex are KMS CiphertextForRecipient samples (CMS EnvelopedData, BER); the *_out*.hex files are the fields AWS expects a parser to extract.
+No private key is published for them: they test parsing only, not decryption.
