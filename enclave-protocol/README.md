@@ -233,11 +233,11 @@ Invariants:
   fails after about one timeout (the read on its pooled connection). The worst case is a stale
   pooled connection followed by a new one whose connect, write and read each run up to the timeout:
   4 times the timeout, 8 s with the defaults.
-- **Closing:** `close` closes every connection, which fails the requests in flight, and fails the
-  callers that wait for a connection. A connection can be closed while another thread is inside a
-  call on it: the socket is shut down at once, which wakes that thread, and the descriptor and the
-  native buffers are freed when the call returns, so a descriptor number is never reused under a
-  running call.
+- **Closing:** `close` closes every connection, provisioning sessions included, which fails the
+  requests in flight, and fails the callers that wait for a connection. A connection can be closed
+  while another thread is inside a call on it: the socket is shut down at once, which wakes that
+  thread, and the descriptor and the native buffers are freed when the call returns, so a descriptor
+  number is never reused under a running call.
 - **Failures:** `EnclaveUnavailableException` when the enclave cannot answer (timeout, no free
   connection, connection failure, closed client, another protocol version); `EnclaveException` with
   the result code and the enclave's message when it refuses. `ProvisioningSession.loadKeys` throws

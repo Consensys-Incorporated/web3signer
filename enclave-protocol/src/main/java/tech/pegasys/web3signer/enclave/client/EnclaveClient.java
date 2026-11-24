@@ -157,7 +157,7 @@ public final class EnclaveClient implements Closeable {
     requireOpen();
     try {
       return new ProvisioningSession(
-          this, connector.connect(options.requestTimeoutMillis(), (int) millis));
+          this, track(connector.connect(options.requestTimeoutMillis(), (int) millis)));
     } catch (final IOException e) {
       throw new EnclaveUnavailableException("Enclave signer at " + target + " unavailable", e);
     }
@@ -270,7 +270,11 @@ public final class EnclaveClient implements Closeable {
 
   private Connection connect() throws IOException {
     final int timeout = options.requestTimeoutMillis();
-    final Connection connection = connector.connect(timeout, timeout);
+    return track(connector.connect(timeout, timeout));
+  }
+
+  /** Registers a new connection, pooled or provisioning, so that {@link #close()} reaches it. */
+  private Connection track(final Connection connection) {
     open.add(connection);
     if (closed) {
       // close() may have looked before this connection existed
@@ -287,7 +291,7 @@ public final class EnclaveClient implements Closeable {
     }
   }
 
-  private void drop(final Connection connection) {
+  void drop(final Connection connection) {
     open.remove(connection);
     connection.close();
   }
@@ -319,8 +323,8 @@ public final class EnclaveClient implements Closeable {
   }
 
   /**
-   * Closes every connection, which fails the requests in flight, and fails the callers waiting for
-   * a connection.
+   * Closes every connection, provisioning sessions included, which fails the requests in flight,
+   * and fails the callers waiting for a connection.
    */
   @Override
   public void close() {

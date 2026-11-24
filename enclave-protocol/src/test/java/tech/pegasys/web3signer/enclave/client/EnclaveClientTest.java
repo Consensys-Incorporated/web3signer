@@ -252,6 +252,31 @@ class EnclaveClientTest {
   }
 
   @Test
+  void closeFailsAProvisioningSessionWaitingForAnAnswer() throws Exception {
+    final CountDownLatch received = new CountDownLatch(1);
+    final ScriptedTcpServer server =
+        server(
+            (self, connection, index) -> {
+              self.read(connection);
+              received.countDown();
+              while (true) {
+                self.read(connection); // never answers, like a release waiting for approval
+              }
+            });
+    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 2000));
+    final ProvisioningSession session = client.openProvisioningSession(Duration.ofMinutes(1));
+    resources.add(session);
+    try (ExecutorService caller = Executors.newSingleThreadExecutor()) {
+      final Future<?> result =
+          caller.submit(() -> session.unwrapDek(Protocol.BLOB_FORMAT_CMS, new byte[10]));
+      assertThat(received.await(5, TimeUnit.SECONDS)).isTrue();
+      client.close();
+      assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
+          .hasCauseInstanceOf(EnclaveUnavailableException.class);
+    }
+  }
+
+  @Test
   void closeFailsTheCallersWaitingForAConnection() throws Exception {
     final CountDownLatch connecting = new CountDownLatch(1);
     final EnclaveClient client =
