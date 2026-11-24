@@ -88,6 +88,7 @@ public class SignerConfigurationBuilder {
 
   private boolean signingExtEnabled;
   private Pair<Path, Path> commitBoostParameters;
+  private String enclaveSignerAddress;
 
   public SignerConfigurationBuilder withLogLevel(final Level logLevel) {
     this.logLevel = logLevel;
@@ -334,6 +335,11 @@ public class SignerConfigurationBuilder {
     return this;
   }
 
+  public SignerConfigurationBuilder withEnclaveSignerAddress(final String enclaveSignerAddress) {
+    this.enclaveSignerAddress = enclaveSignerAddress;
+    return this;
+  }
+
   public SignerConfigurationBuilder withSigningExtEnabled(final boolean signingExtEnabled) {
     this.signingExtEnabled = signingExtEnabled;
     return this;
@@ -397,6 +403,7 @@ public class SignerConfigurationBuilder {
         chainIdProvider,
         Optional.ofNullable(v3KeystoresBulkloadParameters),
         signingExtEnabled,
-        Optional.ofNullable(commitBoostParameters));
+        Optional.ofNullable(commitBoostParameters),
+        Optional.ofNullable(enclaveSignerAddress));
   }
 }

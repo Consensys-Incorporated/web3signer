@@ -123,8 +123,9 @@ public class DeleteKeystoresProcessor {
         }
       }
 
-      // Check that key is read only, if so return an error status
-      if (signer.get() instanceof BlsArtifactSigner blsSigner && blsSigner.isReadOnlyKey()) {
+      // Check that key is read only, if so return an error status. Only BLS keys loaded from
+      // keystore files are editable; every other signer, enclave keys included, is read only.
+      if (!(signer.get() instanceof BlsArtifactSigner blsSigner) || blsSigner.isReadOnlyKey()) {
         return new DeleteKeystoreResult(
             DeleteKeystoreStatus.ERROR, "Unable to delete readonly key: " + pubkey);
       }

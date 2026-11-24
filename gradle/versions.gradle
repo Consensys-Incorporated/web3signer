@@ -120,6 +120,7 @@ dependencyManagement {
         exclude group: 'commons-lang', name: 'commons-lang'
       }
       entry 'unsigned'
+      entry 'ssz'
       entry 'async'
       entry ('networks') {
         // CVE-2025-48924
@@ -185,6 +186,8 @@ dependencyManagement {
       entry 'secretsmanager'
       entry 'sts'
       entry 'kms'
+      entry 'sso'
+      entry 'ssooidc'
     }
 
     dependencySet(group: 'com.squareup.okhttp3', version: '5.5.0') {

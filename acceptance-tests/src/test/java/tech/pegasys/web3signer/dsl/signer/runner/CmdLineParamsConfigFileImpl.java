@@ -154,6 +154,14 @@ public class CmdLineParamsConfigFileImpl implements CmdLineParamsBuilder {
       }
 
       signerConfig
+          .getEnclaveSignerAddress()
+          .ifPresent(
+              address -> {
+                yamlConfigMap.put("eth2.Xenclave-signer-enabled", true);
+                yamlConfigMap.put("eth2.Xenclave-signer-address", address);
+              });
+
+      signerConfig
           .getCommitBoostParameters()
           .ifPresent(
               commitBoostParameters ->
