@@ -136,6 +136,14 @@ public class CmdLineParamsDefaultImpl implements CmdLineParamsBuilder {
       }
 
       signerConfig
+          .getEnclaveSignerAddress()
+          .ifPresent(
+              address -> {
+                params.add("--Xenclave-signer-enabled=true");
+                params.add("--Xenclave-signer-address=" + address);
+              });
+
+      signerConfig
           .getCommitBoostParameters()
           .ifPresent(
               commitBoostParameters -> params.addAll(commitBoostOptions(commitBoostParameters)));

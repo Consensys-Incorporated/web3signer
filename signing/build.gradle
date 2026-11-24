@@ -16,6 +16,7 @@ jar {
 
 dependencies {
   implementation project(":common")
+  implementation project(':enclave-protocol')
   implementation project(':keystorage')
   implementation project(":bls-keystore")
   implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
@@ -53,6 +54,8 @@ dependencies {
   testImplementation 'org.assertj:assertj-core'
   testImplementation 'org.mockito:mockito-junit-jupiter'
   testImplementation(testFixtures(project(":keystorage")))
+  testImplementation(testFixtures(project(":enclave-signer")))
+  testImplementation(testFixtures(project(":enclave-host")))
 
   // JUnit test dependencies
   testImplementation 'org.junit.jupiter:junit-jupiter-api'

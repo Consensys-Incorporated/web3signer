@@ -24,8 +24,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import tech.pegasys.web3signer.BLSTestUtil;
-import tech.pegasys.web3signer.signing.ArtifactSigner;
 import tech.pegasys.web3signer.signing.ArtifactSignerProvider;
+import tech.pegasys.web3signer.signing.BlsArtifactSigner;
 import tech.pegasys.web3signer.signing.ValidatorManager;
 import tech.pegasys.web3signer.slashingprotection.SlashingProtection;
 import tech.pegasys.web3signer.slashingprotection.interchange.IncrementalExporter;
@@ -49,7 +49,7 @@ class DeleteKeystoresProcessorTest {
 
   @Mock SlashingProtection slashingProtection;
   @Mock ArtifactSignerProvider artifactSignerProvider;
-  @Mock ArtifactSigner signer;
+  @Mock BlsArtifactSigner signer;
   @Mock IncrementalExporter incrementalExporter;
   @Mock ValidatorManager validatorManager;
 

@@ -1,0 +1,15 @@
+# Web3Signer on the Nitro parent instance, signing through the enclave signer.
+# Copy to /etc/web3signer/config.yaml and replace <db-host> with your database endpoint.
+# The database password comes from WEB3SIGNER_ETH2_SLASHING_PROTECTION_DB_PASSWORD
+# (set in /etc/web3signer/web3signer.env), never from this file.
+http-listen-host: "127.0.0.1"
+http-listen-port: 9000
+# An empty directory: no key is loaded from disk
+key-config-path: "/var/lib/web3signer/keys"
+metrics-enabled: true
+# Use the network of your validator client
+eth2.network: "hoodi"
+eth2.slashing-protection-db-url: "jdbc:postgresql://<db-host>:5432/web3signer?sslmode=verify-full&sslrootcert=/etc/web3signer/rds-global-bundle.pem"
+eth2.slashing-protection-db-username: "web3signer"
+eth2.Xenclave-signer-enabled: true
+eth2.Xenclave-signer-address: "vsock:16:5000"
