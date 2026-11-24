@@ -159,6 +159,17 @@ class MessagesTest {
   }
 
   @Test
+  void firstOffsetBeforeOrPastTheFixedPartIsMalformed() {
+    for (final long offset : new long[] {0, 0xFFFF_FFF8L}) {
+      final byte[] body = Messages.encodePublicKeys(new PublicKeysPage(1, List.of(new byte[48])));
+      putUint32(body, 8, offset);
+      assertThatThrownBy(() -> Messages.decodePublicKeys(body))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("first offset");
+    }
+  }
+
+  @Test
   void offsetsMustNotDecrease() {
     final byte[] body = evidence();
     putUint32(body, 5, 8);

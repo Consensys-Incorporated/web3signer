@@ -21,13 +21,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The part of <a
- * href="https://github.com/ethereum/consensus-specs/blob/master/ssz/simple-serialize.md">SSZ</a>
- * that the protocol uses: containers of {@code uint8}, {@code uint64}, byte vectors, byte lists and
- * lists of fixed-size items, with the variable fields after the fixed ones.
+ * The part of <a href="https://github.com/ethereum/ssz-specs">SSZ</a> that the protocol uses:
+ * containers of {@code uint8}, {@code uint64}, byte vectors, byte lists and lists of fixed-size
+ * items, with the variable fields after the fixed ones.
  */
 final class Ssz {
-  static final int OFFSET_SIZE = 4;
+  static final int BYTES_PER_LENGTH_OFFSET = 4;
 
   private Ssz() {}
 
@@ -40,7 +39,7 @@ final class Ssz {
       throws IOException {
     final Reader reader = new Reader(ByteBuffer.wrap(body).order(LITTLE_ENDIAN), what, false);
     final T value = decoder.decode(reader);
-    reader.finish();
+    reader.checkNothingLeft();
     return value;
   }
 
@@ -129,7 +128,7 @@ final class Ssz {
     }
 
     byte[] toBytes() {
-      final int fixedSize = fixed.size() + OFFSET_SIZE * variables.size();
+      final int fixedSize = fixed.size() + BYTES_PER_LENGTH_OFFSET * variables.size();
       int size = fixedSize;
       for (final byte[] variable : variables) {
         size += variable.length;
@@ -235,26 +234,27 @@ final class Ssz {
 
     private void readOffsets() throws IOException {
       final int start = in.position();
-      check(in.remaining() >= OFFSET_SIZE, what, "shorter than its fixed part");
-      final long fixedSize = Integer.toUnsignedLong(in.getInt(start));
+      check(in.remaining() >= BYTES_PER_LENGTH_OFFSET, what, "shorter than its fixed part");
+      final long fixedSize = Integer.toUnsignedLong(in.getInt());
       check(
-          fixedSize >= start + OFFSET_SIZE
+          fixedSize >= start + BYTES_PER_LENGTH_OFFSET
               && fixedSize <= in.limit()
-              && (fixedSize - start) % OFFSET_SIZE == 0,
+              && (fixedSize - start) % BYTES_PER_LENGTH_OFFSET == 0,
           what,
           "first offset is not the size of the fixed part");
-      final int count = (int) (fixedSize - start) / OFFSET_SIZE;
+      final int count = (int) (fixedSize - start) / BYTES_PER_LENGTH_OFFSET;
       bounds = new int[count + 1];
-      for (int i = 0; i < count; i++) {
+      bounds[0] = (int) fixedSize;
+      for (int i = 1; i < count; i++) {
         final long offset = Integer.toUnsignedLong(in.getInt());
-        check(i == 0 || offset >= bounds[i - 1], what, "decreasing offsets");
+        check(offset >= bounds[i - 1], what, "decreasing offsets");
         check(offset <= in.limit(), what, "offset past the end");
         bounds[i] = (int) offset;
       }
       bounds[count] = in.limit();
     }
 
-    private void finish() throws IOException {
+    private void checkNothingLeft() throws IOException {
       if (bounds == null) {
         check(!in.hasRemaining(), what, "trailing bytes");
       } else {

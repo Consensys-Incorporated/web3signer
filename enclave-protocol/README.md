@@ -16,8 +16,7 @@ How to deploy it: [`deployments/aws-nitro/README.md`](../deployments/aws-nitro/R
 
 - **The enclave has no network.** Its only channel to the parent instance is a vsock stream socket.
   The protocol needs a byte stream and nothing else.
-- **SSZ bodies.** Every message body is
-  [SSZ](https://github.com/ethereum/consensus-specs/blob/master/ssz/simple-serialize.md), as in the
+- **SSZ bodies.** Every message body is [SSZ](https://github.com/ethereum/ssz-specs), as in the
   consensus layer. The module carries its own codec for the small part of SSZ it needs (containers
   of `uint8`, `uint64`, byte vectors, byte lists and lists of fixed-size items, with the variable
   fields last). An encoder and its decoder list the fields in the same order as the SSZ type, and
