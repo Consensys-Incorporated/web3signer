@@ -96,16 +96,15 @@ public final class ProvisioningSession implements Closeable {
 
   private <T> T send(final int opcode, final byte[] body, final BodyDecoder<T> decoder) {
     try {
-      return decoder.decode(client.exchange(connection, opcode, body));
+      return decoder.decode(client.sendAndReceive(connection, opcode, body));
     } catch (final IOException e) {
-      client.drop(connection);
-      throw new EnclaveUnavailableException(
-          "Provisioning connection to " + client.target() + " failed", e);
+      client.closeConnection(connection);
+      throw new EnclaveUnavailableException("Provisioning connection failed", e);
     }
   }
 
   @Override
   public void close() {
-    client.drop(connection);
+    client.closeConnection(connection);
   }
 }

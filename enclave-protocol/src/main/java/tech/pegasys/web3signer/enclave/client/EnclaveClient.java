@@ -87,7 +87,6 @@ public final class EnclaveClient implements Closeable {
   }
 
   private final Connector connector;
-  private final String target;
   private final Options options;
   private final Semaphore permits;
   private final Deque<Connection> idle = new ConcurrentLinkedDeque<>();
@@ -95,19 +94,14 @@ public final class EnclaveClient implements Closeable {
   private final AtomicInteger requestIds = new AtomicInteger();
   private volatile boolean closed;
 
-  public EnclaveClient(final Connector connector, final String target, final Options options) {
+  public EnclaveClient(final Connector connector, final Options options) {
     this.connector = connector;
-    this.target = target;
     this.options = options;
     this.permits = new Semaphore(options.connections(), true);
   }
 
   public static EnclaveClient create(final EnclaveAddress address, final Options options) {
-    return new EnclaveClient(address::connect, address.toString(), options);
-  }
-
-  public String target() {
-    return target;
+    return new EnclaveClient(address::connect, options);
   }
 
   /**
@@ -121,11 +115,11 @@ public final class EnclaveClient implements Closeable {
    */
   public byte[] sign(final byte[] publicKey, final byte[] signingRoot) {
     final byte[] request = Messages.encodeSignRequest(new SignRequest(publicKey, signingRoot));
-    return call(Protocol.SIGN, request, Messages::decodeSignature);
+    return sendPooled(Protocol.SIGN, request, Messages::decodeSignature);
   }
 
   public Status status() {
-    return call(Protocol.STATUS, Messages.encodeStatusRequest(), Messages::decodeStatus);
+    return sendPooled(Protocol.STATUS, Messages.encodeStatusRequest(), Messages::decodeStatus);
   }
 
   /** All public keys, in load order. */
@@ -134,7 +128,8 @@ public final class EnclaveClient implements Closeable {
     while (true) {
       final byte[] request =
           Messages.encodePageRequest(new PageRequest(keys.size(), Protocol.MAX_PUBLIC_KEYS_PAGE));
-      final List<byte[]> page = call(Protocol.GET_PUBLIC_KEYS, request, Messages::decodePublicKeys);
+      final List<byte[]> page =
+          sendPooled(Protocol.GET_PUBLIC_KEYS, request, Messages::decodePublicKeys);
       keys.addAll(page);
       // keys are only ever added, so a short page is the last one
       if (page.size() < Protocol.MAX_PUBLIC_KEYS_PAGE) {
@@ -157,9 +152,10 @@ public final class EnclaveClient implements Closeable {
     requireOpen();
     try {
       return new ProvisioningSession(
-          this, track(connector.connect(options.requestTimeoutMillis(), (int) millis)));
+          this,
+          registerConnection(connector.connect(options.requestTimeoutMillis(), (int) millis)));
     } catch (final IOException e) {
-      throw new EnclaveUnavailableException("Enclave signer at " + target + " unavailable", e);
+      throw new EnclaveUnavailableException("Enclave signer unavailable", e);
     }
   }
 
@@ -170,9 +166,9 @@ public final class EnclaveClient implements Closeable {
    *
    * @return the body of an {@code OK} response
    * @throws EnclaveException when the enclave refuses; the connection stays usable
-   * @throws IOException on an I/O error or an answer to another request; drop the connection
+   * @throws IOException on an I/O error or an answer to another request; close the connection
    */
-  byte[] exchange(final Connection connection, final int opcode, final byte[] body)
+  byte[] sendAndReceive(final Connection connection, final int opcode, final byte[] body)
       throws IOException {
     final int requestId = requestIds.incrementAndGet();
     Frames.write(connection, new Frame(requestId, opcode, body));
@@ -191,15 +187,14 @@ public final class EnclaveClient implements Closeable {
   }
 
   /** One request on a pooled connection, resent once on a new one if a pooled one failed. */
-  private <T> T call(final int opcode, final byte[] body, final BodyDecoder<T> decoder) {
-    requireOpen();
-    acquirePermit();
+  private <T> T sendPooled(final int opcode, final byte[] body, final BodyDecoder<T> decoder) {
+    waitForFreeConnection();
     try {
       requireOpen();
       final Connection pooled = idle.pollFirst();
       if (pooled != null) {
         try {
-          return attempt(pooled, opcode, body, decoder);
+          return sendAndDecode(pooled, opcode, body, decoder);
         } catch (final IOException e) {
           if (closed || e instanceof SocketTimeoutException) {
             throw unavailable(e);
@@ -208,7 +203,7 @@ public final class EnclaveClient implements Closeable {
         }
       }
       try {
-        return attempt(connect(), opcode, body, decoder);
+        return sendAndDecode(connect(), opcode, body, decoder);
       } catch (final IOException e) {
         throw unavailable(e);
       }
@@ -217,40 +212,30 @@ public final class EnclaveClient implements Closeable {
     }
   }
 
-  /** Exchanges and decodes; keeps the connection unless it failed, drops it otherwise. */
-  private <T> T attempt(
+  /** Sends and decodes; keeps the connection unless it failed, closes it otherwise. */
+  private <T> T sendAndDecode(
       final Connection connection,
       final int opcode,
       final byte[] body,
       final BodyDecoder<T> decoder)
       throws IOException {
-    boolean keep = false;
     try {
-      final T result = decoder.decode(exchange(connection, opcode, body));
-      keep = true;
+      final T result = decoder.decode(sendAndReceive(connection, opcode, body));
+      releaseConnection(connection);
       return result;
     } catch (final EnclaveException refused) {
-      keep = true;
+      releaseConnection(connection); // a refusal leaves the connection usable
       throw refused;
     } catch (final UnsupportedProtocolVersionException e) {
-      throw new EnclaveUnavailableException(
-          "Enclave signer at "
-              + target
-              + " speaks protocol version "
-              + e.version()
-              + ", this client speaks "
-              + Protocol.VERSION,
-          e);
-    } finally {
-      if (keep) {
-        giveBack(connection);
-      } else {
-        drop(connection);
-      }
+      closeConnection(connection);
+      throw new EnclaveUnavailableException(e.getMessage(), e);
+    } catch (final IOException | RuntimeException e) {
+      closeConnection(connection);
+      throw e;
     }
   }
 
-  private void acquirePermit() {
+  private void waitForFreeConnection() {
     final boolean acquired;
     try {
       acquired = permits.tryAcquire(options.requestTimeoutMillis(), TimeUnit.MILLISECONDS);
@@ -260,9 +245,7 @@ public final class EnclaveClient implements Closeable {
     }
     if (!acquired) {
       throw new EnclaveUnavailableException(
-          "No connection to the enclave signer at "
-              + target
-              + " free within "
+          "No connection to the enclave signer free within "
               + options.requestTimeoutMillis()
               + " ms");
     }
@@ -270,28 +253,29 @@ public final class EnclaveClient implements Closeable {
 
   private Connection connect() throws IOException {
     final int timeout = options.requestTimeoutMillis();
-    return track(connector.connect(timeout, timeout));
+    return registerConnection(connector.connect(timeout, timeout));
   }
 
   /** Registers a new connection, pooled or provisioning, so that {@link #close()} reaches it. */
-  private Connection track(final Connection connection) {
+  private Connection registerConnection(final Connection connection) {
     open.add(connection);
     if (closed) {
       // close() may have looked before this connection existed
-      drop(connection);
+      closeConnection(connection);
       throw closedFailure();
     }
     return connection;
   }
 
-  private void giveBack(final Connection connection) {
+  /** Puts a working connection back in the idle pool, or closes it if the client has closed. */
+  private void releaseConnection(final Connection connection) {
     idle.offerFirst(connection);
     if (closed && idle.remove(connection)) {
-      drop(connection);
+      closeConnection(connection);
     }
   }
 
-  void drop(final Connection connection) {
+  void closeConnection(final Connection connection) {
     open.remove(connection);
     connection.close();
   }
@@ -302,14 +286,9 @@ public final class EnclaveClient implements Closeable {
     }
     if (cause instanceof SocketTimeoutException) {
       return new EnclaveUnavailableException(
-          "Enclave signer at "
-              + target
-              + " did not answer within "
-              + options.requestTimeoutMillis()
-              + " ms",
-          cause);
+          "Enclave signer did not answer within " + options.requestTimeoutMillis() + " ms", cause);
     }
-    return new EnclaveUnavailableException("Enclave signer at " + target + " unavailable", cause);
+    return new EnclaveUnavailableException("Enclave signer unavailable", cause);
   }
 
   private static EnclaveUnavailableException closedFailure() {
@@ -333,7 +312,7 @@ public final class EnclaveClient implements Closeable {
     permits.release(options.connections());
     idle.clear();
     for (final Connection connection : open) {
-      drop(connection);
+      closeConnection(connection);
     }
   }
 }

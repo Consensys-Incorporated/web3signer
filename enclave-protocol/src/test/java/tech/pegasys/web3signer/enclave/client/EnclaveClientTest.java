@@ -82,7 +82,7 @@ class EnclaveClientTest {
 
   private EnclaveClient client(
       final EnclaveClient.Connector connector, final EnclaveClient.Options options) {
-    final EnclaveClient client = new EnclaveClient(connector, "test", options);
+    final EnclaveClient client = new EnclaveClient(connector, options);
     resources.add(client);
     return client;
   }
@@ -273,6 +273,27 @@ class EnclaveClientTest {
       assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
           .hasCauseInstanceOf(EnclaveUnavailableException.class);
     }
+  }
+
+  @Test
+  void aCallerInterruptedWhileWaitingForAConnectionFailsAndStaysInterrupted() throws Exception {
+    final CountDownLatch connecting = new CountDownLatch(1);
+    final EnclaveClient client =
+        client(hungConnector(connecting), new EnclaveClient.Options(1, 60_000));
+    Thread.ofVirtual().start(() -> client.sign(PUBLIC_KEY, root(1))); // holds the only connection
+    assertThat(connecting.await(5, TimeUnit.SECONDS)).isTrue();
+
+    final FutureTask<Boolean> waiter =
+        new FutureTask<>(
+            () -> {
+              assertThatThrownBy(() -> client.sign(PUBLIC_KEY, root(2)))
+                  .isInstanceOf(EnclaveUnavailableException.class)
+                  .hasMessage("Interrupted while waiting for the enclave signer");
+              return Thread.currentThread().isInterrupted();
+            });
+    final Thread thread = Thread.ofVirtual().start(waiter);
+    thread.interrupt();
+    assertThat(waiter.get(5, TimeUnit.SECONDS)).isTrue();
   }
 
   @Test
