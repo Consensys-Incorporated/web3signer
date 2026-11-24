@@ -22,8 +22,8 @@ import java.util.List;
 
 /**
  * The part of <a href="https://github.com/ethereum/ssz-specs">SSZ</a> that the protocol uses:
- * containers of {@code uint8}, {@code uint64}, byte vectors, byte lists and lists of fixed-size
- * items, with the variable fields after the fixed ones.
+ * containers of {@code uint8}, {@code uint16}, {@code uint32}, byte vectors and byte lists, with
+ * the byte lists after the fixed fields, and lists of fixed-size containers as a whole body.
  */
 final class Ssz {
   static final int BYTES_PER_LENGTH_OFFSET = 4;
@@ -37,13 +37,39 @@ final class Ssz {
   /** Decodes a whole body as one container; the body must be used up. */
   static <T> T readContainer(final byte[] body, final String what, final Decoder<T> decoder)
       throws IOException {
-    final Reader reader = new Reader(ByteBuffer.wrap(body).order(LITTLE_ENDIAN), what, false);
+    final Reader reader = new Reader(body, what);
     final T value = decoder.decode(reader);
     reader.checkNothingLeft();
     return value;
   }
 
-  /** Writes the fields of one list item. */
+  /** Encodes a whole body as a list of fixed-size containers: their fields one after another. */
+  static <T> byte[] writeList(final List<T> items, final int maxCount, final Encoder<T> encoder) {
+    require(
+        items.size() <= maxCount,
+        "List of " + items.size() + " items, at most " + maxCount + " allowed");
+    final Writer out = new Writer();
+    for (final T item : items) {
+      encoder.encode(out, item);
+    }
+    require(out.byteLists.isEmpty(), "List items must be of fixed size");
+    return out.toBytes();
+  }
+
+  /** Decodes a whole body as a list of fixed-size containers, until the body runs out. */
+  static <T> List<T> readList(
+      final byte[] body, final int maxCount, final String what, final Decoder<T> decoder)
+      throws IOException {
+    final Reader reader = new Reader(body, what);
+    final List<T> items = new ArrayList<>();
+    while (reader.in.hasRemaining()) {
+      reader.check(items.size() < maxCount, "list longer than " + maxCount);
+      items.add(decoder.decode(reader));
+    }
+    return items;
+  }
+
+  /** Writes the fields of a container or of one list item. */
   @FunctionalInterface
   interface Encoder<T> {
     void encode(Writer out, T value);
@@ -73,20 +99,20 @@ final class Ssz {
   /** Encodes one container. {@link #toBytes()} places the offsets at the end of the fixed part. */
   static final class Writer {
     private final ByteArrayOutputStream fixed = new ByteArrayOutputStream();
-    private final List<byte[]> variables = new ArrayList<>(2);
+    private final List<byte[]> byteLists = new ArrayList<>(2);
 
     private Writer() {}
 
     Writer uint8(final int value) {
-      require(value >= 0 && value <= 0xff, "uint8 out of range: " + value);
-      fixed().write(value);
-      return this;
+      return uint(value, 1);
     }
 
-    Writer uint64(final long value) {
-      require(value >= 0, "uint64 out of range: " + value);
-      fixed().writeBytes(ByteBuffer.allocate(8).order(LITTLE_ENDIAN).putLong(value).array());
-      return this;
+    Writer uint16(final int value) {
+      return uint(value, 2);
+    }
+
+    Writer uint32(final long value) {
+      return uint(value, 4);
     }
 
     /** A byte vector of exactly {@code size} bytes. */
@@ -100,81 +126,75 @@ final class Ssz {
       require(
           value.length <= maxSize,
           "Byte list of " + value.length + " bytes, at most " + maxSize + " allowed");
-      variables.add(value);
+      byteLists.add(value);
       return this;
     }
 
-    /** A list of fixed-size items, each written by {@code encoder}. */
-    <T> Writer list(final List<T> items, final int maxCount, final Encoder<T> encoder) {
+    private Writer uint(final long value, final int size) {
       require(
-          items.size() <= maxCount,
-          "List of " + items.size() + " items, at most " + maxCount + " allowed");
-      final Writer item = new Writer();
-      for (final T value : items) {
-        encoder.encode(item, value);
+          value >= 0 && value < 1L << (8 * size), "uint" + 8 * size + " out of range: " + value);
+      final ByteArrayOutputStream out = fixed();
+      for (int i = 0; i < size; i++) {
+        out.write((int) (value >>> (8 * i)));
       }
-      if (!item.variables.isEmpty()) {
-        throw new IllegalStateException("List items must be of fixed size");
-      }
-      variables.add(item.fixed.toByteArray());
       return this;
     }
 
     private ByteArrayOutputStream fixed() {
-      if (!variables.isEmpty()) {
-        throw new IllegalStateException("Fixed fields must come before variable fields");
+      if (!byteLists.isEmpty()) {
+        throw new IllegalStateException("Fixed fields must come before byte lists");
       }
       return fixed;
     }
 
     byte[] toBytes() {
-      final int fixedSize = fixed.size() + BYTES_PER_LENGTH_OFFSET * variables.size();
+      final int fixedSize = fixed.size() + BYTES_PER_LENGTH_OFFSET * byteLists.size();
       int size = fixedSize;
-      for (final byte[] variable : variables) {
-        size += variable.length;
+      for (final byte[] byteList : byteLists) {
+        size += byteList.length;
       }
       final ByteBuffer out = ByteBuffer.allocate(size).order(LITTLE_ENDIAN);
       out.put(fixed.toByteArray());
       int offset = fixedSize;
-      for (final byte[] variable : variables) {
+      for (final byte[] byteList : byteLists) {
         out.putInt(offset);
-        offset += variable.length;
+        offset += byteList.length;
       }
-      for (final byte[] variable : variables) {
-        out.put(variable);
+      for (final byte[] byteList : byteLists) {
+        out.put(byteList);
       }
       return out.array();
     }
   }
 
   /**
-   * Decodes one container, or the items of a list, field by field. At the first variable field it
-   * reads all the offsets: the first one is the size of the fixed part, so it gives their number.
+   * Decodes one container, or the items of a list, field by field. At the first byte list it reads
+   * all the offsets: the first one is the size of the fixed part, so it gives their number.
    */
   static final class Reader {
     private final ByteBuffer in;
     private final String what;
-    private final boolean items;
 
-    /** Start of each variable field, and the end of the container; null before the first. */
+    /** Start of each byte list, then the end of the body; null before the first byte list. */
     private int[] bounds;
 
-    private int nextVariable;
+    private int nextByteList;
 
-    private Reader(final ByteBuffer in, final String what, final boolean items) {
-      this.in = in;
+    private Reader(final byte[] body, final String what) {
+      this.in = ByteBuffer.wrap(body).order(LITTLE_ENDIAN);
       this.what = what;
-      this.items = items;
     }
 
     int uint8() throws IOException {
       return fixed(1).get() & 0xff;
     }
 
-    long uint64() throws IOException {
-      final long value = fixed(8).getLong();
-      check(value >= 0, what, "uint64 above 2^63 - 1");
-      return value;
+    int uint16() throws IOException {
+      return fixed(2).getShort() & 0xffff;
+    }
+
+    long uint32() throws IOException {
+      return Integer.toUnsignedLong(fixed(4).getInt());
     }
 
     byte[] vector(final int size) throws IOException {
@@ -184,86 +204,64 @@ final class Ssz {
     }
 
     byte[] byteList(final int maxSize) throws IOException {
-      final ByteBuffer field = variable();
-      check(field.remaining() <= maxSize, what, "byte list longer than " + maxSize);
-      final byte[] value = new byte[field.remaining()];
-      field.get(value);
-      return value;
-    }
-
-    /** A list of at most {@code maxCount} fixed-size items, each read by {@code decoder}. */
-    <T> List<T> list(final int maxCount, final Decoder<T> decoder) throws IOException {
-      final ByteBuffer field = variable();
-      final Reader reader = new Reader(field, what, true);
-      final List<T> values = new ArrayList<>();
-      while (field.hasRemaining()) {
-        final int before = field.position();
-        values.add(decoder.decode(reader));
-        if (field.position() == before) {
-          throw new IllegalStateException(what + ": list item without fields");
-        }
-        check(values.size() <= maxCount, what, "list longer than " + maxCount);
-      }
-      return values;
-    }
-
-    private ByteBuffer fixed(final int size) throws IOException {
-      if (bounds != null) {
-        throw new IllegalStateException(what + ": fixed fields must come before variable fields");
-      }
-      check(in.remaining() >= size, what, "shorter than its fixed part");
-      return in;
-    }
-
-    private ByteBuffer variable() throws IOException {
-      if (items) {
-        throw new IllegalStateException(what + ": list items must be of fixed size");
-      }
       if (bounds == null) {
         readOffsets();
       }
       final int count = bounds.length - 1;
       check(
-          nextVariable < count,
-          what,
-          "has " + count + " variable fields, expected at least " + (nextVariable + 1));
-      final int from = bounds[nextVariable];
-      final int to = bounds[++nextVariable];
-      return in.slice(from, to - from).order(LITTLE_ENDIAN);
+          nextByteList < count,
+          "has " + count + " byte lists, expected at least " + (nextByteList + 1));
+      final int from = bounds[nextByteList];
+      final int to = bounds[++nextByteList];
+      check(to - from <= maxSize, "byte list longer than " + maxSize);
+      final byte[] value = new byte[to - from];
+      in.get(from, value);
+      return value;
     }
 
+    private ByteBuffer fixed(final int size) throws IOException {
+      if (bounds != null) {
+        throw new IllegalStateException(what + ": fixed fields must come before byte lists");
+      }
+      check(in.remaining() >= size, "shorter than its fixed part");
+      return in;
+    }
+
+    /** The rest of the fixed part is offsets, and the end of the body closes the last byte list. */
     private void readOffsets() throws IOException {
       final int start = in.position();
-      check(in.remaining() >= BYTES_PER_LENGTH_OFFSET, what, "shorter than its fixed part");
+      check(in.remaining() >= BYTES_PER_LENGTH_OFFSET, "shorter than its fixed part");
       final long fixedSize = Integer.toUnsignedLong(in.getInt());
       check(
           fixedSize >= start + BYTES_PER_LENGTH_OFFSET
               && fixedSize <= in.limit()
               && (fixedSize - start) % BYTES_PER_LENGTH_OFFSET == 0,
-          what,
           "first offset is not the size of the fixed part");
       final int count = (int) (fixedSize - start) / BYTES_PER_LENGTH_OFFSET;
       bounds = new int[count + 1];
       bounds[0] = (int) fixedSize;
       for (int i = 1; i < count; i++) {
+        // anything past the end becomes one past it, so the order check below refuses it
         final long offset = Integer.toUnsignedLong(in.getInt());
-        check(offset >= bounds[i - 1], what, "decreasing offsets");
-        check(offset <= in.limit(), what, "offset past the end");
-        bounds[i] = (int) offset;
+        bounds[i] = offset > in.limit() ? in.limit() + 1 : (int) offset;
       }
       bounds[count] = in.limit();
+      for (int i = 1; i <= count; i++) {
+        check(bounds[i] >= bounds[i - 1], "offsets decrease or point past the end");
+      }
     }
 
     private void checkNothingLeft() throws IOException {
       if (bounds == null) {
-        check(!in.hasRemaining(), what, "trailing bytes");
+        check(!in.hasRemaining(), "trailing bytes");
       } else {
         final int count = bounds.length - 1;
-        check(
-            nextVariable == count,
-            what,
-            "has " + count + " variable fields, expected " + nextVariable);
+        check(nextByteList == count, "has " + count + " byte lists, expected " + nextByteList);
       }
+    }
+
+    private void check(final boolean valid, final String reason) throws IOException {
+      Ssz.check(valid, what, reason);
     }
   }
 }

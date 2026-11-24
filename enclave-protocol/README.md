@@ -18,9 +18,9 @@ How to deploy it: [`deployments/aws-nitro/README.md`](../deployments/aws-nitro/R
   The protocol needs a byte stream and nothing else.
 - **SSZ bodies.** Every message body is [SSZ](https://github.com/ethereum/ssz-specs), as in the
   consensus layer. The module carries its own codec for the small part of SSZ it needs (containers
-  of `uint8`, `uint64`, byte vectors, byte lists and lists of fixed-size items, with the variable
-  fields last). An encoder and its decoder list the fields in the same order as the SSZ type, and
-  tests check every message against Teku's SSZ implementation.
+  of `uint8`, `uint16`, `uint32`, byte vectors and byte lists, with the byte lists last, and lists
+  of fixed-size containers as a whole body). An encoder and its decoder list the fields in the same
+  order as the SSZ type, and tests check every message against Teku's SSZ implementation.
 - **The enclave image stays minimal.** The signer runs on a jlink `java.base` runtime. This module
   depends on the JDK only, and `enclave-signer` fails its build if anything else reaches its runtime
   classpath.
@@ -80,15 +80,14 @@ Protocol version 1.
 # 0x01 STATUS: empty body (SSZ has no empty containers)
 
 class GetPublicKeysRequest(Container):      # 0x02 GET_PUBLIC_KEYS
-    offset: uint64
-    limit: uint64                           # 1 to 16,384
+    offset: uint32
+    limit: uint32                           # 1 to 16,384
 
 class SignRequest(Container):               # 0x03 SIGN
     pubkey: Bytes48
     signing_root: Bytes32
 
-class GetEvidenceRequest(Container):        # 0x10 GET_EVIDENCE
-    nonce: List[byte, 64]
+GetEvidenceRequest = List[byte, 64]         # 0x10 GET_EVIDENCE: the nonce
 
 class UnwrapDekRequest(Container):          # 0x11 UNWRAP_DEK
     format: uint8                           # 1 = CMS
@@ -99,25 +98,21 @@ class SealedKey(Container):
     nonce: Bytes12
     ciphertext: Bytes48                     # AES-256-GCM ciphertext and tag
 
-class LoadKeysRequest(Container):           # 0x12 LOAD_KEYS
-    keys: List[SealedKey, 4096]             # at least 1
+LoadKeysRequest = List[SealedKey, 4096]     # 0x12 LOAD_KEYS: at least 1
 
 # Responses with the result OK
 
 class StatusResponse(Container):
-    protocol_version: uint64
+    protocol_version: uint8
     platform: uint8
-    cpus: uint64
-    key_count: uint64
+    cpus: uint16                            # capped at 65,535
+    key_count: uint32
     boot_id: Bytes16
     version: List[byte, 256]
 
-class GetPublicKeysResponse(Container):
-    total: uint64
-    public_keys: List[Bytes48, 16384]
+GetPublicKeysResponse = List[Bytes48, 16384]
 
-class SignResponse(Container):
-    signature: Bytes96                      # compressed
+SignResponse = Bytes96                      # compressed
 
 class GetEvidenceResponse(Container):
     evidence_type: uint8
@@ -127,19 +122,21 @@ class GetEvidenceResponse(Container):
 # UNWRAP_DEK: empty body
 
 class LoadKeysResponse(Container):
-    loaded: uint64
-    duplicates: uint64
-    rejected: uint64
+    loaded: uint32
+    duplicates: uint32
+    rejected: uint32
 ```
 
-- **`uint64`** values above 2^63 − 1 are rejected, so that they fit a Java `long`.
+- **Bare bodies:** a body that is one list or one value is that type on its own, not a container
+  around it, as in the consensus req/resp protocol (`BeaconBlocksByRoot`, `Ping`).
 - **Platform:** `0` dev, `1` AWS Nitro.
 - **Boot id:** 16 random bytes chosen when the signer starts. A new boot id means that the enclave
   restarted and lost its keys.
 - **Version:** the signer's implementation version, printable ASCII, because it ends up in logs.
 - **`SIGN`** signs a 32-byte signing root. Web3Signer's signing extension endpoint, which signs
   other payloads, is not available for enclave keys.
-- **`GET_PUBLIC_KEYS`** pages through the keys in load order.
+- **`GET_PUBLIC_KEYS`** pages through the keys in load order. The signer fills every page up to
+  `limit`, so a page shorter than `limit` is the last one.
 - **Evidence** is the platform's proof of what runs in the enclave (the IETF RATS term). The
   release key travels beside the evidence, because some platforms only have room for a hash of it
   inside: SEV-SNP and TDX reports carry 64 bytes of our data. Evidence types: `0` dev, `1` an AWS
@@ -157,9 +154,8 @@ start at 128.
 | 0 | `OK` | Success |
 | 1 | `BAD_REQUEST` | Malformed body (req/resp `InvalidRequest`) |
 | 2 | `INTERNAL_ERROR` | The signer failed (req/resp `ServerError`) |
-| 3 | | Not used (req/resp `ResourceUnavailable`) |
+| 3 | `RESOURCE_UNAVAILABLE` | The signer does not hold the key a `SIGN` asks for (req/resp `ResourceUnavailable`) |
 | 128 | `UNSUPPORTED` | Unknown opcode or blob format |
-| 129 | `UNKNOWN_KEY` | `SIGN` for a key the enclave does not hold |
 | 130 | `INVALID_STATE` | Provisioning step out of order |
 | 131 | `UNWRAP_FAILED` | The release blob did not open |
 | 132 | `EVIDENCE_FAILED` | The platform produced no evidence |

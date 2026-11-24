@@ -30,8 +30,11 @@ public final class Protocol {
   public static final int OK = 0;
   public static final int BAD_REQUEST = 1;
   public static final int INTERNAL_ERROR = 2;
+
+  /** The enclave does not hold the key a {@code SIGN} asked for. */
+  public static final int RESOURCE_UNAVAILABLE = 3;
+
   public static final int UNSUPPORTED = 128;
-  public static final int UNKNOWN_KEY = 129;
   public static final int INVALID_STATE = 130;
   public static final int UNWRAP_FAILED = 131;
   public static final int EVIDENCE_FAILED = 132;
@@ -92,8 +95,8 @@ public final class Protocol {
       case OK -> "OK";
       case BAD_REQUEST -> "BAD_REQUEST";
       case INTERNAL_ERROR -> "INTERNAL_ERROR";
+      case RESOURCE_UNAVAILABLE -> "RESOURCE_UNAVAILABLE";
       case UNSUPPORTED -> "UNSUPPORTED";
-      case UNKNOWN_KEY -> "UNKNOWN_KEY";
       case INVALID_STATE -> "INVALID_STATE";
       case UNWRAP_FAILED -> "UNWRAP_FAILED";
       case EVIDENCE_FAILED -> "EVIDENCE_FAILED";

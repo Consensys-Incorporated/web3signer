@@ -16,7 +16,6 @@ import tech.pegasys.web3signer.enclave.protocol.Frames;
 import tech.pegasys.web3signer.enclave.protocol.Frames.Frame;
 import tech.pegasys.web3signer.enclave.protocol.Messages;
 import tech.pegasys.web3signer.enclave.protocol.Messages.PageRequest;
-import tech.pegasys.web3signer.enclave.protocol.Messages.PublicKeysPage;
 import tech.pegasys.web3signer.enclave.protocol.Messages.SignRequest;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Status;
 import tech.pegasys.web3signer.enclave.protocol.Protocol;
@@ -116,7 +115,8 @@ public final class EnclaveClient implements Closeable {
    *
    * @return the 96-byte compressed signature
    * @throws IllegalArgumentException when the key is not 48 bytes or the root not 32
-   * @throws EnclaveException when the enclave refuses, for example {@link Protocol#UNKNOWN_KEY}
+   * @throws EnclaveException when the enclave refuses, for example {@link
+   *     Protocol#RESOURCE_UNAVAILABLE} for a key it does not hold
    * @throws EnclaveUnavailableException on a timeout or a connection failure
    */
   public byte[] sign(final byte[] publicKey, final byte[] signingRoot) {
@@ -134,10 +134,10 @@ public final class EnclaveClient implements Closeable {
     while (true) {
       final byte[] request =
           Messages.encodePageRequest(new PageRequest(keys.size(), Protocol.MAX_PUBLIC_KEYS_PAGE));
-      final PublicKeysPage page =
-          call(Protocol.GET_PUBLIC_KEYS, request, Messages::decodePublicKeys);
-      keys.addAll(page.publicKeys());
-      if (page.publicKeys().isEmpty() || keys.size() >= page.total()) {
+      final List<byte[]> page = call(Protocol.GET_PUBLIC_KEYS, request, Messages::decodePublicKeys);
+      keys.addAll(page);
+      // keys are only ever added, so a short page is the last one
+      if (page.size() < Protocol.MAX_PUBLIC_KEYS_PAGE) {
         return keys;
       }
     }

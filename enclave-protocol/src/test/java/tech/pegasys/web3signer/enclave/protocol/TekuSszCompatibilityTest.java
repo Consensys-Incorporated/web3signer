@@ -19,18 +19,18 @@ import tech.pegasys.teku.infrastructure.ssz.SszContainer;
 import tech.pegasys.teku.infrastructure.ssz.SszData;
 import tech.pegasys.teku.infrastructure.ssz.impl.SszContainerImpl;
 import tech.pegasys.teku.infrastructure.ssz.primitive.SszByte;
-import tech.pegasys.teku.infrastructure.ssz.primitive.SszUInt64;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszContainerSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszPrimitiveSchemas;
 import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteVectorSchema;
-import tech.pegasys.teku.infrastructure.unsigned.UInt64;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Evidence;
 import tech.pegasys.web3signer.enclave.protocol.Messages.LoadResult;
 import tech.pegasys.web3signer.enclave.protocol.Messages.SealedKey;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
@@ -60,8 +60,18 @@ class TekuSszCompatibilityTest {
     return SszByte.asUInt8((byte) value);
   }
 
-  private static SszData uint64(final long value) {
-    return SszUInt64.of(UInt64.valueOf(value));
+  // Teku has no uint16 or uint32 schema: a little-endian byte vector encodes the same
+  private static final SszByteVectorSchema<?> UINT16 = SszByteVectorSchema.create(2);
+  private static final SszByteVectorSchema<?> UINT32 = SszByteVectorSchema.create(4);
+
+  private static SszData uint16(final int value) {
+    return vector(
+        ByteBuffer.allocate(2).order(ByteOrder.LITTLE_ENDIAN).putShort((short) value).array());
+  }
+
+  private static SszData uint32(final long value) {
+    return vector(
+        ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt((int) value).array());
   }
 
   private static SszData vector(final byte[] value) {
@@ -80,6 +90,15 @@ class TekuSszCompatibilityTest {
     assertThat(schema.sszDeserialize(Bytes.wrap(ours)).sszSerialize()).isEqualTo(teku);
   }
 
+  /** Asserts that a whole-body list encodes as Teku's list, and that Teku decodes ours. */
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static void assertSameListEncoding(
+      final byte[] ours, final SszListSchema schema, final List<SszData> elements) {
+    final Bytes teku = schema.createFromElements(elements).sszSerialize();
+    assertThat(HexFormat.of().formatHex(ours)).isEqualTo(teku.toUnprefixedHexString());
+    assertThat(schema.sszDeserialize(Bytes.wrap(ours)).sszSerialize()).isEqualTo(teku);
+  }
+
   @Test
   void status() throws Exception {
     final byte[] bootId = randomBytes(16);
@@ -88,16 +107,16 @@ class TekuSszCompatibilityTest {
     assertSameEncoding(
         ours,
         container(
-            SszPrimitiveSchemas.UINT64_SCHEMA,
             SszPrimitiveSchemas.UINT8_SCHEMA,
-            SszPrimitiveSchemas.UINT64_SCHEMA,
-            SszPrimitiveSchemas.UINT64_SCHEMA,
+            SszPrimitiveSchemas.UINT8_SCHEMA,
+            UINT16,
+            UINT32,
             SszByteVectorSchema.create(16),
             SszByteListSchema.create(256)),
-        uint64(Protocol.VERSION),
+        uint8(Protocol.VERSION),
         uint8(Protocol.PLATFORM_AWS_NITRO),
-        uint64(4),
-        uint64(1000),
+        uint16(4),
+        uint32(1000),
         vector(bootId),
         list(256, "26.11.1".getBytes(US_ASCII)));
     assertThat(Messages.decodeStatus(ours))
@@ -113,20 +132,16 @@ class TekuSszCompatibilityTest {
 
   @Test
   void pageRequest() throws Exception {
-    // above 2^32: the upper half of the uint64 counts
-    final long offset = 5_000_000_000L;
+    // above 2^31: the top bit of the uint32 counts
+    final long offset = 4_000_000_000L;
     final byte[] ours = Messages.encodePageRequest(new Messages.PageRequest(offset, 16_384));
-    assertSameEncoding(
-        ours,
-        container(SszPrimitiveSchemas.UINT64_SCHEMA, SszPrimitiveSchemas.UINT64_SCHEMA),
-        uint64(offset),
-        uint64(16_384));
+    assertSameEncoding(ours, container(UINT32, UINT32), uint32(offset), uint32(16_384));
     assertThat(Messages.decodePageRequest(ours))
         .isEqualTo(new Messages.PageRequest(offset, 16_384));
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
-  private void assertPublicKeysPage(final long total, final int count) throws Exception {
+  private void assertPublicKeysPage(final int count) throws Exception {
     final List<byte[]> keys = new ArrayList<>();
     final SszByteVectorSchema<?> key = SszByteVectorSchema.create(48);
     final List<SszData> elements = new ArrayList<>();
@@ -135,26 +150,20 @@ class TekuSszCompatibilityTest {
       keys.add(publicKey);
       elements.add(key.fromBytes(Bytes.wrap(publicKey)));
     }
-    final byte[] ours = Messages.encodePublicKeys(new Messages.PublicKeysPage(total, keys));
+    final byte[] ours = Messages.encodePublicKeys(keys);
     final SszListSchema listSchema = SszListSchema.create(key, Protocol.MAX_PUBLIC_KEYS_PAGE);
-    assertSameEncoding(
-        ours,
-        container(SszPrimitiveSchemas.UINT64_SCHEMA, listSchema),
-        uint64(total),
-        (SszData) listSchema.createFromElements(elements));
-    final Messages.PublicKeysPage page = Messages.decodePublicKeys(ours);
-    assertThat(page.total()).isEqualTo(total);
-    assertThat(page.publicKeys()).containsExactlyElementsOf(keys);
+    assertSameListEncoding(ours, listSchema, elements);
+    assertThat(Messages.decodePublicKeys(ours)).containsExactlyElementsOf(keys);
   }
 
   @Test
   void publicKeys() throws Exception {
-    assertPublicKeysPage(10, 3);
+    assertPublicKeysPage(3);
   }
 
   @Test
   void emptyPublicKeysPage() throws Exception {
-    assertPublicKeysPage(0, 0);
+    assertPublicKeysPage(0);
   }
 
   @Test
@@ -184,7 +193,7 @@ class TekuSszCompatibilityTest {
   void evidenceRequestAndResponse() throws Exception {
     final byte[] nonce = randomBytes(32);
     final byte[] request = Messages.encodeEvidenceRequest(nonce);
-    assertSameEncoding(request, container(SszByteListSchema.create(64)), list(64, nonce));
+    assertThat(request).isEqualTo(list(64, nonce).sszSerialize().toArrayUnsafe());
     assertThat(Messages.decodeEvidenceRequest(request)).isEqualTo(nonce);
 
     final byte[] releaseKey = randomBytes(294);
@@ -242,8 +251,7 @@ class TekuSszCompatibilityTest {
               List.of(vector(key.publicKey()), vector(key.nonce()), vector(key.ciphertext()))));
     }
     final byte[] ours = Messages.encodeLoadKeysRequest(keys);
-    assertSameEncoding(
-        ours, container(listSchema), (SszData) listSchema.createFromElements(elements));
+    assertSameListEncoding(ours, listSchema, elements);
     assertThat(Messages.decodeLoadKeysRequest(ours))
         .usingRecursiveFieldByFieldElementComparator()
         .isEqualTo(keys);
@@ -251,14 +259,7 @@ class TekuSszCompatibilityTest {
     final LoadResult result = new LoadResult(5, 2, 1);
     final byte[] response = Messages.encodeLoadResult(result);
     assertSameEncoding(
-        response,
-        container(
-            SszPrimitiveSchemas.UINT64_SCHEMA,
-            SszPrimitiveSchemas.UINT64_SCHEMA,
-            SszPrimitiveSchemas.UINT64_SCHEMA),
-        uint64(5),
-        uint64(2),
-        uint64(1));
+        response, container(UINT32, UINT32, UINT32), uint32(5), uint32(2), uint32(1));
     assertThat(Messages.decodeLoadResult(response)).isEqualTo(result);
   }
 

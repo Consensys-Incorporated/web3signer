@@ -19,7 +19,6 @@ import tech.pegasys.web3signer.enclave.protocol.Frames.Frame;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Evidence;
 import tech.pegasys.web3signer.enclave.protocol.Messages.LoadResult;
 import tech.pegasys.web3signer.enclave.protocol.Messages.PageRequest;
-import tech.pegasys.web3signer.enclave.protocol.Messages.PublicKeysPage;
 import tech.pegasys.web3signer.enclave.protocol.Messages.SealedKey;
 import tech.pegasys.web3signer.enclave.protocol.Messages.UnwrapDekRequest;
 import tech.pegasys.web3signer.enclave.transport.Connection;
@@ -41,10 +40,6 @@ class MessagesTest {
 
   private static void putUint32(final byte[] body, final int at, final long value) {
     ByteBuffer.wrap(body).order(ByteOrder.LITTLE_ENDIAN).putInt(at, (int) value);
-  }
-
-  private static void putUint64(final byte[] body, final int at, final long value) {
-    ByteBuffer.wrap(body).order(ByteOrder.LITTLE_ENDIAN).putLong(at, value);
   }
 
   /** A connection that serves fixed bytes and records what is written to it. */
@@ -160,10 +155,11 @@ class MessagesTest {
 
   @Test
   void firstOffsetBeforeOrPastTheFixedPartIsMalformed() {
+    // STATUS has 24 fixed bytes before its offset, so these gaps are whole multiples of 4
     for (final long offset : new long[] {0, 0xFFFF_FFF8L}) {
-      final byte[] body = Messages.encodePublicKeys(new PublicKeysPage(1, List.of(new byte[48])));
-      putUint32(body, 8, offset);
-      assertThatThrownBy(() -> Messages.decodePublicKeys(body))
+      final byte[] body = Messages.encodeStatus(0, 1, 0, BOOT_ID, "v1");
+      putUint32(body, 24, offset);
+      assertThatThrownBy(() -> Messages.decodeStatus(body))
           .isInstanceOf(IOException.class)
           .hasMessageContaining("first offset");
     }
@@ -173,7 +169,7 @@ class MessagesTest {
   void offsetsMustNotDecrease() {
     final byte[] body = evidence();
     putUint32(body, 5, 8);
-    assertThatThrownBy(() -> Messages.decodeEvidence(body)).hasMessageContaining("decreasing");
+    assertThatThrownBy(() -> Messages.decodeEvidence(body)).hasMessageContaining("decrease");
   }
 
   @Test
@@ -189,33 +185,26 @@ class MessagesTest {
   void bodyShorterThanTheFixedPartIsMalformed() {
     assertThatThrownBy(() -> Messages.decodeEvidence(new byte[4]))
         .hasMessageContaining("shorter than its fixed part");
-    assertThatThrownBy(() -> Messages.decodeStatus(new byte[7]))
+    assertThatThrownBy(() -> Messages.decodeStatus(new byte[] {1, 0, 0, 0, 0, 0, 0}))
         .hasMessageContaining("shorter than its fixed part");
   }
 
   @Test
   void fixedSizeBodiesMustHaveExactlyTheirSize() throws IOException {
     final byte[] result = Messages.encodeLoadResult(new LoadResult(1, 2, 3));
-    assertThatThrownBy(() -> Messages.decodeLoadResult(Arrays.copyOf(result, 25)))
+    assertThatThrownBy(() -> Messages.decodeLoadResult(Arrays.copyOf(result, 13)))
         .hasMessageContaining("trailing bytes");
-    assertThatThrownBy(() -> Messages.decodeLoadResult(Arrays.copyOf(result, 23)))
+    assertThatThrownBy(() -> Messages.decodeLoadResult(Arrays.copyOf(result, 11)))
         .isInstanceOf(IOException.class);
     assertThatThrownBy(() -> Messages.decodeSignature(new byte[95]))
         .isInstanceOf(IOException.class);
     assertThatThrownBy(() -> Messages.decodeSignature(new byte[97]))
         .isInstanceOf(IOException.class);
     final byte[] page = Messages.encodePageRequest(new PageRequest(0, 1));
-    assertThatThrownBy(() -> Messages.decodePageRequest(Arrays.copyOf(page, 17)))
+    assertThatThrownBy(() -> Messages.decodePageRequest(Arrays.copyOf(page, 9)))
         .hasMessageContaining("trailing bytes");
     assertThatThrownBy(() -> Messages.decodeStatusRequest(new byte[1]))
         .hasMessageContaining("not empty");
-  }
-
-  @Test
-  void uint64AboveLongMaxIsMalformed() {
-    final byte[] result = Messages.encodeLoadResult(new LoadResult(1, 2, 3));
-    putUint64(result, 0, -1L);
-    assertThatThrownBy(() -> Messages.decodeLoadResult(result)).hasMessageContaining("2^63");
   }
 
   @Test
@@ -228,7 +217,10 @@ class MessagesTest {
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> Messages.encodeLoadResult(new LoadResult(-1, 0, 0)))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("uint64 out of range");
+        .hasMessageContaining("uint32 out of range");
+    assertThatThrownBy(() -> Messages.encodeLoadResult(new LoadResult(1L << 32, 0, 0)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("uint32 out of range");
     assertThatThrownBy(() -> Messages.encodeSignature(new byte[95]))
         .isInstanceOf(IllegalArgumentException.class);
   }
@@ -242,44 +234,44 @@ class MessagesTest {
 
   @Test
   void aBodyWithMoreOrFewerVariableFieldsThanTheMessageIsMalformed() {
-    // GET_EVIDENCE's nonce is the only field: two offsets claim two
+    // UNWRAP_DEK has one byte list: two offsets claim two
     final byte[] two =
-        Ssz.writeContainer().byteList(new byte[1], 10).byteList(new byte[1], 10).toBytes();
-    assertThatThrownBy(() -> Messages.decodeEvidenceRequest(two))
-        .hasMessageContaining("has 2 variable fields, expected 1");
+        Ssz.writeContainer().uint8(1).byteList(new byte[1], 10).byteList(new byte[1], 10).toBytes();
+    assertThatThrownBy(() -> Messages.decodeUnwrapDekRequest(two))
+        .hasMessageContaining("has 2 byte lists, expected 1");
     final byte[] one = Ssz.writeContainer().uint8(1).byteList(new byte[1], 10).toBytes();
     assertThatThrownBy(() -> Messages.decodeEvidence(one))
-        .hasMessageContaining("has 1 variable fields, expected at least 2");
+        .hasMessageContaining("has 1 byte lists, expected at least 2");
   }
 
   // ------------------------------------------------------------------ message limits
 
   @Test
   void publicKeysWhoseBytesAreNotWholeKeysAreMalformed() {
-    final byte[] body =
-        Messages.encodePublicKeys(new PublicKeysPage(2, List.of(new byte[48], new byte[48])));
+    final byte[] body = Messages.encodePublicKeys(List.of(new byte[48], new byte[48]));
     assertThatThrownBy(() -> Messages.decodePublicKeys(Arrays.copyOf(body, body.length - 1)))
         .hasMessageContaining("shorter than its fixed part");
   }
 
   @Test
   void publicKeysPageAboveTheLimitIsMalformed() {
-    final byte[] body = new byte[12 + (Protocol.MAX_PUBLIC_KEYS_PAGE + 1) * 48];
-    putUint32(body, 8, 12);
+    final byte[] body = new byte[(Protocol.MAX_PUBLIC_KEYS_PAGE + 1) * 48];
     assertThatThrownBy(() -> Messages.decodePublicKeys(body)).hasMessageContaining("longer than");
     final List<byte[]> keys = Collections.nCopies(Protocol.MAX_PUBLIC_KEYS_PAGE + 1, new byte[48]);
-    assertThatThrownBy(() -> Messages.encodePublicKeys(new PublicKeysPage(0, keys)))
+    assertThatThrownBy(() -> Messages.encodePublicKeys(keys))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void pageRequestLimitMustBeInRange() {
     for (final long limit : new long[] {0, Protocol.MAX_PUBLIC_KEYS_PAGE + 1L}) {
-      final byte[] body = new byte[16];
-      putUint64(body, 8, limit);
+      final byte[] body = new byte[8];
+      putUint32(body, 4, limit);
       assertThatThrownBy(() -> Messages.decodePageRequest(body)).hasMessageContaining("limit");
     }
     assertThatThrownBy(() -> Messages.encodePageRequest(new PageRequest(0, 0)))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> Messages.encodePageRequest(new PageRequest(1L << 32, 1)))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -297,9 +289,7 @@ class MessagesTest {
         Messages.encodeLoadKeysRequest(Collections.nCopies(Protocol.MAX_LOAD_KEYS, sealedKey()));
     assertThat(Messages.decodeLoadKeysRequest(max)).hasSize(Protocol.MAX_LOAD_KEYS);
 
-    final byte[] empty = new byte[4];
-    putUint32(empty, 0, 4);
-    assertThatThrownBy(() -> Messages.decodeLoadKeysRequest(empty))
+    assertThatThrownBy(() -> Messages.decodeLoadKeysRequest(new byte[0]))
         .hasMessageContaining("no entries");
 
     final byte[] tooMany = Arrays.copyOf(max, max.length + Protocol.SEALED_KEY_SIZE);
@@ -318,8 +308,7 @@ class MessagesTest {
         .isEqualTo(nonce);
     assertThatThrownBy(() -> Messages.encodeEvidenceRequest(new byte[Protocol.MAX_NONCE_SIZE + 1]))
         .isInstanceOf(IllegalArgumentException.class);
-    final byte[] tooLong = Ssz.writeContainer().byteList(new byte[65], 100).toBytes();
-    assertThatThrownBy(() -> Messages.decodeEvidenceRequest(tooLong))
+    assertThatThrownBy(() -> Messages.decodeEvidenceRequest(new byte[Protocol.MAX_NONCE_SIZE + 1]))
         .hasMessageContaining("longer than 64");
   }
 
@@ -381,10 +370,10 @@ class MessagesTest {
     assertThat(Messages.decodeStatus(status).version()).hasSize(Protocol.MAX_VERSION_SIZE);
     final byte[] longVersion =
         Ssz.writeContainer()
-            .uint64(Protocol.VERSION)
+            .uint8(Protocol.VERSION)
             .uint8(0)
-            .uint64(1)
-            .uint64(0)
+            .uint16(1)
+            .uint32(0)
             .vector(BOOT_ID, 16)
             .byteList(new byte[Protocol.MAX_VERSION_SIZE + 1], 1000)
             .toBytes();
@@ -416,8 +405,7 @@ class MessagesTest {
   @Test
   void anotherProtocolVersionIsReportedBeforeTheRestOfTheStatusIsRead() {
     // a v2 STATUS may have another layout: only the version must be readable
-    final byte[] body = new byte[9];
-    putUint64(body, 0, 2);
+    final byte[] body = new byte[] {2};
     assertThatThrownBy(() -> Messages.decodeStatus(body))
         .isInstanceOfSatisfying(
             UnsupportedProtocolVersionException.class, e -> assertThat(e.version()).isEqualTo(2));

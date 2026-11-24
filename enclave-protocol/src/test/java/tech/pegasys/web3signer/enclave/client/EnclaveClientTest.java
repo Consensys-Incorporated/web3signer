@@ -22,7 +22,6 @@ import tech.pegasys.web3signer.enclave.protocol.Messages;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Evidence;
 import tech.pegasys.web3signer.enclave.protocol.Messages.LoadResult;
 import tech.pegasys.web3signer.enclave.protocol.Messages.PageRequest;
-import tech.pegasys.web3signer.enclave.protocol.Messages.PublicKeysPage;
 import tech.pegasys.web3signer.enclave.protocol.Messages.SealedKey;
 import tech.pegasys.web3signer.enclave.protocol.Protocol;
 import tech.pegasys.web3signer.enclave.transport.Connection;
@@ -469,7 +468,7 @@ class EnclaveClientTest {
                 ScriptedTcpServer.respond(
                     connection,
                     self.read(connection),
-                    Protocol.UNKNOWN_KEY,
+                    Protocol.RESOURCE_UNAVAILABLE,
                     "no such key\nX".getBytes(US_ASCII));
               }
             });
@@ -479,10 +478,11 @@ class EnclaveClientTest {
           .isInstanceOfSatisfying(
               EnclaveException.class,
               e -> {
-                assertThat(e.result()).isEqualTo(Protocol.UNKNOWN_KEY);
+                assertThat(e.result()).isEqualTo(Protocol.RESOURCE_UNAVAILABLE);
                 assertThat(e.detail()).isEqualTo("no such key?X"); // control characters replaced
                 assertThat(e)
-                    .hasMessage("Enclave signer refused SIGN: UNKNOWN_KEY (no such key?X)");
+                    .hasMessage(
+                        "Enclave signer refused SIGN: RESOURCE_UNAVAILABLE (no such key?X)");
               });
     }
     assertThat(server.connectionCount()).isEqualTo(1);
@@ -497,25 +497,29 @@ class EnclaveClientTest {
                 final Frame request = self.read(connection);
                 final PageRequest page = Messages.decodePageRequest(request.body());
                 final List<byte[]> keys = new ArrayList<>();
-                // the server pages by 2
-                for (long i = page.offset(); i < Math.min(5, page.offset() + 2); i++) {
-                  final byte[] key = new byte[48];
-                  Arrays.fill(key, (byte) i);
-                  keys.add(key);
+                for (long i = page.offset();
+                    i < Math.min(KEY_COUNT, page.offset() + page.limit());
+                    i++) {
+                  keys.add(key((int) i));
                 }
                 ScriptedTcpServer.respond(
-                    connection,
-                    request,
-                    Protocol.OK,
-                    Messages.encodePublicKeys(new PublicKeysPage(5, keys)));
+                    connection, request, Protocol.OK, Messages.encodePublicKeys(keys));
               }
             });
     final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
     final List<byte[]> keys = client.publicKeys();
-    assertThat(keys).hasSize(5);
-    for (int i = 0; i < 5; i++) {
-      assertThat(keys.get(i)[0]).isEqualTo((byte) i);
+    assertThat(keys).hasSize(KEY_COUNT);
+    for (int i = 0; i < KEY_COUNT; i++) {
+      assertThat(keys.get(i)).isEqualTo(key(i));
     }
+    assertThat(server.received).hasSize(2);
+  }
+
+  /** One full page and a short one: the short page ends the listing. */
+  private static final int KEY_COUNT = Protocol.MAX_PUBLIC_KEYS_PAGE + 3;
+
+  private static byte[] key(final int i) {
+    return ByteBuffer.allocate(48).putInt(i).array();
   }
 
   // ------------------------------------------------------------------ provisioning

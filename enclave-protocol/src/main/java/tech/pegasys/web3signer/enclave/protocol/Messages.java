@@ -66,9 +66,6 @@ public final class Messages {
   /** A {@code GET_PUBLIC_KEYS} request: up to {@code limit} keys from position {@code offset}. */
   public record PageRequest(long offset, int limit) {}
 
-  /** One page of {@code GET_PUBLIC_KEYS}. */
-  public record PublicKeysPage(long total, List<byte[]> publicKeys) {}
-
   /** A {@code SIGN} request. */
   @SuppressWarnings("ArrayRecordComponent")
   public record SignRequest(byte[] publicKey, byte[] signingRoot) {}
@@ -133,7 +130,10 @@ public final class Messages {
     requireEmpty(body, "STATUS");
   }
 
-  /** {@code StatusResponse}; {@code version} is reduced to printable ASCII and 256 bytes. */
+  /**
+   * {@code StatusResponse}; {@code cpus} is capped at 65,535 and {@code version} is reduced to
+   * printable ASCII and 256 bytes.
+   */
   public static byte[] encodeStatus(
       final int platform,
       final long cpus,
@@ -141,10 +141,10 @@ public final class Messages {
       final byte[] bootId,
       final String version) {
     return Ssz.writeContainer()
-        .uint64(Protocol.VERSION)
+        .uint8(Protocol.VERSION)
         .uint8(platform)
-        .uint64(cpus)
-        .uint64(keyCount)
+        .uint16(Math.clamp(cpus, 0, 0xffff))
+        .uint32(keyCount)
         .vector(bootId, BOOT_ID_SIZE)
         .byteList(printableAscii(version, MAX_VERSION_SIZE), MAX_VERSION_SIZE)
         .toBytes();
@@ -161,15 +161,15 @@ public final class Messages {
         body,
         "STATUS",
         in -> {
-          final long protocolVersion = in.uint64();
+          final long protocolVersion = in.uint8();
           if (protocolVersion != Protocol.VERSION) {
             throw new UnsupportedProtocolVersionException(protocolVersion);
           }
           return new Status(
               protocolVersion,
               in.uint8(),
-              in.uint64(),
-              in.uint64(),
+              in.uint16(),
+              in.uint32(),
               HexFormat.of().formatHex(in.vector(BOOT_ID_SIZE)),
               printableAscii(in.byteList(MAX_VERSION_SIZE)));
         });
@@ -179,9 +179,9 @@ public final class Messages {
 
   public static byte[] encodePageRequest(final PageRequest request) {
     Ssz.require(
-        request.offset() >= 0 && request.limit() >= 1 && request.limit() <= MAX_PUBLIC_KEYS_PAGE,
+        request.limit() >= 1 && request.limit() <= MAX_PUBLIC_KEYS_PAGE,
         "Invalid page request: " + request);
-    return Ssz.writeContainer().uint64(request.offset()).uint64(request.limit()).toBytes();
+    return Ssz.writeContainer().uint32(request.offset()).uint32(request.limit()).toBytes();
   }
 
   public static PageRequest decodePageRequest(final byte[] body) throws IOException {
@@ -189,30 +189,23 @@ public final class Messages {
         body,
         "GET_PUBLIC_KEYS",
         in -> {
-          final long offset = in.uint64();
-          final long limit = in.uint64();
+          final long offset = in.uint32();
+          final long limit = in.uint32();
           Ssz.check(
               limit >= 1 && limit <= MAX_PUBLIC_KEYS_PAGE, "GET_PUBLIC_KEYS", "limit out of range");
           return new PageRequest(offset, (int) limit);
         });
   }
 
-  /** {@code PublicKeysResponse}: 48 bytes per key. */
-  public static byte[] encodePublicKeys(final PublicKeysPage page) {
-    return Ssz.writeContainer()
-        .uint64(page.total())
-        .list(
-            page.publicKeys(), MAX_PUBLIC_KEYS_PAGE, (out, key) -> out.vector(key, PUBLIC_KEY_SIZE))
-        .toBytes();
+  /** {@code PublicKeysResponse = List[Bytes48, 16384]}: a page shorter than asked is the last. */
+  public static byte[] encodePublicKeys(final List<byte[]> publicKeys) {
+    return Ssz.writeList(
+        publicKeys, MAX_PUBLIC_KEYS_PAGE, (out, key) -> out.vector(key, PUBLIC_KEY_SIZE));
   }
 
-  public static PublicKeysPage decodePublicKeys(final byte[] body) throws IOException {
-    return Ssz.readContainer(
-        body,
-        "GET_PUBLIC_KEYS",
-        in ->
-            new PublicKeysPage(
-                in.uint64(), in.list(MAX_PUBLIC_KEYS_PAGE, item -> item.vector(PUBLIC_KEY_SIZE))));
+  public static List<byte[]> decodePublicKeys(final byte[] body) throws IOException {
+    return Ssz.readList(
+        body, MAX_PUBLIC_KEYS_PAGE, "GET_PUBLIC_KEYS", in -> in.vector(PUBLIC_KEY_SIZE));
   }
 
   // ------------------------------------------------------------------ SIGN
@@ -245,13 +238,15 @@ public final class Messages {
 
   // ------------------------------------------------------------------ GET_EVIDENCE
 
+  /** {@code GetEvidenceRequest = List[byte, 64]}: the nonce is the whole body. */
   public static byte[] encodeEvidenceRequest(final byte[] nonce) {
-    return Ssz.writeContainer().byteList(nonce, MAX_NONCE_SIZE).toBytes();
+    Ssz.require(nonce.length <= MAX_NONCE_SIZE, "Nonce longer than " + MAX_NONCE_SIZE + " bytes");
+    return nonce.clone();
   }
 
-  /** The nonce of a {@code GET_EVIDENCE} request. */
   public static byte[] decodeEvidenceRequest(final byte[] body) throws IOException {
-    return Ssz.readContainer(body, "GET_EVIDENCE", in -> in.byteList(MAX_NONCE_SIZE));
+    Ssz.check(body.length <= MAX_NONCE_SIZE, "GET_EVIDENCE", "nonce longer than " + MAX_NONCE_SIZE);
+    return body;
   }
 
   public static byte[] encodeEvidence(final Evidence evidence) {
@@ -296,48 +291,44 @@ public final class Messages {
 
   // ------------------------------------------------------------------ LOAD_KEYS
 
-  /** {@code LoadKeysRequest}: 1 to {@value Protocol#MAX_LOAD_KEYS} entries. */
+  /** {@code LoadKeysRequest = List[SealedKey, 4096]}, with 1 to 4,096 entries. */
   public static byte[] encodeLoadKeysRequest(final List<SealedKey> keys) {
     Ssz.require(!keys.isEmpty(), "LOAD_KEYS takes at least one entry");
-    return Ssz.writeContainer()
-        .list(
-            keys,
-            MAX_LOAD_KEYS,
-            (out, key) ->
-                out.vector(key.publicKey(), PUBLIC_KEY_SIZE)
-                    .vector(key.nonce(), SEALED_NONCE_SIZE)
-                    .vector(key.ciphertext(), SEALED_CIPHERTEXT_SIZE))
-        .toBytes();
+    return Ssz.writeList(
+        keys,
+        MAX_LOAD_KEYS,
+        (out, key) ->
+            out.vector(key.publicKey(), PUBLIC_KEY_SIZE)
+                .vector(key.nonce(), SEALED_NONCE_SIZE)
+                .vector(key.ciphertext(), SEALED_CIPHERTEXT_SIZE));
   }
 
   public static List<SealedKey> decodeLoadKeysRequest(final byte[] body) throws IOException {
     final List<SealedKey> keys =
-        Ssz.readContainer(
+        Ssz.readList(
             body,
+            MAX_LOAD_KEYS,
             "LOAD_KEYS",
             in ->
-                in.list(
-                    MAX_LOAD_KEYS,
-                    item ->
-                        new SealedKey(
-                            item.vector(PUBLIC_KEY_SIZE),
-                            item.vector(SEALED_NONCE_SIZE),
-                            item.vector(SEALED_CIPHERTEXT_SIZE))));
+                new SealedKey(
+                    in.vector(PUBLIC_KEY_SIZE),
+                    in.vector(SEALED_NONCE_SIZE),
+                    in.vector(SEALED_CIPHERTEXT_SIZE)));
     Ssz.check(!keys.isEmpty(), "LOAD_KEYS", "no entries");
     return keys;
   }
 
   public static byte[] encodeLoadResult(final LoadResult result) {
     return Ssz.writeContainer()
-        .uint64(result.loaded())
-        .uint64(result.duplicates())
-        .uint64(result.rejected())
+        .uint32(result.loaded())
+        .uint32(result.duplicates())
+        .uint32(result.rejected())
         .toBytes();
   }
 
   public static LoadResult decodeLoadResult(final byte[] body) throws IOException {
     return Ssz.readContainer(
-        body, "LOAD_KEYS", in -> new LoadResult(in.uint64(), in.uint64(), in.uint64()));
+        body, "LOAD_KEYS", in -> new LoadResult(in.uint32(), in.uint32(), in.uint32()));
   }
 
   // ------------------------------------------------------------------ errors
