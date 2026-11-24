@@ -159,7 +159,7 @@ public final class Messages {
   public static Status decodeStatus(final byte[] body) throws IOException {
     return Ssz.readContainer(
         body,
-        "STATUS",
+        "STATUS response",
         in -> {
           final long protocolVersion = in.uint8();
           if (protocolVersion != Protocol.VERSION) {
@@ -205,7 +205,7 @@ public final class Messages {
 
   public static List<byte[]> decodePublicKeys(final byte[] body) throws IOException {
     return Ssz.readList(
-        body, MAX_PUBLIC_KEYS_PAGE, "GET_PUBLIC_KEYS", in -> in.vector(PUBLIC_KEY_SIZE));
+        body, MAX_PUBLIC_KEYS_PAGE, "GET_PUBLIC_KEYS response", in -> in.vector(PUBLIC_KEY_SIZE));
   }
 
   // ------------------------------------------------------------------ SIGN
@@ -233,7 +233,7 @@ public final class Messages {
   }
 
   public static byte[] decodeSignature(final byte[] body) throws IOException {
-    return Ssz.readContainer(body, "SIGN", in -> in.vector(SIGNATURE_SIZE));
+    return Ssz.readContainer(body, "SIGN response", in -> in.vector(SIGNATURE_SIZE));
   }
 
   // ------------------------------------------------------------------ GET_EVIDENCE
@@ -260,7 +260,7 @@ public final class Messages {
   public static Evidence decodeEvidence(final byte[] body) throws IOException {
     return Ssz.readContainer(
         body,
-        "GET_EVIDENCE",
+        "GET_EVIDENCE response",
         in ->
             new Evidence(
                 in.uint8(), in.byteList(MAX_RELEASE_KEY_SIZE), in.byteList(MAX_EVIDENCE_SIZE)));
@@ -286,7 +286,7 @@ public final class Messages {
   }
 
   public static void decodeUnwrapDekResponse(final byte[] body) throws IOException {
-    requireEmpty(body, "UNWRAP_DEK");
+    requireEmpty(body, "UNWRAP_DEK response");
   }
 
   // ------------------------------------------------------------------ LOAD_KEYS
@@ -328,7 +328,7 @@ public final class Messages {
 
   public static LoadResult decodeLoadResult(final byte[] body) throws IOException {
     return Ssz.readContainer(
-        body, "LOAD_KEYS", in -> new LoadResult(in.uint32(), in.uint32(), in.uint32()));
+        body, "LOAD_KEYS response", in -> new LoadResult(in.uint32(), in.uint32(), in.uint32()));
   }
 
   // ------------------------------------------------------------------ errors

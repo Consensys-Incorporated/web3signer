@@ -640,7 +640,7 @@ class EnclaveClientTest {
     try (ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT)) {
       assertThatThrownBy(() -> session.unwrapDek(Protocol.BLOB_FORMAT_CMS, new byte[10]))
           .isInstanceOf(EnclaveUnavailableException.class)
-          .hasRootCauseMessage("Malformed UNWRAP_DEK: body not empty");
+          .hasRootCauseMessage("Malformed UNWRAP_DEK response: body not empty");
       assertThatThrownBy(() -> session.getEvidence(new byte[32]))
           .isInstanceOf(EnclaveUnavailableException.class);
     }
