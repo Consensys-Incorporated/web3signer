@@ -454,12 +454,17 @@ Invariants:
   because after an enclave restart every pooled connection is stale. A failure on a new connection,
   a timeout and a refusal are not retried. A failed connection is closed and leaves the pool.
   Provisioning is never retried.
-- **Timeouts:** `requestTimeoutMillis` (default 2000 ms) bounds the wait for a free connection, and
-  connect, read and write each; a vsock connect is bounded by the kernel instead (about 2 s), and
-  provisioning responses take the session's timeout. A request to a signer that stops answering
-  fails after about one timeout (the read on its pooled connection). The worst case is a stale
-  pooled connection followed by a new one whose connect, write and read each run up to the timeout:
-  4 times the timeout, 8 s with the defaults.
+- **Listing keys:** `publicKeys` reads the boot id from `STATUS` before and after paging. If it
+  changed, the enclave restarted in between and the pages come from two key sets, so the call fails
+  with `EnclaveUnavailableException` and the caller can list again.
+- **Timeouts:** `requestTimeoutMillis` (default 2000 ms) bounds the wait for a free connection, the
+  connect, and each read and write call; a vsock connect is bounded by the kernel instead (about 2
+  s), and provisioning responses take the session's timeout. A frame takes at least two reads, the
+  header and the body, so a signer that answers slowly but steadily can take longer than one
+  timeout. A request to a signer that stops answering fails after about one timeout (the read on its
+  pooled connection). The worst case is a full wait for a free connection, then a stale pooled
+  connection, then a new one whose connect, write and read each run up to the timeout: 5 times the
+  timeout, 10 s with the defaults.
 - **Closing:** `close` closes every connection, provisioning sessions included, which fails the
   requests in flight, and fails the callers that wait for a connection. A connection can be closed
   while another thread is inside a call on it: the socket is shut down at once, which wakes that

@@ -128,8 +128,22 @@ public final class EnclaveClient implements Closeable {
     return sendPooled(Protocol.STATUS, Messages.encodeStatusRequest(), Messages::decodeStatus);
   }
 
-  /** All public keys, in load order. */
+  /**
+   * All public keys, in load order.
+   *
+   * @throws EnclaveUnavailableException also when the enclave restarted while the keys were listed,
+   *     since the pages then come from two different key sets
+   */
   public List<byte[]> publicKeys() {
+    final String bootId = status().bootId();
+    final List<byte[]> keys = publicKeyPages();
+    if (!status().bootId().equals(bootId)) {
+      throw new EnclaveUnavailableException("Enclave signer restarted while its keys were listed");
+    }
+    return keys;
+  }
+
+  private List<byte[]> publicKeyPages() {
     final List<byte[]> keys = new ArrayList<>();
     while (true) {
       final byte[] request =
@@ -233,7 +247,8 @@ public final class EnclaveClient implements Closeable {
     } catch (final EnclaveException refused) {
       releaseConnection(connection); // a refusal leaves the connection usable
       throw refused;
-    } catch (final IOException | RuntimeException e) {
+    } catch (final Throwable e) {
+      // anything else, an Error included, leaves the connection in an unknown state
       closeConnection(connection);
       throw e;
     }

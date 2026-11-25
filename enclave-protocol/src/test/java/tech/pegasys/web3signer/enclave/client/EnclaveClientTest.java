@@ -394,6 +394,36 @@ class EnclaveClientTest {
   }
 
   @Test
+  void anErrorDuringARequestClosesTheConnection() {
+    final List<Boolean> closed = new CopyOnWriteArrayList<>();
+    final EnclaveClient client =
+        client(
+            (connectTimeout, ioTimeout) -> {
+              final int index = closed.size();
+              closed.add(false);
+              return new Connection() {
+                @Override
+                public int read(final byte[] buffer, final int offset, final int length) {
+                  throw new OutOfMemoryError("test");
+                }
+
+                @Override
+                public void write(final byte[] buffer, final int offset, final int length) {}
+
+                @Override
+                public void close() {
+                  closed.set(index, true);
+                }
+              };
+            },
+            new EnclaveClient.Options(2, 1000));
+    for (int i = 0; i < 3; i++) {
+      assertThatThrownBy(client::status).isInstanceOf(OutOfMemoryError.class);
+    }
+    assertThat(closed).hasSize(3).containsOnly(true);
+  }
+
+  @Test
   void anUnreachableEnclaveFailsWithTheConnectFailure() {
     final EnclaveClient client =
         client(
@@ -537,6 +567,11 @@ class EnclaveClientTest {
             (self, connection, index) -> {
               while (true) {
                 final Frame request = self.read(connection);
+                if (request.kind() == Protocol.STATUS) {
+                  ScriptedTcpServer.respond(
+                      connection, request, Protocol.OK, ScriptedTcpServer.status(1));
+                  continue;
+                }
                 final PublicKeysRequest page = Messages.decodePublicKeysRequest(request.body());
                 final List<byte[]> keys = new ArrayList<>();
                 for (long i = page.offset();
@@ -554,7 +589,37 @@ class EnclaveClientTest {
     for (int i = 0; i < KEY_COUNT; i++) {
       assertThat(keys.get(i)).isEqualTo(key(i));
     }
-    assertThat(server.received).hasSize(2);
+    // STATUS, a full page, a short page, STATUS
+    assertThat(server.received).hasSize(4);
+  }
+
+  @Test
+  void publicKeysFromTwoRunsOfTheEnclaveAreRefused() throws IOException {
+    final ScriptedTcpServer server =
+        server(
+            (self, connection, index) -> {
+              int statuses = 0;
+              while (true) {
+                final Frame request = self.read(connection);
+                if (request.kind() == Protocol.STATUS) {
+                  // the enclave restarts between the first and the second STATUS
+                  final byte[] bootId = new byte[16];
+                  bootId[0] = (byte) statuses++;
+                  ScriptedTcpServer.respond(
+                      connection,
+                      request,
+                      Protocol.OK,
+                      Messages.encodeStatus(Protocol.PLATFORM_DEV, 1, 0, bootId, "test"));
+                } else {
+                  ScriptedTcpServer.respond(
+                      connection, request, Protocol.OK, Messages.encodePublicKeys(List.of()));
+                }
+              }
+            });
+    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    assertThatThrownBy(client::publicKeys)
+        .isInstanceOf(EnclaveUnavailableException.class)
+        .hasMessageContaining("restarted");
   }
 
   /** One full page and a short one: the short page ends the listing. */
