@@ -45,14 +45,14 @@ final class Ssz {
 
   /** Encodes a whole body as a list of fixed-size containers: their fields one after another. */
   static <T> byte[] writeList(final List<T> items, final int maxCount, final Encoder<T> encoder) {
-    require(
+    checkArgument(
         items.size() <= maxCount,
         "List of " + items.size() + " items, at most " + maxCount + " allowed");
     final Writer out = new Writer();
     for (final T item : items) {
       encoder.encode(out, item);
     }
-    require(out.byteLists.isEmpty(), "List items must be of fixed size");
+    checkArgument(out.byteLists.isEmpty(), "List items must be of fixed size");
     return out.toBytes();
   }
 
@@ -63,10 +63,25 @@ final class Ssz {
     final Reader reader = new Reader(body, what);
     final List<T> items = new ArrayList<>();
     while (reader.in.hasRemaining()) {
-      reader.check(items.size() < maxCount, "list longer than " + maxCount);
+      reader.checkBody(items.size() < maxCount, "list longer than " + maxCount);
       items.add(decoder.decode(reader));
     }
     return items;
+  }
+
+  /** Encodes a whole body as a byte list of at most {@code maxSize} bytes. */
+  static byte[] writeByteList(final byte[] value, final int maxSize) {
+    checkArgument(
+        value.length <= maxSize,
+        "Byte list of " + value.length + " bytes, at most " + maxSize + " allowed");
+    return value.clone();
+  }
+
+  /** Decodes a whole body as a byte list of at most {@code maxSize} bytes. */
+  static byte[] readByteList(final byte[] body, final int maxSize, final String what)
+      throws IOException {
+    checkBody(body.length <= maxSize, what, "byte list longer than " + maxSize);
+    return body;
   }
 
   /** Writes the fields of a container or of one list item. */
@@ -82,14 +97,14 @@ final class Ssz {
   }
 
   /** Throws {@link IllegalArgumentException}: a value the message cannot carry. */
-  static void require(final boolean valid, final String message) {
+  private static void checkArgument(final boolean valid, final String message) {
     if (!valid) {
       throw new IllegalArgumentException(message);
     }
   }
 
   /** Throws the {@link IOException} of a malformed body. */
-  static void check(final boolean valid, final String what, final String reason)
+  private static void checkBody(final boolean valid, final String what, final String reason)
       throws IOException {
     if (!valid) {
       throw new IOException("Malformed " + what + ": " + reason);
@@ -117,13 +132,14 @@ final class Ssz {
 
     /** A byte vector of exactly {@code size} bytes. */
     Writer vector(final byte[] value, final int size) {
-      require(value.length == size, "Byte vector of " + value.length + " bytes, expected " + size);
+      checkArgument(
+          value.length == size, "Byte vector of " + value.length + " bytes, expected " + size);
       fixed().writeBytes(value);
       return this;
     }
 
     Writer byteList(final byte[] value, final int maxSize) {
-      require(
+      checkArgument(
           value.length <= maxSize,
           "Byte list of " + value.length + " bytes, at most " + maxSize + " allowed");
       byteLists.add(value);
@@ -131,7 +147,7 @@ final class Ssz {
     }
 
     private Writer uint(final long value, final int size) {
-      require(
+      checkArgument(
           value >= 0 && value < 1L << (8 * size), "uint" + 8 * size + " out of range: " + value);
       final ByteArrayOutputStream out = fixed();
       for (int i = 0; i < size; i++) {
@@ -208,12 +224,12 @@ final class Ssz {
         readOffsets();
       }
       final int count = bounds.length - 1;
-      check(
+      checkBody(
           nextByteList < count,
           "has " + count + " byte lists, expected at least " + (nextByteList + 1));
       final int from = bounds[nextByteList];
       final int to = bounds[++nextByteList];
-      check(to - from <= maxSize, "byte list longer than " + maxSize);
+      checkBody(to - from <= maxSize, "byte list longer than " + maxSize);
       final byte[] value = new byte[to - from];
       in.get(from, value);
       return value;
@@ -223,16 +239,16 @@ final class Ssz {
       if (bounds != null) {
         throw new IllegalStateException(what + ": fixed fields must come before byte lists");
       }
-      check(in.remaining() >= size, "shorter than its fixed part");
+      checkBody(in.remaining() >= size, "shorter than its fixed part");
       return in;
     }
 
     /** The rest of the fixed part is offsets, and the end of the body closes the last byte list. */
     private void readOffsets() throws IOException {
       final int start = in.position();
-      check(in.remaining() >= BYTES_PER_LENGTH_OFFSET, "shorter than its fixed part");
+      checkBody(in.remaining() >= BYTES_PER_LENGTH_OFFSET, "shorter than its fixed part");
       final long fixedSize = Integer.toUnsignedLong(in.getInt());
-      check(
+      checkBody(
           fixedSize >= start + BYTES_PER_LENGTH_OFFSET
               && fixedSize <= in.limit()
               && (fixedSize - start) % BYTES_PER_LENGTH_OFFSET == 0,
@@ -241,27 +257,26 @@ final class Ssz {
       bounds = new int[count + 1];
       bounds[0] = (int) fixedSize;
       for (int i = 1; i < count; i++) {
-        // anything past the end becomes one past it, so the order check below refuses it
-        final long offset = Integer.toUnsignedLong(in.getInt());
-        bounds[i] = offset > in.limit() ? in.limit() + 1 : (int) offset;
+        // read signed: an offset of 2^31 or more is negative, so the order check refuses it
+        bounds[i] = in.getInt();
       }
       bounds[count] = in.limit();
       for (int i = 1; i <= count; i++) {
-        check(bounds[i] >= bounds[i - 1], "offsets decrease or point past the end");
+        checkBody(bounds[i] >= bounds[i - 1], "offsets decrease or point past the end");
       }
     }
 
     private void checkNothingLeft() throws IOException {
       if (bounds == null) {
-        check(!in.hasRemaining(), "trailing bytes");
+        checkBody(!in.hasRemaining(), "trailing bytes");
       } else {
         final int count = bounds.length - 1;
-        check(nextByteList == count, "has " + count + " byte lists, expected " + nextByteList);
+        checkBody(nextByteList == count, "has " + count + " byte lists, expected " + nextByteList);
       }
     }
 
-    private void check(final boolean valid, final String reason) throws IOException {
-      Ssz.check(valid, what, reason);
+    void checkBody(final boolean valid, final String reason) throws IOException {
+      Ssz.checkBody(valid, what, reason);
     }
   }
 }

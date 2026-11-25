@@ -15,7 +15,7 @@ package tech.pegasys.web3signer.enclave.client;
 import tech.pegasys.web3signer.enclave.protocol.Frames;
 import tech.pegasys.web3signer.enclave.protocol.Frames.Frame;
 import tech.pegasys.web3signer.enclave.protocol.Messages;
-import tech.pegasys.web3signer.enclave.protocol.Messages.PageRequest;
+import tech.pegasys.web3signer.enclave.protocol.Messages.PublicKeysRequest;
 import tech.pegasys.web3signer.enclave.protocol.Messages.SignRequest;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Status;
 import tech.pegasys.web3signer.enclave.protocol.Protocol;
@@ -105,7 +105,7 @@ public final class EnclaveClient implements Closeable {
   }
 
   /**
-   * Signs a 32-byte signing root with the key {@code publicKey} held by the enclave.
+   * Signs a 32-byte signing root with the key {@code pubKey} held by the enclave.
    *
    * @return the 96-byte compressed signature
    * @throws IllegalArgumentException when the key is not 48 bytes or the root not 32
@@ -113,11 +113,17 @@ public final class EnclaveClient implements Closeable {
    *     Protocol#RESOURCE_UNAVAILABLE} for a key it does not hold
    * @throws EnclaveUnavailableException on a timeout or a connection failure
    */
-  public byte[] sign(final byte[] publicKey, final byte[] signingRoot) {
-    final byte[] request = Messages.encodeSignRequest(new SignRequest(publicKey, signingRoot));
+  public byte[] sign(final byte[] pubKey, final byte[] signingRoot) {
+    final byte[] request = Messages.encodeSignRequest(new SignRequest(pubKey, signingRoot));
     return sendPooled(Protocol.SIGN, request, Messages::decodeSignature);
   }
 
+  /**
+   * The signer's status: platform, key count, boot id and version.
+   *
+   * @throws UnsupportedProtocolVersionException when the signer speaks another protocol version;
+   *     retrying cannot help
+   */
   public Status status() {
     return sendPooled(Protocol.STATUS, Messages.encodeStatusRequest(), Messages::decodeStatus);
   }
@@ -127,7 +133,8 @@ public final class EnclaveClient implements Closeable {
     final List<byte[]> keys = new ArrayList<>();
     while (true) {
       final byte[] request =
-          Messages.encodePageRequest(new PageRequest(keys.size(), Protocol.MAX_PUBLIC_KEYS_PAGE));
+          Messages.encodePublicKeysRequest(
+              new PublicKeysRequest(keys.size(), Protocol.MAX_PUBLIC_KEYS_PAGE));
       final List<byte[]> page =
           sendPooled(Protocol.GET_PUBLIC_KEYS, request, Messages::decodePublicKeys);
       keys.addAll(page);
@@ -226,9 +233,6 @@ public final class EnclaveClient implements Closeable {
     } catch (final EnclaveException refused) {
       releaseConnection(connection); // a refusal leaves the connection usable
       throw refused;
-    } catch (final UnsupportedProtocolVersionException e) {
-      closeConnection(connection);
-      throw new EnclaveUnavailableException(e.getMessage(), e);
     } catch (final IOException | RuntimeException e) {
       closeConnection(connection);
       throw e;

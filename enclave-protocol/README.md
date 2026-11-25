@@ -18,7 +18,7 @@ How to deploy it: [`deployments/aws-nitro/README.md`](../deployments/aws-nitro/R
   The protocol needs a byte stream and nothing else.
 - **SSZ bodies.** Every message body is [SSZ](https://github.com/ethereum/ssz-specs), as in the
   consensus layer. The module carries its own codec for the small part of SSZ it needs (containers
-  of `uint8`, `uint16`, `uint32`, byte vectors and byte lists, with the byte lists last, and lists
+  of `Uint8`, `Uint16`, `Uint32`, byte vectors and byte lists, with the byte lists last, and lists
   of fixed-size containers as a whole body). An encoder and its decoder list the fields in the same
   order as the SSZ type, and tests check every message against Teku's SSZ implementation.
 - **The enclave image stays minimal.** The signer runs on a jlink `java.base` runtime. This module
@@ -49,102 +49,334 @@ TCP has no channel security. Platforms whose enclave is reached over a network (
 confidential VMs) need an authenticated channel, such as attested TLS, before TCP can carry
 production traffic.
 
+## Constants
+
+| Name | Value | Description |
+|---|---|---|
+| `MAX_BODY_SIZE` | `2**20` (= 1,048,576) | Bytes in a frame body |
+| `MAX_ERROR_MESSAGE_SIZE` | `2**8` (= 256) | Bytes in an `ErrorMessage` |
+| `MAX_NONCE_SIZE` | `2**6` (= 64) | Bytes in a `Nonce` |
+| `MAX_PUBLIC_KEYS_PAGE` | `2**14` (= 16,384) | Public keys in one `GET_PUBLIC_KEYS` response |
+| `MAX_LOAD_KEYS` | `2**12` (= 4,096) | Sealed keys in one `LOAD_KEYS` request |
+| `MAX_VERSION_SIZE` | `2**8` (= 256) | Bytes in a `SignerVersion` |
+| `MAX_RELEASE_KEY_SIZE` | `2**11` (= 2,048) | Bytes in a `ReleaseKey` |
+| `MAX_EVIDENCE_SIZE` | `2**16` (= 65,536) | Bytes in a `PlatformEvidence` |
+| `MAX_BLOB_SIZE` | `2**16` (= 65,536) | Bytes in a `ReleaseBlob` |
+
 ## Frames
 
-A frame is a fixed SSZ container followed by an SSZ body:
+Every request and every response is one frame: a fixed header, then a body of `length` bytes.
+
+```
+frame  = header ‖ body
+header = SSZ(FrameHeader)                9 bytes
+body   = SSZ(content)                    header.length bytes
+```
 
 ```python
 class FrameHeader(Container):
-    length: uint32      # bytes of the body, at most 1,048,576
-    request_id: uint32  # chosen by the client, echoed in the response
-    kind: uint8         # request: the opcode; response: the result code
+    length: Uint32       # bytes of the body, 0 to MAX_BODY_SIZE
+    request_id: Uint32   # chosen by the client, echoed in the response
+    kind: Uint8          # request: the opcode; response: the result code
 ```
 
-- On one connection the server reads one request at a time and answers in request order. The client
-  sends one request at a time per connection, checks the request id of every answer, and drops the
-  connection on a mismatch.
-- A response with the result `OK` carries the operation's response body. Any other result carries
-  `ErrorMessage = List[byte, 256]`, printable ASCII, as the consensus req/resp errors do. The
-  enclave fills it with fixed text only, never with anything that depends on secret data.
-- A body announced above 1 MiB, a malformed response body or an answer to another request closes
-  the connection. A malformed request body is answered with `BAD_REQUEST`; the frame boundaries are
-  intact, so the connection stays.
+- **Body:** a request's body is the request content of the message its `kind` names (see
+  [Messages](#messages)). A response with `kind` `OK` carries that message's response content. Any
+  other result code carries an [`ErrorMessage`](#errormessage), printable ASCII, as the consensus
+  req/resp errors do. The enclave fills it with fixed text only, never with anything that depends on
+  secret data.
+- **Byte order:** every integer is little-endian, as in all SSZ.
+- **Request ids:** the response to a request carries the same `request_id`. On one connection the
+  server reads one request at a time and answers in request order. The client sends one request at
+  a time per connection, checks the request id of every answer, and drops the connection on a
+  mismatch.
+- **Errors:** a `length` above `MAX_BODY_SIZE`, a malformed response body or an answer to another
+  request closes the connection. A malformed request body is answered with `BAD_REQUEST`; the frame
+  boundaries are intact, so the connection stays.
 
-## Operations
+For example, a `STATUS` request with request id 7 has an empty body, and a `RESOURCE_UNAVAILABLE`
+answer to request 7 carries the error message `no key`:
 
-Protocol version 1.
+```
+00000000 07000000 01                      length 0, request id 7, STATUS
+06000000 07000000 03 6e6f206b6579         length 6, request id 7, RESOURCE_UNAVAILABLE, "no key"
+```
+
+## Messages
+
+Protocol version 1. A request is a frame whose `kind` is the opcode, and its body is the request
+content below. The response is a frame whose `kind` is the result code. With `OK` its body is the
+response content below; with any other result it is an `ErrorMessage`.
+
+A body that is a single list or value is that type on its own, not a container around it, as in the
+consensus req/resp protocol (`BeaconBlocksByRoot`, `Ping`). A message with no content has an empty
+body, since SSZ has no empty container.
+
+### Types
+
+#### `ErrorMessage`
 
 ```python
-# Requests (the body follows a FrameHeader whose kind is the opcode)
+class ErrorMessage(List[Byte]):
+    """
+    The error message of a response whose result is not ``OK``.
+    """
 
-# 0x01 STATUS: empty body (SSZ has no empty containers)
+    LIMIT = MAX_ERROR_MESSAGE_SIZE
+```
 
-class GetPublicKeysRequest(Container):      # 0x02 GET_PUBLIC_KEYS
-    offset: uint32
-    limit: uint32                           # 1 to 16,384
+#### `Nonce`
 
-class SignRequest(Container):               # 0x03 SIGN
-    pubkey: Bytes48
-    signing_root: Bytes32
+```python
+class Nonce(List[Byte]):
+    """
+    The caller's nonce in a ``GET_EVIDENCE`` request, bound into the evidence.
+    """
 
-GetEvidenceRequest = List[byte, 64]         # 0x10 GET_EVIDENCE: the nonce
+    LIMIT = MAX_NONCE_SIZE
+```
 
-class UnwrapDekRequest(Container):          # 0x11 UNWRAP_DEK
-    format: uint8                           # 1 = CMS
-    blob: List[byte, 65536]
+#### `PlatformEvidence`
 
+```python
+class PlatformEvidence(List[Byte]):
+    """
+    The platform's evidence for a release key, in a ``GET_EVIDENCE`` response.
+    """
+
+    LIMIT = MAX_EVIDENCE_SIZE
+```
+
+#### `PublicKeys`
+
+```python
+class PublicKeys(List[Bytes48]):
+    """
+    Compressed BLS public keys returned in a ``GET_PUBLIC_KEYS`` response.
+    """
+
+    LIMIT = MAX_PUBLIC_KEYS_PAGE
+```
+
+#### `ReleaseBlob`
+
+```python
+class ReleaseBlob(List[Byte]):
+    """
+    The data key encrypted to a release key, sent in an ``UNWRAP_DEK`` request.
+    """
+
+    LIMIT = MAX_BLOB_SIZE
+```
+
+#### `ReleaseKey`
+
+```python
+class ReleaseKey(List[Byte]):
+    """
+    The DER SubjectPublicKeyInfo of an RSA release key, in a ``GET_EVIDENCE``
+    response.
+    """
+
+    LIMIT = MAX_RELEASE_KEY_SIZE
+```
+
+#### `SealedKeys`
+
+```python
+class SealedKeys(List[SealedKey]):
+    """
+    BLS secret keys sealed under the data key, sent in a ``LOAD_KEYS`` request.
+    """
+
+    LIMIT = MAX_LOAD_KEYS
+```
+
+#### `SignerVersion`
+
+```python
+class SignerVersion(List[Byte]):
+    """
+    The signer's implementation version, printable ASCII, in a ``STATUS`` response.
+    """
+
+    LIMIT = MAX_VERSION_SIZE
+```
+
+### Containers
+
+#### `SealedKey`
+
+```python
 class SealedKey(Container):
     pubkey: Bytes48
     nonce: Bytes12
-    ciphertext: Bytes48                     # AES-256-GCM ciphertext and tag
-
-LoadKeysRequest = List[SealedKey, 4096]     # 0x12 LOAD_KEYS: at least 1
-
-# Responses with the result OK
-
-class StatusResponse(Container):
-    protocol_version: uint8
-    platform: uint8
-    cpus: uint16                            # capped at 65,535
-    key_count: uint32
-    boot_id: Bytes16
-    version: List[byte, 256]
-
-GetPublicKeysResponse = List[Bytes48, 16384]
-
-SignResponse = Bytes96                      # compressed
-
-class GetEvidenceResponse(Container):
-    evidence_type: uint8
-    release_key: List[byte, 2048]           # DER SubjectPublicKeyInfo, RSA
-    evidence: List[byte, 65536]
-
-# UNWRAP_DEK: empty body
-
-class LoadKeysResponse(Container):
-    loaded: uint32
-    duplicates: uint32
-    rejected: uint32
+    ciphertext: Bytes48
 ```
 
-- **Bare bodies:** a body that is one list or one value is that type on its own, not a container
-  around it, as in the consensus req/resp protocol (`BeaconBlocksByRoot`, `Ping`).
-- **Platform:** `0` dev, `1` AWS Nitro.
-- **Boot id:** 16 random bytes chosen when the signer starts. A new boot id means that the enclave
-  restarted and lost its keys.
-- **Version:** the signer's implementation version, printable ASCII, because it ends up in logs.
-- **`SIGN`** signs a 32-byte signing root. Web3Signer's signing extension endpoint, which signs
-  other payloads, is not available for enclave keys.
-- **`GET_PUBLIC_KEYS`** pages through the keys in load order. The signer fills every page up to
-  `limit`, so a page shorter than `limit` is the last one.
-- **Evidence** is the platform's proof of what runs in the enclave (the IETF RATS term). The
-  release key travels beside the evidence, because some platforms only have room for a hash of it
-  inside: SEV-SNP and TDX reports carry 64 bytes of our data. Evidence types: `0` dev, `1` an AWS
-  Nitro attestation document whose public key is the release key. The key release service must
-  encrypt to a release key the evidence binds. For AWS Nitro it does by construction: KMS verifies
-  the document and encrypts to the public key inside it, so the separate field is informational.
-  A platform that only binds a hash needs that hash checked against the release key.
-- **Sealed key:** the data key encrypts the 32-byte secret, with the public key as additional data.
+### STATUS
+
+**Opcode:** `0x01`
+
+No Request Content.
+
+Response Content:
+
+```
+(
+  protocol_version: Uint8
+  platform: Uint8
+  cpus: Uint16
+  key_count: Uint32
+  boot_id: Bytes16
+  version: SignerVersion
+)
+```
+
+Reports what the signer is and what it holds. `protocol_version` comes first, so that a client can
+refuse a signer of another version even when the rest of its answer has another layout (see
+[Versioning](#versioning)). `platform` is `0` dev or `1` AWS Nitro. `cpus` is the processors
+available to the signer, capped at 65,535. `key_count` is the number of loaded keys. `boot_id` is 16
+random bytes chosen when the signer starts: a new boot id means that the enclave restarted and lost
+its keys. `version` is the signer's implementation version, printable ASCII because it ends up in
+logs.
+
+### GET_PUBLIC_KEYS
+
+**Opcode:** `0x02`
+
+Request Content:
+
+```
+(
+  offset: Uint32
+  limit: Uint32
+)
+```
+
+Response Content:
+
+```
+(
+  PublicKeys
+)
+```
+
+Returns up to `limit` public keys from position `offset`, in load order. `limit` is 1 to
+`MAX_PUBLIC_KEYS_PAGE`; anything else is a `BAD_REQUEST`. The signer fills every page up to `limit`,
+so a page shorter than `limit` is the last one.
+
+### SIGN
+
+**Opcode:** `0x03`
+
+Request Content:
+
+```
+(
+  pubkey: Bytes48
+  signing_root: Bytes32
+)
+```
+
+Response Content:
+
+```
+(
+  Bytes96
+)
+```
+
+Signs the 32-byte signing root with the key whose compressed public key is `pubkey`, and returns the
+compressed signature. A key the signer does not hold is answered with `RESOURCE_UNAVAILABLE`.
+Web3Signer's signing extension endpoint, which signs other payloads, is not available for enclave
+keys.
+
+### GET_EVIDENCE
+
+**Opcode:** `0x10`
+
+Request Content:
+
+```
+(
+  Nonce
+)
+```
+
+Response Content:
+
+```
+(
+  evidence_type: Uint8
+  release_key: ReleaseKey
+  evidence: PlatformEvidence
+)
+```
+
+Starts [provisioning](#provisioning). The signer generates a fresh RSA release key and returns its
+DER SubjectPublicKeyInfo as `release_key`, with the platform's evidence that binds it and the nonce,
+which is the whole request. Evidence is the platform's proof of what runs in the enclave (the IETF
+RATS term). Evidence types: `0` dev, `1` an AWS Nitro attestation document whose public key is the
+release key. A platform that produces no evidence answers `EVIDENCE_FAILED`.
+
+The release key travels beside the evidence because some platforms only have room for a hash of it
+inside: SEV-SNP and TDX reports carry 64 bytes of our data. The key release service must encrypt to
+a release key the evidence binds. For AWS Nitro it does by construction: KMS verifies the document
+and encrypts to the public key inside it, so the separate field is informational. A platform that
+only binds a hash needs that hash checked against the release key.
+
+### UNWRAP_DEK
+
+**Opcode:** `0x11`
+
+Request Content:
+
+```
+(
+  format: Uint8
+  blob: ReleaseBlob
+)
+```
+
+No Response Content.
+
+Hands the signer the release blob that a key release service encrypted to the release key of the
+last `GET_EVIDENCE`. The signer opens it and keeps the data key inside for `LOAD_KEYS`. Format `1`
+is the CMS EnvelopedData that AWS KMS returns for a recipient; another format is `UNSUPPORTED`. The
+release key serves this one attempt whatever its outcome, and every blob that does not open is
+answered with the same `UNWRAP_FAILED`. Without a release key the answer is `INVALID_STATE`.
+
+### LOAD_KEYS
+
+**Opcode:** `0x12`
+
+Request Content:
+
+```
+(
+  SealedKeys
+)
+```
+
+Response Content:
+
+```
+(
+  loaded: Uint32
+  duplicates: Uint32
+  rejected: Uint32
+)
+```
+
+Adds sealed BLS keys to the signer, 1 to `MAX_LOAD_KEYS` per request. The data key from `UNWRAP_DEK`
+encrypts each 32-byte secret with AES-256-GCM, with the public key as additional data; `ciphertext`
+is the encrypted secret followed by the tag. `loaded` counts the keys added, `duplicates` the
+entries whose public key was already loaded, by an earlier request or an earlier entry of this one,
+and `rejected` the entries that did not open or whose secret does not match its public key. Without
+a data key the answer is `INVALID_STATE`.
+
+### Result codes
 
 Result codes 0 to 3 mean what they mean in the consensus req/resp protocol; the protocol's own codes
 start at 128.
@@ -234,10 +466,11 @@ Invariants:
   thread, and the descriptor and the native buffers are freed when the call returns, so a descriptor
   number is never reused under a running call.
 - **Failures:** `EnclaveUnavailableException` when the enclave cannot answer (timeout, no free
-  connection, connection failure, closed client, another protocol version); `EnclaveException` with
-  the result code and the enclave's message when it refuses. `ProvisioningSession.loadKeys` throws
-  `PartialLoadException`, with the counts of the requests that succeeded, when a later request
-  fails: those keys stay loaded.
+  connection, connection failure, closed client); `EnclaveException` with the result code and the
+  enclave's message when it refuses; `UnsupportedProtocolVersionException` from `STATUS` when the
+  signer speaks another protocol version, which no retry can fix. `ProvisioningSession.loadKeys`
+  throws `PartialLoadException`, with the counts of the requests that succeeded, when a later
+  request fails: those keys stay loaded.
 
 ## Versioning
 

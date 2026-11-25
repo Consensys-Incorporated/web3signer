@@ -26,7 +26,7 @@ import tech.pegasys.teku.infrastructure.ssz.schema.SszSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteListSchema;
 import tech.pegasys.teku.infrastructure.ssz.schema.collections.SszByteVectorSchema;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Evidence;
-import tech.pegasys.web3signer.enclave.protocol.Messages.LoadResult;
+import tech.pegasys.web3signer.enclave.protocol.Messages.KeyLoadCounts;
 import tech.pegasys.web3signer.enclave.protocol.Messages.SealedKey;
 
 import java.nio.ByteBuffer;
@@ -134,10 +134,11 @@ class TekuSszCompatibilityTest {
   void pageRequest() throws Exception {
     // above 2^31: the top bit of the uint32 counts
     final long offset = 4_000_000_000L;
-    final byte[] ours = Messages.encodePageRequest(new Messages.PageRequest(offset, 16_384));
+    final byte[] ours =
+        Messages.encodePublicKeysRequest(new Messages.PublicKeysRequest(offset, 16_384));
     assertSameEncoding(ours, container(UINT32, UINT32), uint32(offset), uint32(16_384));
-    assertThat(Messages.decodePageRequest(ours))
-        .isEqualTo(new Messages.PageRequest(offset, 16_384));
+    assertThat(Messages.decodePublicKeysRequest(ours))
+        .isEqualTo(new Messages.PublicKeysRequest(offset, 16_384));
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
@@ -178,7 +179,7 @@ class TekuSszCompatibilityTest {
         vector(publicKey),
         vector(signingRoot));
     final Messages.SignRequest decoded = Messages.decodeSignRequest(ours);
-    assertThat(decoded.publicKey()).isEqualTo(publicKey);
+    assertThat(decoded.pubKey()).isEqualTo(publicKey);
     assertThat(decoded.signingRoot()).isEqualTo(signingRoot);
 
     final byte[] signature = randomBytes(96);
@@ -192,9 +193,9 @@ class TekuSszCompatibilityTest {
   @Test
   void evidenceRequestAndResponse() throws Exception {
     final byte[] nonce = randomBytes(32);
-    final byte[] request = Messages.encodeEvidenceRequest(nonce);
+    final byte[] request = Messages.encodeNonce(nonce);
     assertThat(request).isEqualTo(list(64, nonce).sszSerialize().toArrayUnsafe());
-    assertThat(Messages.decodeEvidenceRequest(request)).isEqualTo(nonce);
+    assertThat(Messages.decodeNonce(request)).isEqualTo(nonce);
 
     final byte[] releaseKey = randomBytes(294);
     final byte[] evidence = randomBytes(4500);
@@ -210,7 +211,7 @@ class TekuSszCompatibilityTest {
         list(Protocol.MAX_RELEASE_KEY_SIZE, releaseKey),
         list(Protocol.MAX_EVIDENCE_SIZE, evidence));
     final Evidence decoded = Messages.decodeEvidence(ours);
-    assertThat(decoded.type()).isEqualTo(Protocol.EVIDENCE_AWS_NITRO);
+    assertThat(decoded.evidenceType()).isEqualTo(Protocol.EVIDENCE_AWS_NITRO);
     assertThat(decoded.releaseKey()).isEqualTo(releaseKey);
     assertThat(decoded.evidence()).isEqualTo(evidence);
   }
@@ -248,19 +249,19 @@ class TekuSszCompatibilityTest {
       keys.add(key);
       elements.add(
           entry.createFromFieldValues(
-              List.of(vector(key.publicKey()), vector(key.nonce()), vector(key.ciphertext()))));
+              List.of(vector(key.pubKey()), vector(key.nonce()), vector(key.ciphertext()))));
     }
-    final byte[] ours = Messages.encodeLoadKeysRequest(keys);
+    final byte[] ours = Messages.encodeSealedKeys(keys);
     assertSameListEncoding(ours, listSchema, elements);
-    assertThat(Messages.decodeLoadKeysRequest(ours))
+    assertThat(Messages.decodeSealedKeys(ours))
         .usingRecursiveFieldByFieldElementComparator()
         .isEqualTo(keys);
 
-    final LoadResult result = new LoadResult(5, 2, 1);
-    final byte[] response = Messages.encodeLoadResult(result);
+    final KeyLoadCounts result = new KeyLoadCounts(5, 2, 1);
+    final byte[] response = Messages.encodeKeyLoadCounts(result);
     assertSameEncoding(
         response, container(UINT32, UINT32, UINT32), uint32(5), uint32(2), uint32(1));
-    assertThat(Messages.decodeLoadResult(response)).isEqualTo(result);
+    assertThat(Messages.decodeKeyLoadCounts(response)).isEqualTo(result);
   }
 
   @Test

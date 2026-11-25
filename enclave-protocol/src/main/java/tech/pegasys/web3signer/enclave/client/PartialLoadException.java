@@ -12,7 +12,7 @@
  */
 package tech.pegasys.web3signer.enclave.client;
 
-import tech.pegasys.web3signer.enclave.protocol.Messages.LoadResult;
+import tech.pegasys.web3signer.enclave.protocol.Messages.KeyLoadCounts;
 
 /**
  * A {@code LOAD_KEYS} request failed after earlier requests of the same {@link
@@ -20,14 +20,14 @@ import tech.pegasys.web3signer.enclave.protocol.Messages.LoadResult;
  */
 public final class PartialLoadException extends RuntimeException {
   private static final long serialVersionUID = 1L;
-  private final transient LoadResult loadedBefore;
+  private final transient KeyLoadCounts loadedBefore;
 
   /**
    * @param loadedBefore the counts of the requests that succeeded
    * @param cause why the next request failed: an {@link EnclaveException} or an {@link
    *     EnclaveUnavailableException}
    */
-  public PartialLoadException(final LoadResult loadedBefore, final RuntimeException cause) {
+  public PartialLoadException(final KeyLoadCounts loadedBefore, final RuntimeException cause) {
     super(
         "Loading keys failed after "
             + loadedBefore.loaded()
@@ -42,7 +42,7 @@ public final class PartialLoadException extends RuntimeException {
   }
 
   /** The counts of the requests that succeeded before the failure. */
-  public LoadResult loadedBefore() {
+  public KeyLoadCounts loadedBefore() {
     return loadedBefore;
   }
 }

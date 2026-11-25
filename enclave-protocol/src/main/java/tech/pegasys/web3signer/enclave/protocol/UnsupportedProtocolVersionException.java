@@ -12,10 +12,11 @@
  */
 package tech.pegasys.web3signer.enclave.protocol;
 
-import java.io.IOException;
-
-/** A {@code STATUS} answer from a signer that speaks another protocol version. */
-public final class UnsupportedProtocolVersionException extends IOException {
+/**
+ * A {@code STATUS} answer from a signer that speaks another protocol version. Unchecked, and not an
+ * {@code EnclaveUnavailableException}: retrying cannot help.
+ */
+public final class UnsupportedProtocolVersionException extends RuntimeException {
   private static final long serialVersionUID = 1L;
   private final long version;
 

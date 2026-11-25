@@ -33,7 +33,6 @@ dependencies {
   testImplementation 'org.junit.jupiter:junit-jupiter-api'
   testImplementation 'org.junit.jupiter:junit-jupiter-params'
   testImplementation 'tech.pegasys.teku.internal:ssz'
-  testImplementation 'tech.pegasys.teku.internal:unsigned'
   testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
   testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

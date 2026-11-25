@@ -42,9 +42,12 @@ public final class Frames {
    */
   public static void write(final Connection connection, final Frame frame) throws IOException {
     final byte[] body = frame.body();
-    Ssz.require(body.length <= MAX_BODY_SIZE, "Frame length out of range: " + body.length);
-    Ssz.require(
-        frame.kind() >= 0 && frame.kind() <= 0xff, "Frame kind out of range: " + frame.kind());
+    if (body.length > MAX_BODY_SIZE) {
+      throw new IllegalArgumentException("Frame length out of range: " + body.length);
+    }
+    if (frame.kind() < 0 || frame.kind() > 0xff) {
+      throw new IllegalArgumentException("Frame kind out of range: " + frame.kind());
+    }
     final ByteBuffer out = ByteBuffer.allocate(HEADER_SIZE + body.length).order(LITTLE_ENDIAN);
     out.putInt(body.length).putInt(frame.requestId()).put((byte) frame.kind()).put(body);
     connection.write(out.array(), 0, out.capacity());

@@ -64,21 +64,21 @@ public final class Messages {
   }
 
   /** A {@code GET_PUBLIC_KEYS} request: up to {@code limit} keys from position {@code offset}. */
-  public record PageRequest(long offset, int limit) {}
+  public record PublicKeysRequest(long offset, int limit) {}
 
   /** A {@code SIGN} request. */
   @SuppressWarnings("ArrayRecordComponent")
-  public record SignRequest(byte[] publicKey, byte[] signingRoot) {}
+  public record SignRequest(byte[] pubKey, byte[] signingRoot) {}
 
   /**
    * Answer to {@code GET_EVIDENCE}.
    *
-   * @param type {@link Protocol#EVIDENCE_AWS_NITRO} or {@link Protocol#EVIDENCE_DEV}
+   * @param evidenceType {@link Protocol#EVIDENCE_AWS_NITRO} or {@link Protocol#EVIDENCE_DEV}
    * @param releaseKey DER SubjectPublicKeyInfo of the RSA key the data key is released to
    * @param evidence the platform's evidence, binding the release key and the nonce
    */
   @SuppressWarnings("ArrayRecordComponent")
-  public record Evidence(int type, byte[] releaseKey, byte[] evidence) {}
+  public record Evidence(int evidenceType, byte[] releaseKey, byte[] evidence) {}
 
   /** An {@code UNWRAP_DEK} request. */
   @SuppressWarnings("ArrayRecordComponent")
@@ -87,15 +87,15 @@ public final class Messages {
   /**
    * One entry of {@code LOAD_KEYS}: a BLS secret encrypted with AES-256-GCM under the data key.
    *
-   * @param publicKey compressed BLS public key, 48 bytes; also the GCM additional data
+   * @param pubKey compressed BLS public key, 48 bytes; also the GCM additional data
    * @param nonce GCM nonce, 12 bytes
    * @param ciphertext 32 bytes of ciphertext followed by the 16-byte tag
    */
   @SuppressWarnings("ArrayRecordComponent")
-  public record SealedKey(byte[] publicKey, byte[] nonce, byte[] ciphertext) {
+  public record SealedKey(byte[] pubKey, byte[] nonce, byte[] ciphertext) {
 
     public SealedKey {
-      if (publicKey.length != PUBLIC_KEY_SIZE
+      if (pubKey.length != PUBLIC_KEY_SIZE
           || nonce.length != SEALED_NONCE_SIZE
           || ciphertext.length != SEALED_CIPHERTEXT_SIZE) {
         throw new IllegalArgumentException("Sealed key has wrong field sizes");
@@ -110,11 +110,11 @@ public final class Messages {
    * @param duplicates entries whose public key was already loaded
    * @param rejected entries that failed authentication or the key checks
    */
-  public record LoadResult(long loaded, long duplicates, long rejected) {
-    public static final LoadResult EMPTY = new LoadResult(0, 0, 0);
+  public record KeyLoadCounts(long loaded, long duplicates, long rejected) {
+    public static final KeyLoadCounts EMPTY = new KeyLoadCounts(0, 0, 0);
 
-    public LoadResult plus(final LoadResult other) {
-      return new LoadResult(
+    public KeyLoadCounts plus(final KeyLoadCounts other) {
+      return new KeyLoadCounts(
           loaded + other.loaded, duplicates + other.duplicates, rejected + other.rejected);
     }
   }
@@ -127,12 +127,12 @@ public final class Messages {
   }
 
   public static void decodeStatusRequest(final byte[] body) throws IOException {
-    requireEmpty(body, "STATUS");
+    requireEmpty(body, "STATUS request");
   }
 
   /**
-   * {@code StatusResponse}; {@code cpus} is capped at 65,535 and {@code version} is reduced to
-   * printable ASCII and 256 bytes.
+   * {@code Status}; {@code cpus} is capped at 65,535 and {@code version} is reduced to printable
+   * ASCII and 256 bytes.
    */
   public static byte[] encodeStatus(
       final int platform,
@@ -151,8 +151,8 @@ public final class Messages {
   }
 
   /**
-   * Decodes a {@code StatusResponse}. The protocol version is read first, so that a signer of
-   * another version is reported as such even when the rest of its answer has another layout.
+   * Decodes a {@code Status}. The protocol version is read first, so that a signer of another
+   * version is reported as such even when the rest of its answer has another layout.
    *
    * @throws UnsupportedProtocolVersionException when the signer speaks another protocol version
    */
@@ -177,27 +177,26 @@ public final class Messages {
 
   // ------------------------------------------------------------------ GET_PUBLIC_KEYS
 
-  public static byte[] encodePageRequest(final PageRequest request) {
-    Ssz.require(
-        request.limit() >= 1 && request.limit() <= MAX_PUBLIC_KEYS_PAGE,
-        "Invalid page request: " + request);
+  public static byte[] encodePublicKeysRequest(final PublicKeysRequest request) {
+    if (request.limit() < 1 || request.limit() > MAX_PUBLIC_KEYS_PAGE) {
+      throw new IllegalArgumentException("Invalid page request: " + request);
+    }
     return Ssz.writeContainer().uint32(request.offset()).uint32(request.limit()).toBytes();
   }
 
-  public static PageRequest decodePageRequest(final byte[] body) throws IOException {
+  public static PublicKeysRequest decodePublicKeysRequest(final byte[] body) throws IOException {
     return Ssz.readContainer(
         body,
-        "GET_PUBLIC_KEYS",
+        "GET_PUBLIC_KEYS request",
         in -> {
           final long offset = in.uint32();
           final long limit = in.uint32();
-          Ssz.check(
-              limit >= 1 && limit <= MAX_PUBLIC_KEYS_PAGE, "GET_PUBLIC_KEYS", "limit out of range");
-          return new PageRequest(offset, (int) limit);
+          in.checkBody(limit >= 1 && limit <= MAX_PUBLIC_KEYS_PAGE, "limit out of range");
+          return new PublicKeysRequest(offset, (int) limit);
         });
   }
 
-  /** {@code PublicKeysResponse = List[Bytes48, 16384]}: a page shorter than asked is the last. */
+  /** A {@code List[Bytes48, 16384]}; a page shorter than asked is the last. */
   public static byte[] encodePublicKeys(final List<byte[]> publicKeys) {
     return Ssz.writeList(
         publicKeys, MAX_PUBLIC_KEYS_PAGE, (out, key) -> out.vector(key, PUBLIC_KEY_SIZE));
@@ -215,7 +214,7 @@ public final class Messages {
    */
   public static byte[] encodeSignRequest(final SignRequest request) {
     return Ssz.writeContainer()
-        .vector(request.publicKey(), PUBLIC_KEY_SIZE)
+        .vector(request.pubKey(), PUBLIC_KEY_SIZE)
         .vector(request.signingRoot(), SIGNING_ROOT_SIZE)
         .toBytes();
   }
@@ -223,11 +222,11 @@ public final class Messages {
   public static SignRequest decodeSignRequest(final byte[] body) throws IOException {
     return Ssz.readContainer(
         body,
-        "SIGN",
+        "SIGN request",
         in -> new SignRequest(in.vector(PUBLIC_KEY_SIZE), in.vector(SIGNING_ROOT_SIZE)));
   }
 
-  /** {@code SignResponse}: the 96-byte compressed signature. */
+  /** The {@code SIGN} answer: the 96-byte compressed signature. */
   public static byte[] encodeSignature(final byte[] signature) {
     return Ssz.writeContainer().vector(signature, SIGNATURE_SIZE).toBytes();
   }
@@ -238,20 +237,18 @@ public final class Messages {
 
   // ------------------------------------------------------------------ GET_EVIDENCE
 
-  /** {@code GetEvidenceRequest = List[byte, 64]}: the nonce is the whole body. */
-  public static byte[] encodeEvidenceRequest(final byte[] nonce) {
-    Ssz.require(nonce.length <= MAX_NONCE_SIZE, "Nonce longer than " + MAX_NONCE_SIZE + " bytes");
-    return nonce.clone();
+  /** The nonce, a {@code List[Byte, 64]}, is the whole body. */
+  public static byte[] encodeNonce(final byte[] nonce) {
+    return Ssz.writeByteList(nonce, MAX_NONCE_SIZE);
   }
 
-  public static byte[] decodeEvidenceRequest(final byte[] body) throws IOException {
-    Ssz.check(body.length <= MAX_NONCE_SIZE, "GET_EVIDENCE", "nonce longer than " + MAX_NONCE_SIZE);
-    return body;
+  public static byte[] decodeNonce(final byte[] body) throws IOException {
+    return Ssz.readByteList(body, MAX_NONCE_SIZE, "GET_EVIDENCE request");
   }
 
   public static byte[] encodeEvidence(final Evidence evidence) {
     return Ssz.writeContainer()
-        .uint8(evidence.type())
+        .uint8(evidence.evidenceType())
         .byteList(evidence.releaseKey(), MAX_RELEASE_KEY_SIZE)
         .byteList(evidence.evidence(), MAX_EVIDENCE_SIZE)
         .toBytes();
@@ -277,7 +274,9 @@ public final class Messages {
 
   public static UnwrapDekRequest decodeUnwrapDekRequest(final byte[] body) throws IOException {
     return Ssz.readContainer(
-        body, "UNWRAP_DEK", in -> new UnwrapDekRequest(in.uint8(), in.byteList(MAX_BLOB_SIZE)));
+        body,
+        "UNWRAP_DEK request",
+        in -> new UnwrapDekRequest(in.uint8(), in.byteList(MAX_BLOB_SIZE)));
   }
 
   /** The empty body of an {@code UNWRAP_DEK} answer. */
@@ -291,34 +290,38 @@ public final class Messages {
 
   // ------------------------------------------------------------------ LOAD_KEYS
 
-  /** {@code LoadKeysRequest = List[SealedKey, 4096]}, with 1 to 4,096 entries. */
-  public static byte[] encodeLoadKeysRequest(final List<SealedKey> keys) {
-    Ssz.require(!keys.isEmpty(), "LOAD_KEYS takes at least one entry");
+  /** A {@code List[SealedKey, 4096]} with 1 to 4,096 entries. */
+  public static byte[] encodeSealedKeys(final List<SealedKey> keys) {
+    if (keys.isEmpty()) {
+      throw new IllegalArgumentException("LOAD_KEYS takes at least one entry");
+    }
     return Ssz.writeList(
         keys,
         MAX_LOAD_KEYS,
         (out, key) ->
-            out.vector(key.publicKey(), PUBLIC_KEY_SIZE)
+            out.vector(key.pubKey(), PUBLIC_KEY_SIZE)
                 .vector(key.nonce(), SEALED_NONCE_SIZE)
                 .vector(key.ciphertext(), SEALED_CIPHERTEXT_SIZE));
   }
 
-  public static List<SealedKey> decodeLoadKeysRequest(final byte[] body) throws IOException {
+  public static List<SealedKey> decodeSealedKeys(final byte[] body) throws IOException {
     final List<SealedKey> keys =
         Ssz.readList(
             body,
             MAX_LOAD_KEYS,
-            "LOAD_KEYS",
+            "LOAD_KEYS request",
             in ->
                 new SealedKey(
                     in.vector(PUBLIC_KEY_SIZE),
                     in.vector(SEALED_NONCE_SIZE),
                     in.vector(SEALED_CIPHERTEXT_SIZE)));
-    Ssz.check(!keys.isEmpty(), "LOAD_KEYS", "no entries");
+    if (keys.isEmpty()) {
+      throw malformed("LOAD_KEYS request", "no entries");
+    }
     return keys;
   }
 
-  public static byte[] encodeLoadResult(final LoadResult result) {
+  public static byte[] encodeKeyLoadCounts(final KeyLoadCounts result) {
     return Ssz.writeContainer()
         .uint32(result.loaded())
         .uint32(result.duplicates())
@@ -326,16 +329,16 @@ public final class Messages {
         .toBytes();
   }
 
-  public static LoadResult decodeLoadResult(final byte[] body) throws IOException {
+  public static KeyLoadCounts decodeKeyLoadCounts(final byte[] body) throws IOException {
     return Ssz.readContainer(
-        body, "LOAD_KEYS response", in -> new LoadResult(in.uint32(), in.uint32(), in.uint32()));
+        body, "LOAD_KEYS response", in -> new KeyLoadCounts(in.uint32(), in.uint32(), in.uint32()));
   }
 
   // ------------------------------------------------------------------ errors
 
   /**
-   * {@code ErrorMessage = List[byte, 256]}, the body of every response other than {@code OK}.
-   * Reduced to printable ASCII. Keep it free of anything that depends on secret data.
+   * {@code ErrorMessage}, a {@code List[Byte, 256]}, the body of every response other than {@code
+   * OK}. Reduced to printable ASCII. Keep it free of anything that depends on secret data.
    */
   public static byte[] encodeErrorMessage(final String message) {
     return printableAscii(message, MAX_ERROR_MESSAGE_SIZE);
@@ -343,18 +346,21 @@ public final class Messages {
 
   /** The error message of a refusal, as printable ASCII: it ends up in logs. */
   public static String decodeErrorMessage(final byte[] body) throws IOException {
-    Ssz.check(
-        body.length <= MAX_ERROR_MESSAGE_SIZE,
-        "error message",
-        "longer than " + MAX_ERROR_MESSAGE_SIZE);
-    return printableAscii(body);
+    return printableAscii(Ssz.readByteList(body, MAX_ERROR_MESSAGE_SIZE, "error response"));
   }
 
   // ------------------------------------------------------------------ helpers
 
   /** SSZ has no empty container: a message that carries nothing has an empty body. */
   private static void requireEmpty(final byte[] body, final String what) throws IOException {
-    Ssz.check(body.length == 0, what, "body not empty");
+    if (body.length != 0) {
+      throw malformed(what, "body not empty");
+    }
+  }
+
+  /** The decoders' failure for a message rule, worded like the {@link Ssz} ones. */
+  private static IOException malformed(final String what, final String reason) {
+    return new IOException("Malformed " + what + ": " + reason);
   }
 
   /** Anything outside printable ASCII (line breaks, control characters, non-ASCII) becomes '?'. */

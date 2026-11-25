@@ -20,10 +20,11 @@ import tech.pegasys.web3signer.enclave.protocol.Frames;
 import tech.pegasys.web3signer.enclave.protocol.Frames.Frame;
 import tech.pegasys.web3signer.enclave.protocol.Messages;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Evidence;
-import tech.pegasys.web3signer.enclave.protocol.Messages.LoadResult;
-import tech.pegasys.web3signer.enclave.protocol.Messages.PageRequest;
+import tech.pegasys.web3signer.enclave.protocol.Messages.KeyLoadCounts;
+import tech.pegasys.web3signer.enclave.protocol.Messages.PublicKeysRequest;
 import tech.pegasys.web3signer.enclave.protocol.Messages.SealedKey;
 import tech.pegasys.web3signer.enclave.protocol.Protocol;
+import tech.pegasys.web3signer.enclave.protocol.UnsupportedProtocolVersionException;
 import tech.pegasys.web3signer.enclave.transport.Connection;
 
 import java.io.IOException;
@@ -475,9 +476,29 @@ class EnclaveClientTest {
             });
     final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
     assertThatThrownBy(client::status)
-        .isInstanceOf(EnclaveUnavailableException.class)
-        .hasMessageContaining("protocol version 2");
+        .isInstanceOfSatisfying(
+            UnsupportedProtocolVersionException.class, e -> assertThat(e.version()).isEqualTo(2));
     assertThat(server.connectionCount()).isEqualTo(1);
+  }
+
+  @Test
+  void provisioningWithASignerOfAnotherProtocolVersionFailsAndClosesTheSession()
+      throws IOException {
+    final ScriptedTcpServer server =
+        server(
+            (self, connection, index) -> {
+              final byte[] body = new byte[] {2};
+              ScriptedTcpServer.respond(connection, self.read(connection), Protocol.OK, body);
+              self.read(connection); // the session closes instead of sending more
+            });
+    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    try (ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT)) {
+      assertThatThrownBy(session::status)
+          .isInstanceOfSatisfying(
+              UnsupportedProtocolVersionException.class, e -> assertThat(e.version()).isEqualTo(2));
+      assertThatThrownBy(session::status).isInstanceOf(EnclaveUnavailableException.class);
+    }
+    assertThat(server.received).hasSize(1);
   }
 
   @Test
@@ -516,7 +537,7 @@ class EnclaveClientTest {
             (self, connection, index) -> {
               while (true) {
                 final Frame request = self.read(connection);
-                final PageRequest page = Messages.decodePageRequest(request.body());
+                final PublicKeysRequest page = Messages.decodePublicKeysRequest(request.body());
                 final List<byte[]> keys = new ArrayList<>();
                 for (long i = page.offset();
                     i < Math.min(KEY_COUNT, page.offset() + page.limit());
@@ -562,20 +583,20 @@ class EnclaveClientTest {
             (self, connection, index) -> {
               while (true) {
                 final Frame request = self.read(connection);
-                final List<SealedKey> keys = Messages.decodeLoadKeysRequest(request.body());
+                final List<SealedKey> keys = Messages.decodeSealedKeys(request.body());
                 requestSizes.add(keys.size());
                 // the first key of each request counts as a duplicate
                 ScriptedTcpServer.respond(
                     connection,
                     request,
                     Protocol.OK,
-                    Messages.encodeLoadResult(new LoadResult(keys.size() - 1, 1, 0)));
+                    Messages.encodeKeyLoadCounts(new KeyLoadCounts(keys.size() - 1, 1, 0)));
               }
             });
     final EnclaveClient client = client(server, EnclaveClient.Options.DEFAULT);
     try (ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT)) {
       assertThat(session.loadKeys(sealedKeys(Protocol.MAX_LOAD_KEYS + 1)))
-          .isEqualTo(new LoadResult(Protocol.MAX_LOAD_KEYS - 1, 2, 0));
+          .isEqualTo(new KeyLoadCounts(Protocol.MAX_LOAD_KEYS - 1, 2, 0));
     }
     assertThat(requestSizes).containsExactly(Protocol.MAX_LOAD_KEYS, 1);
   }
@@ -590,7 +611,8 @@ class EnclaveClientTest {
                   connection,
                   first,
                   Protocol.OK,
-                  Messages.encodeLoadResult(new LoadResult(Protocol.MAX_LOAD_KEYS - 2, 1, 1)));
+                  Messages.encodeKeyLoadCounts(
+                      new KeyLoadCounts(Protocol.MAX_LOAD_KEYS - 2, 1, 1)));
               self.read(connection); // the second request gets no answer
             });
     final EnclaveClient client = client(server, EnclaveClient.Options.DEFAULT);
@@ -600,7 +622,7 @@ class EnclaveClientTest {
               PartialLoadException.class,
               e -> {
                 assertThat(e.loadedBefore())
-                    .isEqualTo(new LoadResult(Protocol.MAX_LOAD_KEYS - 2, 1, 1));
+                    .isEqualTo(new KeyLoadCounts(Protocol.MAX_LOAD_KEYS - 2, 1, 1));
                 assertThat(e).hasCauseInstanceOf(EnclaveUnavailableException.class);
                 assertThat(e).hasMessageStartingWith("Loading keys failed after 4094 loaded");
               });
@@ -639,8 +661,8 @@ class EnclaveClientTest {
                 assertThat(e.result()).isEqualTo(Protocol.UNWRAP_FAILED);
                 assertThat(e.detail()).isEqualTo("release blob did not open");
               });
-      final Evidence evidence = session.getEvidence(new byte[32]);
-      assertThat(evidence.type()).isEqualTo(Protocol.EVIDENCE_DEV);
+      final Evidence evidence = session.evidence(new byte[32]);
+      assertThat(evidence.evidenceType()).isEqualTo(Protocol.EVIDENCE_DEV);
       assertThat(evidence.releaseKey()).containsExactly(1);
       assertThat(evidence.evidence()).containsExactly(2, 3);
     }
@@ -662,10 +684,32 @@ class EnclaveClientTest {
       assertThatThrownBy(() -> session.unwrapDek(Protocol.BLOB_FORMAT_CMS, new byte[10]))
           .isInstanceOf(EnclaveUnavailableException.class)
           .hasRootCauseMessage("Malformed UNWRAP_DEK response: body not empty");
-      assertThatThrownBy(() -> session.getEvidence(new byte[32]))
+      assertThatThrownBy(() -> session.evidence(new byte[32]))
           .isInstanceOf(EnclaveUnavailableException.class);
     }
     assertThat(server.received).hasSize(1);
+  }
+
+  @Test
+  void loadingNoKeysSendsNothing() throws IOException {
+    final ScriptedTcpServer server = server((self, connection, index) -> self.read(connection));
+    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    try (ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT)) {
+      assertThat(session.loadKeys(List.of())).isEqualTo(KeyLoadCounts.EMPTY);
+    }
+    assertThat(server.received).isEmpty();
+  }
+
+  @Test
+  void aSessionUsedAfterCloseFailsWithoutSending() throws IOException {
+    final ScriptedTcpServer server = server((self, connection, index) -> self.read(connection));
+    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    final ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT);
+    session.close();
+    assertThatThrownBy(session::status)
+        .isInstanceOf(EnclaveUnavailableException.class)
+        .hasMessage("Provisioning connection failed");
+    assertThat(server.received).isEmpty();
   }
 
   @Test

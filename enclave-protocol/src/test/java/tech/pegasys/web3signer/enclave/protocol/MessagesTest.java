@@ -17,8 +17,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import tech.pegasys.web3signer.enclave.protocol.Frames.Frame;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Evidence;
-import tech.pegasys.web3signer.enclave.protocol.Messages.LoadResult;
-import tech.pegasys.web3signer.enclave.protocol.Messages.PageRequest;
+import tech.pegasys.web3signer.enclave.protocol.Messages.KeyLoadCounts;
+import tech.pegasys.web3signer.enclave.protocol.Messages.PublicKeysRequest;
 import tech.pegasys.web3signer.enclave.protocol.Messages.SealedKey;
 import tech.pegasys.web3signer.enclave.protocol.Messages.UnwrapDekRequest;
 import tech.pegasys.web3signer.enclave.transport.Connection;
@@ -191,17 +191,17 @@ class MessagesTest {
 
   @Test
   void fixedSizeBodiesMustHaveExactlyTheirSize() throws IOException {
-    final byte[] result = Messages.encodeLoadResult(new LoadResult(1, 2, 3));
-    assertThatThrownBy(() -> Messages.decodeLoadResult(Arrays.copyOf(result, 13)))
+    final byte[] result = Messages.encodeKeyLoadCounts(new KeyLoadCounts(1, 2, 3));
+    assertThatThrownBy(() -> Messages.decodeKeyLoadCounts(Arrays.copyOf(result, 13)))
         .hasMessageContaining("trailing bytes");
-    assertThatThrownBy(() -> Messages.decodeLoadResult(Arrays.copyOf(result, 11)))
+    assertThatThrownBy(() -> Messages.decodeKeyLoadCounts(Arrays.copyOf(result, 11)))
         .isInstanceOf(IOException.class);
     assertThatThrownBy(() -> Messages.decodeSignature(new byte[95]))
         .isInstanceOf(IOException.class);
     assertThatThrownBy(() -> Messages.decodeSignature(new byte[97]))
         .isInstanceOf(IOException.class);
-    final byte[] page = Messages.encodePageRequest(new PageRequest(0, 1));
-    assertThatThrownBy(() -> Messages.decodePageRequest(Arrays.copyOf(page, 9)))
+    final byte[] page = Messages.encodePublicKeysRequest(new PublicKeysRequest(0, 1));
+    assertThatThrownBy(() -> Messages.decodePublicKeysRequest(Arrays.copyOf(page, 9)))
         .hasMessageContaining("trailing bytes");
     assertThatThrownBy(() -> Messages.decodeStatusRequest(new byte[1]))
         .hasMessageContaining("not empty");
@@ -215,10 +215,10 @@ class MessagesTest {
         .hasMessageContaining("uint8 out of range");
     assertThatThrownBy(() -> Messages.encodeUnwrapDekRequest(new UnwrapDekRequest(-1, new byte[1])))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> Messages.encodeLoadResult(new LoadResult(-1, 0, 0)))
+    assertThatThrownBy(() -> Messages.encodeKeyLoadCounts(new KeyLoadCounts(-1, 0, 0)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("uint32 out of range");
-    assertThatThrownBy(() -> Messages.encodeLoadResult(new LoadResult(1L << 32, 0, 0)))
+    assertThatThrownBy(() -> Messages.encodeKeyLoadCounts(new KeyLoadCounts(1L << 32, 0, 0)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("uint32 out of range");
     assertThatThrownBy(() -> Messages.encodeSignature(new byte[95]))
@@ -267,48 +267,48 @@ class MessagesTest {
     for (final long limit : new long[] {0, Protocol.MAX_PUBLIC_KEYS_PAGE + 1L}) {
       final byte[] body = new byte[8];
       putUint32(body, 4, limit);
-      assertThatThrownBy(() -> Messages.decodePageRequest(body)).hasMessageContaining("limit");
+      assertThatThrownBy(() -> Messages.decodePublicKeysRequest(body))
+          .hasMessageContaining("limit");
     }
-    assertThatThrownBy(() -> Messages.encodePageRequest(new PageRequest(0, 0)))
+    assertThatThrownBy(() -> Messages.encodePublicKeysRequest(new PublicKeysRequest(0, 0)))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> Messages.encodePageRequest(new PageRequest(1L << 32, 1)))
+    assertThatThrownBy(() -> Messages.encodePublicKeysRequest(new PublicKeysRequest(1L << 32, 1)))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void loadKeysTakesOneToMaxEntries() throws IOException {
-    assertThatThrownBy(() -> Messages.encodeLoadKeysRequest(List.of()))
+    assertThatThrownBy(() -> Messages.encodeSealedKeys(List.of()))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(
             () ->
-                Messages.encodeLoadKeysRequest(
+                Messages.encodeSealedKeys(
                     Collections.nCopies(Protocol.MAX_LOAD_KEYS + 1, sealedKey())))
         .isInstanceOf(IllegalArgumentException.class);
 
     final byte[] max =
-        Messages.encodeLoadKeysRequest(Collections.nCopies(Protocol.MAX_LOAD_KEYS, sealedKey()));
-    assertThat(Messages.decodeLoadKeysRequest(max)).hasSize(Protocol.MAX_LOAD_KEYS);
+        Messages.encodeSealedKeys(Collections.nCopies(Protocol.MAX_LOAD_KEYS, sealedKey()));
+    assertThat(Messages.decodeSealedKeys(max)).hasSize(Protocol.MAX_LOAD_KEYS);
 
-    assertThatThrownBy(() -> Messages.decodeLoadKeysRequest(new byte[0]))
+    assertThatThrownBy(() -> Messages.decodeSealedKeys(new byte[0]))
         .hasMessageContaining("no entries");
 
     final byte[] tooMany = Arrays.copyOf(max, max.length + Protocol.SEALED_KEY_SIZE);
-    assertThatThrownBy(() -> Messages.decodeLoadKeysRequest(tooMany))
+    assertThatThrownBy(() -> Messages.decodeSealedKeys(tooMany))
         .hasMessageContaining("longer than");
 
     final byte[] partial = Arrays.copyOf(max, max.length - 1);
-    assertThatThrownBy(() -> Messages.decodeLoadKeysRequest(partial))
+    assertThatThrownBy(() -> Messages.decodeSealedKeys(partial))
         .hasMessageContaining("shorter than its fixed part");
   }
 
   @Test
   void nonceRespectsItsLimit() throws IOException {
     final byte[] nonce = new byte[Protocol.MAX_NONCE_SIZE];
-    assertThat(Messages.decodeEvidenceRequest(Messages.encodeEvidenceRequest(nonce)))
-        .isEqualTo(nonce);
-    assertThatThrownBy(() -> Messages.encodeEvidenceRequest(new byte[Protocol.MAX_NONCE_SIZE + 1]))
+    assertThat(Messages.decodeNonce(Messages.encodeNonce(nonce))).isEqualTo(nonce);
+    assertThatThrownBy(() -> Messages.encodeNonce(new byte[Protocol.MAX_NONCE_SIZE + 1]))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> Messages.decodeEvidenceRequest(new byte[Protocol.MAX_NONCE_SIZE + 1]))
+    assertThatThrownBy(() -> Messages.decodeNonce(new byte[Protocol.MAX_NONCE_SIZE + 1]))
         .hasMessageContaining("longer than 64");
   }
 
