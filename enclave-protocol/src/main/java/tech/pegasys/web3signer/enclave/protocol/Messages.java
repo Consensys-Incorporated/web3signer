@@ -56,7 +56,7 @@ public final class Messages {
    * @param version implementation version of the signer, printable ASCII
    */
   public record Status(
-      long protocolVersion, int platform, long cpus, long keyCount, String bootId, String version) {
+      int protocolVersion, int platform, int cpus, long keyCount, String bootId, String version) {
 
     public String platformName() {
       return Protocol.platformName(platform);
@@ -161,7 +161,7 @@ public final class Messages {
         body,
         "STATUS response",
         in -> {
-          final long protocolVersion = in.uint8();
+          final int protocolVersion = in.uint8();
           if (protocolVersion != Protocol.VERSION) {
             throw new UnsupportedProtocolVersionException(protocolVersion);
           }
