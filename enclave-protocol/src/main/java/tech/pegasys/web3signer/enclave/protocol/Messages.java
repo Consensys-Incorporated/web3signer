@@ -321,11 +321,11 @@ public final class Messages {
     return keys;
   }
 
-  public static byte[] encodeKeyLoadCounts(final KeyLoadCounts result) {
+  public static byte[] encodeKeyLoadCounts(final KeyLoadCounts counts) {
     return Ssz.writeContainer()
-        .uint32(result.loaded())
-        .uint32(result.duplicates())
-        .uint32(result.rejected())
+        .uint32(counts.loaded())
+        .uint32(counts.duplicates())
+        .uint32(counts.rejected())
         .toBytes();
   }
 

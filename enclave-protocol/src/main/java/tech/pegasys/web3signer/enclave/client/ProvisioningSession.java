@@ -33,8 +33,8 @@ import java.util.List;
  * opens the sealed keys with it.
  *
  * <p>Every step runs on one connection: the enclave keeps the release key and the data key only for
- * that connection, so nothing is retried. An I/O error or a malformed answer closes the session.
- * Not thread safe.
+ * that connection, so nothing is retried. An I/O error, a malformed answer or a signer of another
+ * protocol version closes the session. Not thread safe.
  */
 public final class ProvisioningSession implements Closeable {
   private final EnclaveClient client;

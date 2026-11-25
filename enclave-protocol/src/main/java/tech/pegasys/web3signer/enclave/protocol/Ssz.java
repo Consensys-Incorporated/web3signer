@@ -22,7 +22,7 @@ import java.util.List;
 
 /**
  * The part of <a href="https://github.com/ethereum/ssz-specs">SSZ</a> that the protocol uses:
- * containers of {@code uint8}, {@code uint16}, {@code uint32}, byte vectors and byte lists, with
+ * containers of {@code Uint8}, {@code Uint16}, {@code Uint32}, byte vectors and byte lists, with
  * the byte lists after the fixed fields, and lists of fixed-size containers as a whole body.
  */
 final class Ssz {

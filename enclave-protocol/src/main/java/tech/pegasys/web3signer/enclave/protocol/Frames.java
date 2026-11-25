@@ -21,8 +21,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 
 /**
- * Frame codec. A frame is the SSZ container {@code FrameHeader{length: uint32, request_id: uint32,
- * kind: uint8}} followed by an SSZ body of {@code length} bytes. The kind of a request is its
+ * Frame codec. A frame is the SSZ container {@code FrameHeader{length: Uint32, request_id: Uint32,
+ * kind: Uint8}} followed by an SSZ body of {@code length} bytes. The kind of a request is its
  * opcode, the kind of a response its result code.
  */
 public final class Frames {
@@ -37,7 +37,7 @@ public final class Frames {
   /**
    * Writes one frame with one write.
    *
-   * @throws IllegalArgumentException when the kind does not fit a {@code uint8} or the body is
+   * @throws IllegalArgumentException when the kind does not fit a {@code Uint8} or the body is
    *     above {@link Protocol#MAX_BODY_SIZE}
    */
   public static void write(final Connection connection, final Frame frame) throws IOException {

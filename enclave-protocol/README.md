@@ -6,9 +6,9 @@ enclave signer (`enclave-signer`) and the host side (`enclave-host`, `signing`).
 
 | Package | Contents |
 |---|---|
-| `enclave.protocol` | The codec: `Frames`, `Messages` (SSZ bodies and their records), `Ssz`, `Protocol` constants |
+| `enclave.protocol` | The codec: `Frames`, `Messages` (SSZ bodies and their records), `Ssz`, `Protocol` constants, `UnsupportedProtocolVersionException` |
 | `enclave.transport` | `EnclaveAddress`, `Connection`, `Listener`; TCP and vsock behind them |
-| `enclave.client` | `EnclaveClient`, `ProvisioningSession`, `EnclaveException`, `EnclaveUnavailableException` |
+| `enclave.client` | `EnclaveClient`, `ProvisioningSession`, `EnclaveException`, `EnclaveUnavailableException`, `PartialLoadException` |
 
 How to deploy it: [`deployments/aws-nitro/README.md`](../deployments/aws-nitro/README.md).
 
