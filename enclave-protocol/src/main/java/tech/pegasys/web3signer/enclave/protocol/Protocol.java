@@ -35,9 +35,9 @@ public final class Protocol {
   public static final int RESOURCE_UNAVAILABLE = 3;
 
   public static final int UNSUPPORTED = 128;
-  public static final int INVALID_STATE = 130;
-  public static final int UNWRAP_FAILED = 131;
-  public static final int EVIDENCE_FAILED = 132;
+  public static final int INVALID_STATE = 129;
+  public static final int UNWRAP_FAILED = 130;
+  public static final int EVIDENCE_FAILED = 131;
 
   // Platforms reported by STATUS
   public static final int PLATFORM_DEV = 0;

@@ -388,9 +388,9 @@ start at 128.
 | 2 | `INTERNAL_ERROR` | The signer failed (req/resp `ServerError`) |
 | 3 | `RESOURCE_UNAVAILABLE` | The signer does not hold the key a `SIGN` asks for (req/resp `ResourceUnavailable`) |
 | 128 | `UNSUPPORTED` | Unknown opcode or blob format |
-| 130 | `INVALID_STATE` | Provisioning step out of order |
-| 131 | `UNWRAP_FAILED` | The release blob did not open |
-| 132 | `EVIDENCE_FAILED` | The platform produced no evidence |
+| 129 | `INVALID_STATE` | Provisioning step out of order |
+| 130 | `UNWRAP_FAILED` | The release blob did not open |
+| 131 | `EVIDENCE_FAILED` | The platform produced no evidence |
 
 ## Provisioning
 
