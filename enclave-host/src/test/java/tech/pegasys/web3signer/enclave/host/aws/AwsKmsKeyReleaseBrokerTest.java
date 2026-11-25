@@ -256,4 +256,15 @@ class AwsKmsKeyReleaseBrokerTest {
     java.util.Arrays.fill(bytes, (byte) 5);
     return bytes;
   }
+
+  @Test
+  void releaseAcceptsAnEmptyPlaintextBesideTheCiphertextForRecipient() {
+    when(kms.decrypt(any(DecryptRequest.class)))
+        .thenReturn(
+            DecryptResponse.builder()
+                .plaintext(SdkBytes.fromByteArray(new byte[0]))
+                .ciphertextForRecipient(SdkBytes.fromByteArray(new byte[] {0x30}))
+                .build());
+    assertThat(broker.release(DEK, evidence(new byte[] {7}))).containsExactly(0x30);
+  }
 }

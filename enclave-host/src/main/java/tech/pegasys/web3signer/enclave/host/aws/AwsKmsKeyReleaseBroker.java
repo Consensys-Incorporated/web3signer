@@ -148,7 +148,8 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
       }
       throw e;
     }
-    if (response.plaintext() != null) {
+    // with a recipient, KMS documents Plaintext as null or empty
+    if (response.plaintext() != null && response.plaintext().asByteArrayUnsafe().length > 0) {
       throw new IllegalStateException(
           "KMS returned the data key in plaintext although a recipient was given; aborting");
     }

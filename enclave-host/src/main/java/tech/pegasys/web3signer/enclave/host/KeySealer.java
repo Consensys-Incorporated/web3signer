@@ -114,11 +114,15 @@ public final class KeySealer {
         LOG.warn("Skipping {}: not an EIP-2335 keystore (no crypto section)", file);
         continue;
       }
+      final String password = passwordFor.apply(file);
       final BLSKeyPair key;
       try {
-        key = KeyStore.decrypt(passwordFor.apply(file), KeyStoreLoader.loadFromFile(file.toUri()));
+        key = KeyStore.decrypt(password, KeyStoreLoader.loadFromFile(file.toUri()));
       } catch (final KeyStoreValidationException e) {
         throw new EnclaveHostException("Keystore " + file + " could not be decrypted", e);
+      } catch (final RuntimeException e) {
+        // Teku's message for an out of range secret carries the secret: drop the cause
+        throw new EnclaveHostException("Keystore " + file + " does not hold a valid BLS secret");
       }
       if (key.getSecretKey().toBytes().isZero()) {
         throw new EnclaveHostException("Keystore " + file + " holds the zero secret");

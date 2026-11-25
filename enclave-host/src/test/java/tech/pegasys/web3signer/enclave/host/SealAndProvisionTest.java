@@ -34,11 +34,17 @@ import tech.pegasys.web3signer.enclave.protocol.Protocol;
 import tech.pegasys.web3signer.enclave.signer.InProcessEnclaveSigner;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import javax.crypto.Cipher;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 
 import org.apache.tuweni.bytes.Bytes;
 import org.junit.jupiter.api.AfterEach;
@@ -406,6 +412,75 @@ class SealAndProvisionTest {
     final Path file = Files.writeString(dir.resolve("master.hex"), "zz".repeat(32));
     assertThatThrownBy(() -> DevKeyReleaseBroker.fromFile(file))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  /**
+   * Writes a keystore that decrypts to {@code secret} with a valid checksum, bypassing the checks
+   * {@code KeyStore.encrypt} makes, so that sealing sees a secret no BLS key pair could hold.
+   */
+  private static void writeKeystoreWithSecret(
+      final Path directory, final String name, final byte[] secret, final String password)
+      throws Exception {
+    final Bytes salt = Bytes.random(32);
+    final Bytes decryptionKey =
+        new Pbkdf2Param(32, 2, HMAC_SHA256, salt)
+            .generateDecryptionKey(Bytes.wrap(password.getBytes(StandardCharsets.UTF_8)));
+    final byte[] iv = Bytes.random(16).toArray();
+    final Cipher ctr = Cipher.getInstance("AES/CTR/NoPadding");
+    ctr.init(
+        Cipher.ENCRYPT_MODE,
+        new SecretKeySpec(decryptionKey.slice(0, 16).toArray(), "AES"),
+        new IvParameterSpec(iv));
+    final byte[] message = ctr.doFinal(secret);
+    final byte[] checksum =
+        MessageDigest.getInstance("SHA-256")
+            .digest(Bytes.concatenate(decryptionKey.slice(16, 16), Bytes.wrap(message)).toArray());
+    final HexFormat hex = HexFormat.of();
+    Files.writeString(
+        directory.resolve(name + ".json"),
+        "{\"crypto\":{\"kdf\":{\"function\":\"pbkdf2\",\"params\":{\"dklen\":32,\"c\":2,"
+            + "\"prf\":\"hmac-sha256\",\"salt\":\""
+            + hex.formatHex(salt.toArray())
+            + "\"},\"message\":\"\"},\"checksum\":{\"function\":\"sha256\",\"params\":{},"
+            + "\"message\":\""
+            + hex.formatHex(checksum)
+            + "\"},\"cipher\":{\"function\":\"aes-128-ctr\",\"params\":{\"iv\":\""
+            + hex.formatHex(iv)
+            + "\"},\"message\":\""
+            + hex.formatHex(message)
+            + "\"}},\"path\":\"\",\"uuid\":\"9f75a3fa-1e5a-49f9-be3d-f5a19779c6fa\","
+            + "\"version\":4}");
+  }
+
+  @Test
+  void sealingRefusesAKeystoreHoldingTheZeroSecret() throws Exception {
+    final Path keystores = Files.createDirectory(dir.resolve("keystores"));
+    writeKeystoreWithSecret(keystores, "zero", new byte[32], "pw");
+    final Path passwordFile = Files.writeString(dir.resolve("password.txt"), "pw");
+    assertThatThrownBy(
+            () ->
+                KeySealer.readKeyPairs(new KeySealer.Sources(keystores, passwordFile, null, null)))
+        .isInstanceOf(EnclaveHostException.class)
+        .hasMessage("Keystore " + keystores.resolve("zero.json") + " holds the zero secret");
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {31, 32})
+  void sealingRefusesAKeystoreWithAnInvalidSecretWithoutPrintingIt(final int length)
+      throws Exception {
+    final Path keystores = Files.createDirectory(dir.resolve("keystores"));
+    final byte[] secret = new byte[length];
+    java.util.Arrays.fill(secret, (byte) 0xff);
+    writeKeystoreWithSecret(keystores, "bad", secret, "pw");
+    final Path passwordFile = Files.writeString(dir.resolve("password.txt"), "pw");
+    assertThatThrownBy(
+            () ->
+                KeySealer.readKeyPairs(new KeySealer.Sources(keystores, passwordFile, null, null)))
+        .isInstanceOf(EnclaveHostException.class)
+        .hasMessage(
+            "Keystore " + keystores.resolve("bad.json") + " does not hold a valid BLS secret")
+        .hasNoCause()
+        .hasMessageNotContaining("ffff");
   }
 
   /** Delegates to a real broker, with overrides for the checks under test. */
