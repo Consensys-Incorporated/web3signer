@@ -730,6 +730,76 @@ class EnclaveClientTest {
   }
 
   @Test
+  void aRefusedFirstLoadKeysRequestIsReportedAsTheRefusal() throws IOException {
+    final ScriptedTcpServer server =
+        server(
+            (self, connection, index) -> {
+              while (true) {
+                ScriptedTcpServer.respond(
+                    connection,
+                    self.read(connection),
+                    Protocol.INVALID_STATE,
+                    Messages.encodeErrorMessage("no data key: UNWRAP_DEK first"));
+              }
+            });
+    final EnclaveClient client = client(server, EnclaveClient.Options.DEFAULT);
+    try (ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT)) {
+      assertThatThrownBy(() -> session.loadKeys(sealedKeys(Protocol.MAX_LOAD_KEYS + 1)))
+          .isExactlyInstanceOf(EnclaveException.class)
+          .satisfies(
+              e -> assertThat(((EnclaveException) e).result()).isEqualTo(Protocol.INVALID_STATE));
+    }
+    // the second request is never sent
+    assertThat(server.received).hasSize(1);
+  }
+
+  @Test
+  void aRefusedLaterLoadKeysRequestReportsTheEarlierCountsAndKeepsTheSession() throws IOException {
+    final ScriptedTcpServer server =
+        server(
+            (self, connection, index) -> {
+              int loadRequests = 0;
+              while (true) {
+                final Frame request = self.read(connection);
+                if (request.kind() == Protocol.LOAD_KEYS && ++loadRequests == 2) {
+                  ScriptedTcpServer.respond(
+                      connection,
+                      request,
+                      Protocol.BAD_REQUEST,
+                      Messages.encodeErrorMessage("refused"));
+                } else if (request.kind() == Protocol.LOAD_KEYS) {
+                  ScriptedTcpServer.respond(
+                      connection,
+                      request,
+                      Protocol.OK,
+                      Messages.encodeKeyLoadCounts(
+                          new KeyLoadCounts(Protocol.MAX_LOAD_KEYS, 0, 0)));
+                } else {
+                  ScriptedTcpServer.respond(
+                      connection, request, Protocol.OK, ScriptedTcpServer.status(1));
+                }
+              }
+            });
+    final EnclaveClient client = client(server, EnclaveClient.Options.DEFAULT);
+    try (ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT)) {
+      assertThatThrownBy(() -> session.loadKeys(sealedKeys(Protocol.MAX_LOAD_KEYS + 1)))
+          .isInstanceOfSatisfying(
+              PartialLoadException.class,
+              e -> {
+                assertThat(e.loadedBefore())
+                    .isEqualTo(new KeyLoadCounts(Protocol.MAX_LOAD_KEYS, 0, 0));
+                assertThat(e.getCause())
+                    .isInstanceOfSatisfying(
+                        EnclaveException.class,
+                        cause -> assertThat(cause.result()).isEqualTo(Protocol.BAD_REQUEST));
+              });
+      // a refusal leaves the session usable
+      session.status();
+    }
+    assertThat(server.connectionCount()).isEqualTo(1);
+  }
+
+  @Test
   void provisioningRefusalKeepsTheSession() throws IOException {
     final ScriptedTcpServer server =
         server(
