@@ -20,10 +20,12 @@ import tech.pegasys.web3signer.enclave.client.EnclaveClient;
 
 import java.io.PrintWriter;
 import java.security.SecureRandom;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -58,12 +60,12 @@ public final class EnclaveBenchmark {
   }
 
   /**
-   * Results; latencies in microseconds.
+   * Results; latencies in microseconds, over the calls that succeeded.
    *
-   * @param signsPerSecond throughput over the whole run
-   * @param p50 median latency
-   * @param p95 95th percentile latency
-   * @param p99 99th percentile latency
+   * @param signsPerSecond successful signatures per second over the whole run
+   * @param p50 median latency; NaN when no call succeeded
+   * @param p95 95th percentile latency; NaN when no call succeeded
+   * @param p99 99th percentile latency; NaN when no call succeeded
    * @param baselineMicros one local Teku {@code BLS.sign}, averaged
    * @param failures calls that threw
    * @param verifyFailures signatures that did not verify
@@ -80,6 +82,47 @@ public final class EnclaveBenchmark {
   @SuppressWarnings("ArrayRecordComponent")
   private record Sample(byte[] publicKey, byte[] message, byte[] signature) {}
 
+  /** The state the calling threads share. Each call writes only its own slots. */
+  private static final class Calls {
+    private static final long FAILED = -1;
+
+    private final EnclaveClient client;
+    private final List<byte[]> keys;
+    private final long[] latencies;
+    private final Sample[] samples;
+    private final AtomicInteger failures = new AtomicInteger();
+    private final AtomicReference<RuntimeException> firstFailure = new AtomicReference<>();
+
+    Calls(final EnclaveClient client, final List<byte[]> keys, final int requests) {
+      this.client = client;
+      this.keys = keys;
+      this.latencies = new long[requests];
+      this.samples = new Sample[Math.min(VERIFIED_SIGNATURES, requests)];
+    }
+
+    void signOnce(final int index) {
+      final byte[] message = new byte[32];
+      ThreadLocalRandom.current().nextBytes(message);
+      final byte[] publicKey = keys.get(ThreadLocalRandom.current().nextInt(keys.size()));
+      final long begin = System.nanoTime();
+      try {
+        final byte[] signature = client.sign(publicKey, message);
+        latencies[index] = System.nanoTime() - begin;
+        if (index < samples.length) {
+          samples[index] = new Sample(publicKey, message, signature);
+        }
+      } catch (final RuntimeException e) {
+        latencies[index] = FAILED;
+        failures.incrementAndGet();
+        firstFailure.compareAndSet(null, e);
+      }
+    }
+
+    long[] succeededSorted() {
+      return Arrays.stream(latencies).filter(latency -> latency != FAILED).sorted().toArray();
+    }
+  }
+
   public static Result run(final EnclaveClient client, final Options options, final PrintWriter out)
       throws InterruptedException {
     final List<byte[]> keys = client.publicKeys();
@@ -95,81 +138,60 @@ public final class EnclaveBenchmark {
         options.requests(),
         baseline);
 
-    final long[] latencies = new long[options.requests()];
-    final AtomicInteger next = new AtomicInteger();
-    final AtomicInteger failures = new AtomicInteger();
-    final AtomicReference<RuntimeException> firstFailure = new AtomicReference<>();
-    final Sample[] samples = new Sample[Math.min(VERIFIED_SIGNATURES, options.requests())];
-    final List<Thread> threads = new ArrayList<>();
+    final Calls calls = new Calls(client, keys, options.requests());
     final long start = System.nanoTime();
-    for (int t = 0; t < options.callers(); t++) {
-      threads.add(
-          Thread.ofPlatform()
-              .start(
-                  () -> {
-                    final byte[] message = new byte[32];
-                    int index;
-                    while ((index = next.getAndIncrement()) < options.requests()) {
-                      ThreadLocalRandom.current().nextBytes(message);
-                      final byte[] publicKey =
-                          keys.get(ThreadLocalRandom.current().nextInt(keys.size()));
-                      final long begin = System.nanoTime();
-                      try {
-                        final byte[] signature = client.sign(publicKey, message);
-                        latencies[index] = System.nanoTime() - begin;
-                        if (index < samples.length) {
-                          samples[index] = new Sample(publicKey, message.clone(), signature);
-                        }
-                      } catch (final RuntimeException e) {
-                        latencies[index] = System.nanoTime() - begin;
-                        failures.incrementAndGet();
-                        firstFailure.compareAndSet(null, e);
-                      }
-                    }
-                  }));
+    try (ExecutorService pool = Executors.newFixedThreadPool(options.callers())) {
+      for (int i = 0; i < options.requests(); i++) {
+        final int index = i;
+        pool.execute(() -> calls.signOnce(index));
+      }
     }
-    for (final Thread thread : threads) {
-      thread.join();
+    if (Thread.interrupted()) {
+      throw new InterruptedException();
     }
     final double seconds = (System.nanoTime() - start) / 1e9;
 
-    int verifyFailures = 0;
-    if (options.verify()) {
-      for (final Sample sample : samples) {
-        if (sample != null && !verifies(sample)) {
-          verifyFailures++;
-        }
-      }
-    }
-    Arrays.sort(latencies);
+    final int verifyFailures =
+        options.verify()
+            ? (int)
+                Arrays.stream(calls.samples)
+                    .filter(Objects::nonNull)
+                    .filter(sample -> !verifies(sample))
+                    .count()
+            : 0;
+    final long[] succeeded = calls.succeededSorted();
     final Result result =
         new Result(
-            options.requests() / seconds,
-            percentile(latencies, 0.50),
-            percentile(latencies, 0.95),
-            percentile(latencies, 0.99),
+            succeeded.length / seconds,
+            percentile(succeeded, 0.50),
+            percentile(succeeded, 0.95),
+            percentile(succeeded, 0.99),
             baseline,
-            failures.get(),
+            calls.failures.get(),
             verifyFailures);
-    out.printf(
-        Locale.ROOT,
-        "%.0f signs/s, p50 %.0f us, p95 %.0f us, p99 %.0f us%n",
-        result.signsPerSecond(),
-        result.p50(),
-        result.p95(),
-        result.p99());
+    if (succeeded.length > 0) {
+      out.printf(
+          Locale.ROOT,
+          "%.0f signs/s, p50 %.0f us, p95 %.0f us, p99 %.0f us%n",
+          result.signsPerSecond(),
+          result.p50(),
+          result.p95(),
+          result.p99());
+    } else {
+      out.printf(Locale.ROOT, "no call succeeded%n");
+    }
     if (result.failures() > 0) {
       out.printf(
           Locale.ROOT,
           "%d calls failed, first: %s%n",
           result.failures(),
-          firstFailure.get().getMessage());
+          calls.firstFailure.get().getMessage());
     }
     if (options.verify()) {
       out.printf(
           Locale.ROOT,
           "verified %d signatures, %d mismatches%n",
-          Arrays.stream(samples).filter(s -> s != null).count(),
+          Arrays.stream(calls.samples).filter(Objects::nonNull).count(),
           verifyFailures);
     }
     return result;
@@ -187,6 +209,9 @@ public final class EnclaveBenchmark {
   }
 
   private static double percentile(final long[] sortedNanos, final double fraction) {
+    if (sortedNanos.length == 0) {
+      return Double.NaN;
+    }
     final int index =
         (int) Math.min(sortedNanos.length - 1, Math.ceil(fraction * sortedNanos.length) - 1);
     return sortedNanos[Math.max(0, index)] / 1000.0;

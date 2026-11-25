@@ -35,9 +35,8 @@ class KeyBundleIoTest {
 
   private static final KeyBundle BUNDLE =
       new KeyBundle(
-          1,
           new KeyBundle.Dek(
-              "aws-kms",
+              KeyBundle.Dek.PROVIDER_AWS_KMS,
               "arn:aws:kms:us-east-1:111122223333:key/0b9c",
               Map.of("purpose", "web3signer-enclave-bls-keys"),
               filled(20, 7)),
@@ -83,5 +82,38 @@ class KeyBundleIoTest {
     assertThatThrownBy(() -> KeyBundleIo.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("nonce");
+  }
+
+  @Test
+  void missingDekFieldIsRefused() {
+    final String json = KeyBundleIo.toJson(BUNDLE).replace("\"provider\" : \"aws-kms\",", "");
+    assertThatThrownBy(() -> KeyBundleIo.fromJson(json))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Key bundle field missing: provider");
+  }
+
+  @Test
+  void wrappedKeyThatIsNotBase64NamesTheField() {
+    final String json =
+        KeyBundleIo.toJson(BUNDLE).replace("BwcHBwcHBwcHBwcHBwcHBwcHBwc=", "Bw!HBwc=");
+    assertThatThrownBy(() -> KeyBundleIo.fromJson(json))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Key bundle field is not base64: wrapped");
+  }
+
+  @Test
+  void missingKeysAreRefused() {
+    final String json =
+        "{\"version\":1,\"dek\":{\"provider\":\"dev\",\"keyId\":\"dev\","
+            + "\"encryptionContext\":{},\"wrapped\":\"AQID\"}}";
+    assertThatThrownBy(() -> KeyBundleIo.fromJson(json))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Key bundle field missing: keys");
+  }
+
+  @Test
+  void wrappedKeyCannotBeChangedThroughTheRecord() {
+    BUNDLE.dek().wrapped()[0] = 0;
+    assertThat(BUNDLE.dek().wrapped()).containsOnly(7);
   }
 }

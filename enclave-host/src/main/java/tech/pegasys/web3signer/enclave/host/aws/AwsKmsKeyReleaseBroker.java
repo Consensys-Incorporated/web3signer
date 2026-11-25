@@ -10,8 +10,10 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-package tech.pegasys.web3signer.enclave.host;
+package tech.pegasys.web3signer.enclave.host.aws;
 
+import tech.pegasys.web3signer.enclave.host.KeyBundle;
+import tech.pegasys.web3signer.enclave.host.KeyReleaseBroker;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Evidence;
 import tech.pegasys.web3signer.enclave.protocol.Protocol;
 
@@ -56,6 +58,26 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
     return new AwsKmsKeyReleaseBroker(KmsClient.builder().region(Region.of(region)).build(), keyId);
   }
 
+  /**
+   * A broker that releases {@code dek}, with a KMS client in the region of the bundle's key ARN and
+   * the default credentials chain.
+   */
+  public static AwsKmsKeyReleaseBroker forRelease(final KeyBundle.Dek dek) {
+    return create(regionOf(dek.keyId()), null);
+  }
+
+  /** The region of a KMS key ARN, {@code arn:<partition>:kms:<region>:<account>:key/<id>}. */
+  static String regionOf(final String keyArn) {
+    final String[] parts = keyArn.split(":", 6);
+    if (parts.length != 6
+        || !parts[0].equals("arn")
+        || !parts[2].equals("kms")
+        || parts[3].isEmpty()) {
+      throw new IllegalArgumentException("Not a KMS key ARN: " + keyArn);
+    }
+    return parts[3];
+  }
+
   @Override
   public String provider() {
     return KeyBundle.Dek.PROVIDER_AWS_KMS;
@@ -83,7 +105,8 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
                 .keySpec(DataKeySpec.AES_256)
                 .encryptionContext(ENCRYPTION_CONTEXT)
                 .build());
-    final byte[] plaintext = response.plaintext().asByteArray();
+    // the SDK's own array, so that closing the data key also wipes it
+    final byte[] plaintext = response.plaintext().asByteArrayUnsafe();
     if (plaintext.length != Protocol.DEK_SIZE) {
       throw new IllegalStateException("KMS returned a data key of " + plaintext.length + " bytes");
     }
@@ -106,10 +129,7 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
     try {
       response =
           kms.decrypt(
-              DecryptRequest.builder()
-                  .ciphertextBlob(SdkBytes.fromByteArray(dek.wrapped()))
-                  .encryptionContext(dek.encryptionContext())
-                  .keyId(dek.keyId())
+              decryptRequest(dek)
                   .recipient(
                       RecipientInfo.builder()
                           .attestationDocument(SdkBytes.fromByteArray(evidence.evidence()))
@@ -120,15 +140,15 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
       if (isAccessDenied(e)) {
         throw new IllegalStateException(
             "KMS refused to release the data key to the enclave: the key policy does not accept"
-                + " this enclave's attestation. Check that the enclave runs without --debug-mode"
-                + " and that the PCR0 in the key policy matches the image (nitro-cli describe-eif)."
-                + " KMS said: "
+                + " this request. Check that the enclave runs without --debug-mode, that the PCR0"
+                + " in the key policy matches the image (nitro-cli describe-eif), and that the key"
+                + " policy names this instance's role. KMS said: "
                 + e.getMessage(),
             e);
       }
       throw e;
     }
-    if (response.plaintext() != null && response.plaintext().asByteArray().length > 0) {
+    if (response.plaintext() != null) {
       throw new IllegalStateException(
           "KMS returned the data key in plaintext although a recipient was given; aborting");
     }
@@ -141,13 +161,7 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
   @Override
   public void assertEvidenceRequired(final KeyBundle.Dek dek) {
     try {
-      kms.decrypt(
-          DecryptRequest.builder()
-              .ciphertextBlob(SdkBytes.fromByteArray(dek.wrapped()))
-              .encryptionContext(dek.encryptionContext())
-              .keyId(dek.keyId())
-              .dryRun(true)
-              .build());
+      kms.decrypt(decryptRequest(dek).dryRun(true).build());
     } catch (final DryRunOperationException e) {
       throw new IllegalStateException(
           "This principal can decrypt the data key without attestation; fix the KMS key policy");
@@ -159,6 +173,14 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
     }
     throw new IllegalStateException(
         "KMS accepted a dry-run Decrypt without attestation; fix the KMS key policy");
+  }
+
+  /** The part of the release request the dry run must share, so it checks the same thing. */
+  private static DecryptRequest.Builder decryptRequest(final KeyBundle.Dek dek) {
+    return DecryptRequest.builder()
+        .ciphertextBlob(SdkBytes.fromByteArray(dek.wrapped()))
+        .encryptionContext(dek.encryptionContext())
+        .keyId(dek.keyId());
   }
 
   private static boolean isAccessDenied(final KmsException e) {

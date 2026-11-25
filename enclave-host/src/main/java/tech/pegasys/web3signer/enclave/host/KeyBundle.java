@@ -21,12 +21,10 @@ import java.util.Map;
  * A sealed key bundle: BLS secrets encrypted under one data key, and the data key wrapped by a key
  * release provider. Holds no plaintext secret.
  *
- * @param version bundle format version, {@link #VERSION}
  * @param dek the wrapped data key
  * @param keys the sealed keys
  */
-public record KeyBundle(int version, Dek dek, List<SealedKey> keys) {
-  public static final int VERSION = 1;
+public record KeyBundle(Dek dek, List<SealedKey> keys) {
 
   public KeyBundle {
     keys = List.copyOf(keys);
@@ -38,7 +36,7 @@ public record KeyBundle(int version, Dek dek, List<SealedKey> keys) {
    * @param provider {@link #PROVIDER_AWS_KMS} or {@link #PROVIDER_DEV}
    * @param keyId the KMS key ARN, or {@code dev}
    * @param encryptionContext KMS encryption context; empty for dev
-   * @param wrapped the wrapped data key
+   * @param wrapped the wrapped data key; copied in and out
    */
   @SuppressWarnings("ArrayRecordComponent")
   public record Dek(
@@ -49,6 +47,11 @@ public record KeyBundle(int version, Dek dek, List<SealedKey> keys) {
     public Dek {
       encryptionContext = Map.copyOf(encryptionContext);
       wrapped = wrapped.clone();
+    }
+
+    @Override
+    public byte[] wrapped() {
+      return wrapped.clone();
     }
   }
 }

@@ -22,17 +22,15 @@ import tech.pegasys.web3signer.enclave.protocol.Messages.SealedKey;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.GeneralSecurityException;
-import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Stream;
-import javax.crypto.Cipher;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -49,7 +47,6 @@ import org.apache.tuweni.bytes.Bytes32;
 public final class KeySealer {
   private static final Logger LOG = LogManager.getLogger(KeySealer.class);
   private static final ObjectMapper JSON = new ObjectMapper();
-  private static final SecureRandom RANDOM = new SecureRandom();
 
   private KeySealer() {}
 
@@ -75,14 +72,14 @@ public final class KeySealer {
    */
   public record Result(int keyCount, String keyId) {}
 
-  /** Collects key pairs from keystores and a raw keys file. Fails on zero keys and duplicates. */
-  public static List<BLSKeyPair> collect(final Sources sources) {
+  /** Reads key pairs from keystores and a raw keys file. Fails on zero keys and duplicates. */
+  static List<BLSKeyPair> readKeyPairs(final Sources sources) {
     final List<BLSKeyPair> keys = new ArrayList<>();
     if (sources.keystoresPath() != null) {
-      keys.addAll(fromKeystores(sources));
+      keys.addAll(decryptKeystores(sources));
     }
     if (sources.rawKeysFile() != null) {
-      keys.addAll(fromRawKeysFile(sources.rawKeysFile()));
+      keys.addAll(readRawKeys(sources.rawKeysFile()));
     }
     if (keys.isEmpty()) {
       throw new EnclaveHostException("No keys to seal");
@@ -97,11 +94,8 @@ public final class KeySealer {
     return keys;
   }
 
-  private static List<BLSKeyPair> fromKeystores(final Sources sources) {
-    if ((sources.keystoresPasswordFile() == null) == (sources.keystoresPasswordsPath() == null)) {
-      throw new EnclaveHostException(
-          "Keystores need exactly one of a password file or a passwords directory");
-    }
+  private static List<BLSKeyPair> decryptKeystores(final Sources sources) {
+    final Function<Path, String> passwordFor = passwordLookup(sources);
     final List<Path> files;
     try (Stream<Path> listing = Files.list(sources.keystoresPath())) {
       files =
@@ -120,23 +114,45 @@ public final class KeySealer {
         LOG.warn("Skipping {}: not an EIP-2335 keystore (no crypto section)", file);
         continue;
       }
-      final String name = file.getFileName().toString();
-      final Path passwordFile =
-          sources.keystoresPasswordFile() != null
-              ? sources.keystoresPasswordFile()
-              : sources
-                  .keystoresPasswordsPath()
-                  .resolve(name.substring(0, name.length() - ".json".length()) + ".txt");
+      final BLSKeyPair key;
       try {
-        final String password = Files.readString(passwordFile);
-        keys.add(KeyStore.decrypt(password, KeyStoreLoader.loadFromFile(file.toUri())));
-      } catch (final IOException e) {
-        throw new EnclaveHostException("Cannot read password file " + passwordFile, e);
+        key = KeyStore.decrypt(passwordFor.apply(file), KeyStoreLoader.loadFromFile(file.toUri()));
       } catch (final KeyStoreValidationException e) {
         throw new EnclaveHostException("Keystore " + file + " could not be decrypted", e);
       }
+      if (key.getSecretKey().toBytes().isZero()) {
+        throw new EnclaveHostException("Keystore " + file + " holds the zero secret");
+      }
+      keys.add(key);
     }
     return keys;
+  }
+
+  /** The single password, read once, or a lookup of {@code <keystore name>.txt}. */
+  private static Function<Path, String> passwordLookup(final Sources sources) {
+    if ((sources.keystoresPasswordFile() == null) == (sources.keystoresPasswordsPath() == null)) {
+      throw new EnclaveHostException(
+          "Keystores need exactly one of a password file or a passwords directory");
+    }
+    if (sources.keystoresPasswordFile() != null) {
+      final String password = readPassword(sources.keystoresPasswordFile());
+      return keystore -> password;
+    }
+    return keystore -> {
+      final String name = keystore.getFileName().toString();
+      return readPassword(
+          sources
+              .keystoresPasswordsPath()
+              .resolve(name.substring(0, name.length() - ".json".length()) + ".txt"));
+    };
+  }
+
+  private static String readPassword(final Path passwordFile) {
+    try {
+      return Files.readString(passwordFile);
+    } catch (final IOException e) {
+      throw new EnclaveHostException("Cannot read password file " + passwordFile, e);
+    }
   }
 
   /**
@@ -153,7 +169,7 @@ public final class KeySealer {
     }
   }
 
-  private static List<BLSKeyPair> fromRawKeysFile(final Path file) {
+  private static List<BLSKeyPair> readRawKeys(final Path file) {
     final List<String> lines;
     try {
       lines = Files.readAllLines(file);
@@ -167,44 +183,55 @@ public final class KeySealer {
         continue;
       }
       try {
-        keys.add(new BLSKeyPair(BLSSecretKey.fromBytes(Bytes32.fromHexString(line))));
+        keys.add(rawSecret(line));
       } catch (final RuntimeException e) {
         // the exception message could carry the secret: report the line number only
-        throw new EnclaveHostException("Raw keys file line " + (i + 1) + " is not a valid secret");
+        throw new EnclaveHostException(
+            "Raw keys file line "
+                + (i + 1)
+                + " is not a valid secret: expected 64 hex characters, not zero and below the"
+                + " curve order");
       }
     }
     return keys;
   }
 
+  /** Exactly 32 bytes: {@code Bytes32.fromHexString} would pad a short value with zeros. */
+  private static BLSKeyPair rawSecret(final String line) {
+    final String hex = line.startsWith("0x") || line.startsWith("0X") ? line.substring(2) : line;
+    if (hex.length() != 2 * Bytes32.SIZE) {
+      throw new IllegalArgumentException("wrong length");
+    }
+    final Bytes32 secret = Bytes32.wrap(HexFormat.of().parseHex(hex));
+    if (secret.isZero()) {
+      throw new IllegalArgumentException("zero");
+    }
+    return new BLSKeyPair(BLSSecretKey.fromBytes(secret));
+  }
+
   /** Seals {@code keys} under a new data key. The plaintext data key is zeroed before returning. */
-  public static KeyBundle seal(final List<BLSKeyPair> keys, final KeyReleaseBroker broker) {
+  static KeyBundle seal(final List<BLSKeyPair> keys, final KeyReleaseBroker broker) {
     try (KeyReleaseBroker.DataKey dataKey = broker.newDataKey()) {
-      final SecretKeySpec aes = new SecretKeySpec(dataKey.plaintext(), "AES");
-      final List<SealedKey> sealed = new ArrayList<>(keys.size());
-      for (final BLSKeyPair key : keys) {
-        final byte[] publicKey = key.getPublicKey().toBytesCompressed().toArray();
-        final byte[] secret = key.getSecretKey().toBytes().toArray();
-        final byte[] nonce = new byte[12];
-        RANDOM.nextBytes(nonce);
-        try {
-          final Cipher gcm = Cipher.getInstance("AES/GCM/NoPadding");
-          gcm.init(Cipher.ENCRYPT_MODE, aes, new GCMParameterSpec(128, nonce));
-          gcm.updateAAD(publicKey);
-          sealed.add(new SealedKey(publicKey, nonce, gcm.doFinal(secret)));
-        } catch (final GeneralSecurityException e) {
-          throw new EnclaveHostException("Sealing failed", e);
-        } finally {
-          java.util.Arrays.fill(secret, (byte) 0);
-        }
-      }
-      return new KeyBundle(KeyBundle.VERSION, dataKey.dek(), sealed);
+      return new KeyBundle(
+          dataKey.dek(), keys.stream().map(key -> seal(dataKey.plaintext(), key)).toList());
     }
   }
 
-  /** Collects, seals and writes the bundle to {@code output}. */
+  private static SealedKey seal(final byte[] dataKey, final BLSKeyPair key) {
+    final byte[] publicKey = key.getPublicKey().toBytesCompressed().toArray();
+    final byte[] secret = key.getSecretKey().toBytes().toArray();
+    try {
+      final AesGcm.Sealed sealed = AesGcm.seal(dataKey, publicKey, secret);
+      return new SealedKey(publicKey, sealed.nonce(), sealed.ciphertext());
+    } finally {
+      Arrays.fill(secret, (byte) 0);
+    }
+  }
+
+  /** Reads, seals and writes the bundle to {@code output}. */
   public static Result sealToFile(
       final Sources sources, final KeyReleaseBroker broker, final Path output) {
-    final KeyBundle bundle = seal(collect(sources), broker);
+    final KeyBundle bundle = seal(readKeyPairs(sources), broker);
     try {
       KeyBundleIo.write(bundle, output);
     } catch (final IOException e) {

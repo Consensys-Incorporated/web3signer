@@ -31,12 +31,10 @@ import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Map;
-import javax.crypto.Cipher;
-import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.OAEPParameterSpec;
 import javax.crypto.spec.PSource;
-import javax.crypto.spec.SecretKeySpec;
 
+import org.apache.tuweni.bytes.Bytes;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.cms.CMSAlgorithm;
 import org.bouncycastle.cms.CMSEnvelopedDataStreamGenerator;
@@ -54,7 +52,6 @@ import org.bouncycastle.operator.jcajce.JcaAlgorithmParametersConverter;
 public final class DevKeyReleaseBroker implements KeyReleaseBroker {
   private static final byte[] WRAP_AAD =
       "web3signer-enclave-dev-dek".getBytes(StandardCharsets.US_ASCII);
-  private static final int NONCE_SIZE = 12;
 
   private final byte[] masterKey;
   private final SecureRandom random = new SecureRandom();
@@ -94,39 +91,24 @@ public final class DevKeyReleaseBroker implements KeyReleaseBroker {
   public DataKey newDataKey() {
     final byte[] dek = new byte[Protocol.DEK_SIZE];
     random.nextBytes(dek);
-    final byte[] nonce = new byte[NONCE_SIZE];
-    random.nextBytes(nonce);
-    try {
-      final Cipher gcm = Cipher.getInstance("AES/GCM/NoPadding");
-      gcm.init(
-          Cipher.ENCRYPT_MODE,
-          new SecretKeySpec(masterKey, "AES"),
-          new GCMParameterSpec(128, nonce));
-      gcm.updateAAD(WRAP_AAD);
-      final byte[] sealed = gcm.doFinal(dek);
-      final byte[] wrapped = new byte[NONCE_SIZE + sealed.length];
-      System.arraycopy(nonce, 0, wrapped, 0, NONCE_SIZE);
-      System.arraycopy(sealed, 0, wrapped, NONCE_SIZE, sealed.length);
-      return new DataKey(
-          dek, new KeyBundle.Dek(KeyBundle.Dek.PROVIDER_DEV, "dev", Map.of(), wrapped));
-    } catch (final GeneralSecurityException e) {
-      throw new IllegalStateException("Cannot wrap the data key", e);
-    }
+    final AesGcm.Sealed sealed = AesGcm.seal(masterKey, WRAP_AAD, dek);
+    final byte[] wrapped =
+        Bytes.concatenate(Bytes.wrap(sealed.nonce()), Bytes.wrap(sealed.ciphertext())).toArray();
+    return new DataKey(
+        dek, new KeyBundle.Dek(KeyBundle.Dek.PROVIDER_DEV, "dev", Map.of(), wrapped));
   }
 
   private byte[] unwrap(final KeyBundle.Dek dek) {
     final byte[] wrapped = dek.wrapped();
-    if (wrapped.length <= NONCE_SIZE) {
+    if (wrapped.length <= AesGcm.NONCE_SIZE) {
       throw new IllegalArgumentException("The wrapped data key is too short");
     }
+    final AesGcm.Sealed sealed =
+        new AesGcm.Sealed(
+            Arrays.copyOfRange(wrapped, 0, AesGcm.NONCE_SIZE),
+            Arrays.copyOfRange(wrapped, AesGcm.NONCE_SIZE, wrapped.length));
     try {
-      final Cipher gcm = Cipher.getInstance("AES/GCM/NoPadding");
-      gcm.init(
-          Cipher.DECRYPT_MODE,
-          new SecretKeySpec(masterKey, "AES"),
-          new GCMParameterSpec(128, wrapped, 0, NONCE_SIZE));
-      gcm.updateAAD(WRAP_AAD);
-      return gcm.doFinal(wrapped, NONCE_SIZE, wrapped.length - NONCE_SIZE);
+      return AesGcm.open(masterKey, WRAP_AAD, sealed);
     } catch (final GeneralSecurityException e) {
       throw new IllegalStateException("The dev master key does not open this bundle's data key");
     }

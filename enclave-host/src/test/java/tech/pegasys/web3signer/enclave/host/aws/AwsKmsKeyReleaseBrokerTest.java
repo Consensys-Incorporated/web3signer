@@ -10,15 +10,19 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-package tech.pegasys.web3signer.enclave.host;
+package tech.pegasys.web3signer.enclave.host.aws;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import tech.pegasys.web3signer.enclave.host.KeyBundle;
+import tech.pegasys.web3signer.enclave.host.KeyReleaseBroker;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Evidence;
 import tech.pegasys.web3signer.enclave.protocol.Protocol;
 
@@ -43,7 +47,7 @@ class AwsKmsKeyReleaseBrokerTest {
   private static final Map<String, String> CONTEXT =
       Map.of("purpose", "web3signer-enclave-bls-keys");
   private static final KeyBundle.Dek DEK =
-      new KeyBundle.Dek("aws-kms", KEY_ARN, CONTEXT, new byte[] {1, 2, 3});
+      new KeyBundle.Dek(KeyBundle.Dek.PROVIDER_AWS_KMS, KEY_ARN, CONTEXT, new byte[] {1, 2, 3});
 
   private static Evidence evidence(final byte[] document) {
     return new Evidence(Protocol.EVIDENCE_AWS_NITRO, new byte[] {9, 9}, document);
@@ -164,5 +168,92 @@ class AwsKmsKeyReleaseBrokerTest {
     assertThatThrownBy(() -> broker.assertEvidenceRequired(DEK))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("NotFoundException");
+  }
+
+  @Test
+  void releaseFailsWhenKmsReturnsNoCiphertextForRecipient() {
+    when(kms.decrypt(any(DecryptRequest.class)))
+        .thenReturn(DecryptResponse.builder().keyId(KEY_ARN).build());
+    assertThatThrownBy(() -> broker.release(DEK, evidence(new byte[] {7})))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("KMS returned no CiphertextForRecipient");
+  }
+
+  @Test
+  void releaseHintNamesTheParentRoleAsACause() {
+    when(kms.decrypt(any(DecryptRequest.class))).thenThrow(kmsError("AccessDeniedException"));
+    assertThatThrownBy(() -> broker.release(DEK, evidence(new byte[] {7})))
+        .hasMessageContaining("names this instance's role");
+  }
+
+  @Test
+  void policyCheckAsksForWhatTheReleaseAsksFor() {
+    when(kms.decrypt(any(DecryptRequest.class)))
+        .thenThrow(kmsError("AccessDeniedException"))
+        .thenReturn(
+            DecryptResponse.builder()
+                .ciphertextForRecipient(SdkBytes.fromByteArray(new byte[] {0x30}))
+                .build());
+    broker.assertEvidenceRequired(DEK);
+    broker.release(DEK, evidence(new byte[] {7}));
+    final ArgumentCaptor<DecryptRequest> requests = ArgumentCaptor.forClass(DecryptRequest.class);
+    verify(kms, times(2)).decrypt(requests.capture());
+    final DecryptRequest dryRun = requests.getAllValues().get(0);
+    final DecryptRequest release = requests.getAllValues().get(1);
+    assertThat(dryRun.toBuilder().dryRun(null).recipient(release.recipient()).build())
+        .isEqualTo(release);
+  }
+
+  @Test
+  void newDataKeyRefusesAKeyOfTheWrongSize() {
+    when(kms.generateDataKey(any(GenerateDataKeyRequest.class)))
+        .thenReturn(
+            GenerateDataKeyResponse.builder()
+                .keyId(KEY_ARN)
+                .plaintext(SdkBytes.fromByteArray(new byte[16]))
+                .ciphertextBlob(SdkBytes.fromByteArray(new byte[] {9}))
+                .build());
+    assertThatThrownBy(broker::newDataKey)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("KMS returned a data key of 16 bytes");
+  }
+
+  @Test
+  void newDataKeyNeedsAKeyId() {
+    final AwsKmsKeyReleaseBroker releaseOnly = new AwsKmsKeyReleaseBroker(kms, null);
+    assertThatThrownBy(releaseOnly::newDataKey)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("A KMS key id is required to create a data key");
+    verifyNoInteractions(kms);
+  }
+
+  @Test
+  void closingTheDataKeyWipesTheKmsResponse() {
+    final SdkBytes plaintext = SdkBytes.fromByteArray(filled32());
+    when(kms.generateDataKey(any(GenerateDataKeyRequest.class)))
+        .thenReturn(
+            GenerateDataKeyResponse.builder()
+                .keyId(KEY_ARN)
+                .plaintext(plaintext)
+                .ciphertextBlob(SdkBytes.fromByteArray(new byte[] {9}))
+                .build());
+    broker.newDataKey().close();
+    assertThat(plaintext.asByteArrayUnsafe()).containsOnly(0);
+  }
+
+  @Test
+  void regionComesFromTheKeyArn() {
+    assertThat(AwsKmsKeyReleaseBroker.regionOf(KEY_ARN)).isEqualTo("us-east-1");
+    assertThat(AwsKmsKeyReleaseBroker.regionOf("arn:aws-cn:kms:cn-north-1:111122223333:key/x"))
+        .isEqualTo("cn-north-1");
+    assertThatThrownBy(() -> AwsKmsKeyReleaseBroker.regionOf("alias/test"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Not a KMS key ARN: alias/test");
+  }
+
+  private static byte[] filled32() {
+    final byte[] bytes = new byte[32];
+    java.util.Arrays.fill(bytes, (byte) 5);
+    return bytes;
   }
 }

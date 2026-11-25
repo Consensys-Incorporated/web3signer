@@ -26,7 +26,11 @@ import tech.pegasys.web3signer.bls.keystore.model.CipherParam;
 import tech.pegasys.web3signer.bls.keystore.model.CipherSpec;
 import tech.pegasys.web3signer.bls.keystore.model.Pbkdf2Param;
 import tech.pegasys.web3signer.enclave.client.EnclaveClient;
+import tech.pegasys.web3signer.enclave.host.aws.AwsKmsKeyReleaseBroker;
+import tech.pegasys.web3signer.enclave.protocol.Messages.Evidence;
 import tech.pegasys.web3signer.enclave.protocol.Messages.LoadResult;
+import tech.pegasys.web3signer.enclave.protocol.Messages.SealedKey;
+import tech.pegasys.web3signer.enclave.protocol.Protocol;
 import tech.pegasys.web3signer.enclave.signer.InProcessEnclaveSigner;
 
 import java.io.IOException;
@@ -41,6 +45,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SealAndProvisionTest {
   private static final KeyProvisioner.Options OPTIONS =
@@ -151,7 +157,8 @@ class SealAndProvisionTest {
     writeKeystore(keystores, "key", EnclaveTestKeys.randomKeys(1).get(0), "right");
     final Path passwordFile = Files.writeString(dir.resolve("password.txt"), "wrong");
     assertThatThrownBy(
-            () -> KeySealer.collect(new KeySealer.Sources(keystores, passwordFile, null, null)))
+            () ->
+                KeySealer.readKeyPairs(new KeySealer.Sources(keystores, passwordFile, null, null)))
         .isInstanceOf(EnclaveHostException.class)
         .hasMessageContaining("could not be decrypted");
   }
@@ -166,7 +173,7 @@ class SealAndProvisionTest {
     // A trailing newline is harmless: EIP-2335 strips control codes from passwords.
     final Path passwordFile = Files.writeString(dir.resolve("password.txt"), "secret password\n");
     final List<BLSKeyPair> collected =
-        KeySealer.collect(new KeySealer.Sources(keystores, passwordFile, null, null));
+        KeySealer.readKeyPairs(new KeySealer.Sources(keystores, passwordFile, null, null));
     assertThat(collected).containsExactly(key);
   }
 
@@ -176,7 +183,8 @@ class SealAndProvisionTest {
     Files.writeString(keystores.resolve("key.json"), "{\"crypto\": ");
     final Path passwordFile = Files.writeString(dir.resolve("password.txt"), "x");
     assertThatThrownBy(
-            () -> KeySealer.collect(new KeySealer.Sources(keystores, passwordFile, null, null)))
+            () ->
+                KeySealer.readKeyPairs(new KeySealer.Sources(keystores, passwordFile, null, null)))
         .isInstanceOf(EnclaveHostException.class)
         .hasMessageContaining("Cannot parse");
   }
@@ -197,7 +205,7 @@ class SealAndProvisionTest {
     final String secret =
         EnclaveTestKeys.randomKeys(1).get(0).getSecretKey().toBytes().toHexString();
     final Path raw = Files.writeString(dir.resolve("raw.txt"), secret + "\n" + secret + "\n");
-    assertThatThrownBy(() -> KeySealer.collect(new KeySealer.Sources(null, null, null, raw)))
+    assertThatThrownBy(() -> KeySealer.readKeyPairs(new KeySealer.Sources(null, null, null, raw)))
         .isInstanceOf(EnclaveHostException.class)
         .hasMessageContaining("Duplicate");
   }
@@ -208,7 +216,7 @@ class SealAndProvisionTest {
     final Path keystores = Files.createDirectory(dir.resolve("keystores"));
     final Path passwordFile = Files.writeString(dir.resolve("password.txt"), "x");
     assertThatThrownBy(
-            () -> KeySealer.collect(new KeySealer.Sources(keystores, passwordFile, null, raw)))
+            () -> KeySealer.readKeyPairs(new KeySealer.Sources(keystores, passwordFile, null, raw)))
         .isInstanceOf(EnclaveHostException.class)
         .hasMessageContaining("No keys");
   }
@@ -216,9 +224,12 @@ class SealAndProvisionTest {
   @Test
   void sealingAnInvalidRawSecretDoesNotPrintIt() throws IOException {
     final Path raw = Files.writeString(dir.resolve("raw.txt"), "0x1234zz\n");
-    assertThatThrownBy(() -> KeySealer.collect(new KeySealer.Sources(null, null, null, raw)))
+    assertThatThrownBy(() -> KeySealer.readKeyPairs(new KeySealer.Sources(null, null, null, raw)))
         .isInstanceOf(EnclaveHostException.class)
-        .hasMessage("Raw keys file line 1 is not a valid secret");
+        .hasMessage(
+            "Raw keys file line 1 is not a valid secret: expected 64 hex characters, not zero and"
+                + " below the curve order")
+        .hasMessageNotContaining("1234");
   }
 
   @Test
@@ -241,7 +252,7 @@ class SealAndProvisionTest {
         DevKeyReleaseBroker second = new DevKeyReleaseBroker(masterKey())) {
       final KeyBundle sealed = KeySealer.seal(keys, first);
       final KeyBundle otherDek = KeySealer.seal(EnclaveTestKeys.randomKeys(1), second);
-      final KeyBundle mixed = new KeyBundle(1, otherDek.dek(), sealed.keys());
+      final KeyBundle mixed = new KeyBundle(otherDek.dek(), sealed.keys());
       assertThatThrownBy(() -> KeyProvisioner.provision(mixed, second, client, OPTIONS))
           .isInstanceOf(EnclaveHostException.class)
           .hasMessageContaining("data key does not match")
@@ -275,7 +286,6 @@ class SealAndProvisionTest {
       final KeyBundle sealed = KeySealer.seal(EnclaveTestKeys.randomKeys(1), dev);
       final KeyBundle awsBundle =
           new KeyBundle(
-              1,
               new KeyBundle.Dek(KeyBundle.Dek.PROVIDER_AWS_KMS, "k", Map.of(), new byte[] {1}),
               sealed.keys());
       assertThatThrownBy(() -> KeyProvisioner.provision(awsBundle, aws, client, OPTIONS))
@@ -307,6 +317,145 @@ class SealAndProvisionTest {
                           0, EnclaveClient.DEFAULT_PROVISIONING_TIMEOUT, true, null)))
           .isInstanceOf(EnclaveHostException.class)
           .hasMessageContaining("connection failed");
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "0x01",
+        "0x111111111111111111111111111111111111111111111111111111111111",
+        "0x",
+        "0x0000000000000000000000000000000000000000000000000000000000000000"
+      })
+  void sealingRefusesARawSecretThatIsShortOrZero(final String line) throws IOException {
+    final Path raw = Files.writeString(dir.resolve("raw.txt"), line + "\n");
+    assertThatThrownBy(() -> KeySealer.readKeyPairs(new KeySealer.Sources(null, null, null, raw)))
+        .isInstanceOf(EnclaveHostException.class)
+        .hasMessageStartingWith("Raw keys file line 1 is not a valid secret");
+  }
+
+  @Test
+  void provisioningFailsAsIncompleteWhenSomeEntriesAreRejected() {
+    try (DevKeyReleaseBroker broker = new DevKeyReleaseBroker(masterKey())) {
+      final KeyBundle sealed = KeySealer.seal(EnclaveTestKeys.randomKeys(3), broker);
+      final SealedKey first = sealed.keys().get(0);
+      final byte[] damaged = first.ciphertext().clone();
+      damaged[0] ^= 1;
+      final KeyBundle bundle =
+          new KeyBundle(
+              sealed.dek(),
+              List.of(
+                  new SealedKey(first.publicKey(), first.nonce(), damaged),
+                  sealed.keys().get(1),
+                  sealed.keys().get(2)));
+      assertThatThrownBy(() -> KeyProvisioner.provision(bundle, broker, client, OPTIONS))
+          .isInstanceOf(EnclaveHostException.class)
+          .hasMessage("Provisioning incomplete: 2 loaded, 0 duplicates, 1 rejected of 3");
+    }
+    assertThat(client.status().keyCount()).isEqualTo(2);
+  }
+
+  @Test
+  void evidenceTypeMustMatchTheBroker() {
+    try (TestBroker broker = new TestBroker(new DevKeyReleaseBroker(masterKey()))) {
+      broker.evidenceType = Protocol.EVIDENCE_AWS_NITRO;
+      final KeyBundle bundle = KeySealer.seal(EnclaveTestKeys.randomKeys(1), broker);
+      assertThatThrownBy(() -> KeyProvisioner.provision(bundle, broker, client, OPTIONS))
+          .isInstanceOf(EnclaveHostException.class)
+          .hasMessage("The dev broker accepts evidence type 1, but the enclave produced type 0");
+      assertThat(broker.releases).isZero();
+    }
+  }
+
+  @Test
+  void failedKeyPolicyCheckStopsBeforeTheRelease() {
+    try (TestBroker broker = new TestBroker(new DevKeyReleaseBroker(masterKey()))) {
+      broker.policyFailure = new IllegalStateException("policy too open");
+      final KeyBundle bundle = KeySealer.seal(EnclaveTestKeys.randomKeys(1), broker);
+      assertThatThrownBy(() -> KeyProvisioner.provision(bundle, broker, client, OPTIONS))
+          .isSameAs(broker.policyFailure);
+      assertThat(broker.releases).isZero();
+    }
+    assertThat(client.status().keyCount()).isZero();
+  }
+
+  @Test
+  void devMasterKeyFileIgnoresSurroundingWhitespace() throws IOException {
+    final Path file =
+        Files.writeString(dir.resolve("master.hex"), "\n  " + "ab".repeat(32) + " \n");
+    try (DevKeyReleaseBroker broker = DevKeyReleaseBroker.fromFile(file)) {
+      final KeyBundle bundle = KeySealer.seal(EnclaveTestKeys.randomKeys(1), broker);
+      assertThat(KeyProvisioner.provision(bundle, broker, client, OPTIONS).load().loaded())
+          .isEqualTo(1);
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {"", "abab", "0xabababababababababababababababababababababababababababababababab"})
+  void devMasterKeyFileMustHold64HexCharacters(final String content) throws IOException {
+    final Path file = Files.writeString(dir.resolve("master.hex"), content);
+    assertThatThrownBy(() -> DevKeyReleaseBroker.fromFile(file))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("The dev master key file must hold 64 hex characters");
+  }
+
+  @Test
+  void devMasterKeyFileRefusesCharactersThatAreNotHex() throws IOException {
+    final Path file = Files.writeString(dir.resolve("master.hex"), "zz".repeat(32));
+    assertThatThrownBy(() -> DevKeyReleaseBroker.fromFile(file))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  /** Delegates to a real broker, with overrides for the checks under test. */
+  private static final class TestBroker implements KeyReleaseBroker {
+    private final KeyReleaseBroker delegate;
+    private Integer evidenceType;
+    private RuntimeException policyFailure;
+    private int releases;
+
+    TestBroker(final KeyReleaseBroker delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public String provider() {
+      return delegate.provider();
+    }
+
+    @Override
+    public int expectedPlatform() {
+      return delegate.expectedPlatform();
+    }
+
+    @Override
+    public int expectedEvidenceType() {
+      return evidenceType != null ? evidenceType : delegate.expectedEvidenceType();
+    }
+
+    @Override
+    public DataKey newDataKey() {
+      return delegate.newDataKey();
+    }
+
+    @Override
+    public byte[] release(final KeyBundle.Dek dek, final Evidence evidence) {
+      releases++;
+      return delegate.release(dek, evidence);
+    }
+
+    @Override
+    public void assertEvidenceRequired(final KeyBundle.Dek dek) {
+      if (policyFailure != null) {
+        throw policyFailure;
+      }
+      delegate.assertEvidenceRequired(dek);
+    }
+
+    @Override
+    public void close() {
+      delegate.close();
     }
   }
 }

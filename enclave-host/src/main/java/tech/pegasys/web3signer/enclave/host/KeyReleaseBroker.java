@@ -23,23 +23,12 @@ import java.util.Arrays;
  */
 public interface KeyReleaseBroker extends AutoCloseable {
 
-  /** A new data key: the plaintext for sealing, and its wrapped form for the bundle. */
-  final class DataKey implements AutoCloseable {
-    private final byte[] plaintext;
-    private final KeyBundle.Dek dek;
-
-    public DataKey(final byte[] plaintext, final KeyBundle.Dek dek) {
-      this.plaintext = plaintext;
-      this.dek = dek;
-    }
-
-    public byte[] plaintext() {
-      return plaintext;
-    }
-
-    public KeyBundle.Dek dek() {
-      return dek;
-    }
+  /**
+   * A new data key: the plaintext for sealing, and its wrapped form for the bundle. The plaintext
+   * is not copied, so that {@link #close()} zeroes the array the sealer used.
+   */
+  @SuppressWarnings("ArrayRecordComponent")
+  record DataKey(byte[] plaintext, KeyBundle.Dek dek) implements AutoCloseable {
 
     /** Overwrites the plaintext data key with zeros. */
     @Override

@@ -25,7 +25,6 @@ import tech.pegasys.web3signer.enclave.protocol.Protocol;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
@@ -37,7 +36,11 @@ import java.util.concurrent.TimeUnit;
 public final class KeyProvisioner {
   private static final long RETRY_MILLIS = 1000;
 
-  private static final SecureRandom RANDOM = new SecureRandom();
+  /**
+   * No nonce: KMS doesn't check one, and each GET_EVIDENCE binds a new release key, so an old
+   * attestation document is of no use to anyone.
+   */
+  private static final byte[] NO_NONCE = new byte[0];
 
   private KeyProvisioner() {}
 
@@ -61,77 +64,96 @@ public final class KeyProvisioner {
    */
   public record Result(LoadResult load, int bundleKeys, long enclaveKeyCount) {}
 
+  /** A provisioning session and the status the enclave answered with when it was opened. */
+  private record Connected(ProvisioningSession session, Status status) implements AutoCloseable {
+    @Override
+    public void close() {
+      session.close();
+    }
+  }
+
   public static Result provision(
       final KeyBundle bundle,
       final KeyReleaseBroker broker,
       final EnclaveClient client,
       final Options options) {
-    if (bundle.keys().isEmpty()) {
-      throw new EnclaveHostException("The key bundle contains no keys; nothing to provision");
-    }
-    if (!broker.provider().equals(bundle.dek().provider())) {
-      throw new EnclaveHostException(
-          "The bundle was sealed with provider "
-              + bundle.dek().provider()
-              + ", but the "
-              + broker.provider()
-              + " broker was given");
-    }
-    try (ProvisioningSession session =
-        connect(client, options.waitSeconds(), options.responseTimeout())) {
-      final Status status = session.status();
-      if (status.platform() != broker.expectedPlatform()) {
-        throw new EnclaveHostException(
-            "The "
-                + broker.provider()
-                + " broker releases data keys only to an enclave on platform "
-                + Protocol.platformName(broker.expectedPlatform())
-                + ", but the enclave runs "
-                + status.platformName());
-      }
+    checkBundle(bundle, broker);
+    try (Connected connected = connect(client, options.waitSeconds(), options.responseTimeout())) {
+      final ProvisioningSession session = connected.session();
+      checkPlatform(connected.status(), broker);
       if (options.verifyKeyPolicy()) {
         broker.assertEvidenceRequired(bundle.dek());
       }
-
-      final byte[] nonce = new byte[32];
-      RANDOM.nextBytes(nonce);
-      final Evidence evidence = session.getEvidence(nonce);
-      if (evidence.type() != broker.expectedEvidenceType()) {
-        throw new EnclaveHostException(
-            "The "
-                + broker.provider()
-                + " broker accepts evidence type "
-                + broker.expectedEvidenceType()
-                + ", but the enclave produced type "
-                + evidence.type());
-      }
+      final Evidence evidence = session.getEvidence(NO_NONCE);
+      checkEvidenceType(evidence, broker);
       final byte[] blob = broker.release(bundle.dek(), evidence);
-      if (options.dumpReleaseBlob() != null) {
-        Files.write(options.dumpReleaseBlob(), blob);
-      }
+      dumpReleaseBlob(options.dumpReleaseBlob(), blob);
       session.unwrapDek(Protocol.BLOB_FORMAT_CMS, blob);
-
       final LoadResult load = session.loadKeys(bundle.keys());
-      final long enclaveKeys = session.status().keyCount();
-      final int expected = bundle.keys().size();
-      if (load.rejected() == expected) {
-        throw new EnclaveHostException(
-            "The enclave rejected every entry: the data key does not match this bundle ("
-                + summary(load, expected)
-                + ")");
-      }
-      if (load.rejected() > 0 || load.loaded() + load.duplicates() != expected) {
-        throw new EnclaveHostException("Provisioning incomplete: " + summary(load, expected));
-      }
-      return new Result(load, expected, enclaveKeys);
+      checkLoad(load, bundle.keys().size());
+      return new Result(load, bundle.keys().size(), session.status().keyCount());
     } catch (final PartialLoadException e) {
       throw new EnclaveHostException("Provisioning incomplete: " + e.getMessage(), e);
     } catch (final EnclaveException e) {
       throw new EnclaveHostException(e.getMessage(), e);
     } catch (final EnclaveUnavailableException e) {
       throw new EnclaveHostException("Enclave connection failed: " + e.getMessage(), e);
+    }
+  }
+
+  private static void checkBundle(final KeyBundle bundle, final KeyReleaseBroker broker) {
+    if (bundle.keys().isEmpty()) {
+      throw new EnclaveHostException("The key bundle contains no keys; nothing to provision");
+    }
+    if (!broker.provider().equals(bundle.dek().provider())) {
+      throw new EnclaveHostException(
+          String.format(
+              "The bundle was sealed with provider %s, but the %s broker was given",
+              bundle.dek().provider(), broker.provider()));
+    }
+  }
+
+  private static void checkPlatform(final Status status, final KeyReleaseBroker broker) {
+    if (status.platform() != broker.expectedPlatform()) {
+      throw new EnclaveHostException(
+          String.format(
+              "The %s broker releases data keys only to an enclave on platform %s, but the enclave"
+                  + " runs %s",
+              broker.provider(),
+              Protocol.platformName(broker.expectedPlatform()),
+              status.platformName()));
+    }
+  }
+
+  private static void checkEvidenceType(final Evidence evidence, final KeyReleaseBroker broker) {
+    if (evidence.type() != broker.expectedEvidenceType()) {
+      throw new EnclaveHostException(
+          String.format(
+              "The %s broker accepts evidence type %d, but the enclave produced type %d",
+              broker.provider(), broker.expectedEvidenceType(), evidence.type()));
+    }
+  }
+
+  private static void checkLoad(final LoadResult load, final int expected) {
+    if (load.rejected() == expected) {
+      throw new EnclaveHostException(
+          "The enclave rejected every entry: the data key does not match this bundle ("
+              + summary(load, expected)
+              + ")");
+    }
+    if (load.rejected() > 0 || load.loaded() + load.duplicates() != expected) {
+      throw new EnclaveHostException("Provisioning incomplete: " + summary(load, expected));
+    }
+  }
+
+  private static void dumpReleaseBlob(final Path file, final byte[] blob) {
+    if (file == null) {
+      return;
+    }
+    try {
+      Files.write(file, blob);
     } catch (final IOException e) {
-      throw new EnclaveHostException("Cannot write " + options.dumpReleaseBlob(), e);
+      throw new EnclaveHostException("Cannot write " + file, e);
     }
   }
 
@@ -146,17 +168,13 @@ public final class KeyProvisioner {
   }
 
   /** Opens a provisioning session, retrying until the enclave answers or the wait expires. */
-  private static ProvisioningSession connect(
+  private static Connected connect(
       final EnclaveClient client, final int waitSeconds, final Duration responseTimeout) {
     final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(waitSeconds);
     while (true) {
-      ProvisioningSession session = null;
       try {
-        session = client.openProvisioningSession(responseTimeout);
-        session.status();
-        return session;
+        return open(client, responseTimeout);
       } catch (final EnclaveUnavailableException e) {
-        closeQuietly(session, e);
         final long remaining = deadline - System.nanoTime();
         if (remaining <= 0) {
           throw e;
@@ -168,21 +186,18 @@ public final class KeyProvisioner {
           Thread.currentThread().interrupt();
           throw new EnclaveHostException("Interrupted while waiting for the enclave", ie);
         }
-      } catch (final RuntimeException e) {
-        closeQuietly(session, e);
-        throw e;
       }
     }
   }
 
-  private static void closeQuietly(final ProvisioningSession session, final Exception cause) {
-    if (session == null) {
-      return;
-    }
+  /** Opens a session and asks for its status; closes the session if that fails. */
+  private static Connected open(final EnclaveClient client, final Duration responseTimeout) {
+    final ProvisioningSession session = client.openProvisioningSession(responseTimeout);
     try {
+      return new Connected(session, session.status());
+    } catch (final RuntimeException e) {
       session.close();
-    } catch (final RuntimeException closeFailure) {
-      cause.addSuppressed(closeFailure);
+      throw e;
     }
   }
 }
