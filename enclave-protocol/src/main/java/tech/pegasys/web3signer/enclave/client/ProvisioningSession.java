@@ -107,10 +107,13 @@ public final class ProvisioningSession implements Closeable {
   private <T> T send(final int opcode, final byte[] body, final BodyDecoder<T> decoder) {
     try {
       return decoder.decode(client.sendAndReceive(connection, opcode, body));
+    } catch (final EnclaveException refused) {
+      throw refused; // a refusal leaves the session usable
     } catch (final IOException e) {
       client.closeConnection(connection);
       throw new EnclaveUnavailableException("Provisioning connection failed", e);
-    } catch (final UnsupportedProtocolVersionException e) {
+    } catch (final Throwable e) {
+      // anything else, a version mismatch or an Error included, leaves the session unusable
       client.closeConnection(connection);
       throw e;
     }

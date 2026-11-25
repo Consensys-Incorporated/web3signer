@@ -133,6 +133,7 @@ public final class EnclaveClient implements Closeable {
    *
    * @throws EnclaveUnavailableException also when the enclave restarted while the keys were listed,
    *     since the pages then come from two different key sets
+   * @throws UnsupportedProtocolVersionException when the signer speaks another protocol version
    */
   public List<byte[]> publicKeys() {
     final String bootId = status().bootId();

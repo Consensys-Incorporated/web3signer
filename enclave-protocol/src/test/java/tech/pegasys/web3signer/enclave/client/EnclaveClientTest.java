@@ -424,6 +424,34 @@ class EnclaveClientTest {
   }
 
   @Test
+  void anErrorDuringProvisioningClosesTheSession() {
+    final List<Boolean> closed = new CopyOnWriteArrayList<>();
+    final EnclaveClient client =
+        client(
+            (connectTimeout, ioTimeout) -> {
+              closed.add(false);
+              return new Connection() {
+                @Override
+                public int read(final byte[] buffer, final int offset, final int length) {
+                  throw new OutOfMemoryError("test");
+                }
+
+                @Override
+                public void write(final byte[] buffer, final int offset, final int length) {}
+
+                @Override
+                public void close() {
+                  closed.set(0, true);
+                }
+              };
+            },
+            new EnclaveClient.Options(1, 1000));
+    final ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT);
+    assertThatThrownBy(session::status).isInstanceOf(OutOfMemoryError.class);
+    assertThat(closed).containsExactly(true);
+  }
+
+  @Test
   void anUnreachableEnclaveFailsWithTheConnectFailure() {
     final EnclaveClient client =
         client(
