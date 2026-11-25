@@ -43,6 +43,8 @@ class EnclaveAddressTest {
   void parsesListenForms() {
     assertThat(EnclaveAddress.parseListen("vsock:5000"))
         .isEqualTo(new VsockAddress(EnclaveAddress.VMADDR_CID_ANY, 5000));
+    assertThat(EnclaveAddress.parseListen("vsock:4294967294"))
+        .isEqualTo(new VsockAddress(EnclaveAddress.VMADDR_CID_ANY, 0xFFFF_FFFEL));
     assertThat(EnclaveAddress.parseListen("tcp:0.0.0.0:5000"))
         .isEqualTo(new TcpAddress("0.0.0.0", 5000));
     assertThat(EnclaveAddress.parseListen("tcp:127.0.0.1:0"))
@@ -92,7 +94,15 @@ class EnclaveAddressTest {
 
   @ParameterizedTest
   @ValueSource(
-      strings = {"vsock:", "vsock:16:5000", "vsock:x", "tcp:5000", "tcp::5000", "tcp:h:70000"})
+      strings = {
+        "vsock:",
+        "vsock:16:5000",
+        "vsock:x",
+        "vsock:4294967295",
+        "tcp:5000",
+        "tcp::5000",
+        "tcp:h:70000"
+      })
   void rejectsInvalidListenForms(final String value) {
     assertThatThrownBy(() -> EnclaveAddress.parseListen(value))
         .isInstanceOf(IllegalArgumentException.class);

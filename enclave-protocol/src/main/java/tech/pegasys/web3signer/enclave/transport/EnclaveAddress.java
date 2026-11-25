@@ -23,6 +23,7 @@ import java.io.IOException;
 public sealed interface EnclaveAddress
     permits EnclaveAddress.VsockAddress, EnclaveAddress.TcpAddress {
   long VMADDR_CID_ANY = 0xFFFF_FFFFL;
+  long VMADDR_PORT_ANY = 0xFFFF_FFFFL;
 
   /**
    * Connects to this address.
@@ -111,14 +112,19 @@ public sealed interface EnclaveAddress
     return parseTcp(value, false);
   }
 
-  /** Parses an address to listen on. */
+  /** Parses an address to listen on. {@link #VMADDR_PORT_ANY} is rejected. */
   static EnclaveAddress parseListen(final String value) {
     if (value != null && value.startsWith("vsock:")) {
       final String port = value.substring("vsock:".length());
       if (port.contains(":")) {
         throw invalid(value, "expected vsock:<port>");
       }
-      return vsock(VMADDR_CID_ANY, u32(value, port));
+      final long number = u32(value, port);
+      // the kernel would bind a random port, which address() could not report
+      if (number == VMADDR_PORT_ANY) {
+        throw invalid(value, "port " + number + " means any port");
+      }
+      return vsock(VMADDR_CID_ANY, number);
     }
     return parseTcp(value, true);
   }
