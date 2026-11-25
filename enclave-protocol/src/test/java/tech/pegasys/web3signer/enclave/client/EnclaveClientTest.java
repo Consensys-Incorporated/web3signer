@@ -44,6 +44,8 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class EnclaveClientTest {
   private static final byte[] PUBLIC_KEY = new byte[48];
@@ -588,8 +590,16 @@ class EnclaveClientTest {
     assertThat(server.connectionCount()).isEqualTo(1);
   }
 
-  @Test
-  void publicKeysPagesThroughTheKeySet() throws IOException {
+  /** A short page ends the listing, so a whole number of full pages ends with an empty one. */
+  @ParameterizedTest
+  @ValueSource(
+      ints = {
+        0,
+        Protocol.MAX_PUBLIC_KEYS_PAGE,
+        Protocol.MAX_PUBLIC_KEYS_PAGE + 3,
+        2 * Protocol.MAX_PUBLIC_KEYS_PAGE
+      })
+  void publicKeysPagesThroughTheKeySet(final int keyCount) throws IOException {
     final ScriptedTcpServer server =
         server(
             (self, connection, index) -> {
@@ -603,7 +613,7 @@ class EnclaveClientTest {
                 final PublicKeysRequest page = Messages.decodePublicKeysRequest(request.body());
                 final List<byte[]> keys = new ArrayList<>();
                 for (long i = page.offset();
-                    i < Math.min(KEY_COUNT, page.offset() + page.limit());
+                    i < Math.min(keyCount, page.offset() + page.limit());
                     i++) {
                   keys.add(key((int) i));
                 }
@@ -613,12 +623,12 @@ class EnclaveClientTest {
             });
     final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
     final List<byte[]> keys = client.publicKeys();
-    assertThat(keys).hasSize(KEY_COUNT);
-    for (int i = 0; i < KEY_COUNT; i++) {
+    assertThat(keys).hasSize(keyCount);
+    for (int i = 0; i < keyCount; i++) {
       assertThat(keys.get(i)).isEqualTo(key(i));
     }
-    // STATUS, a full page, a short page, STATUS
-    assertThat(server.received).hasSize(4);
+    // STATUS, the full pages, a short or empty page, STATUS
+    assertThat(server.received).hasSize(keyCount / Protocol.MAX_PUBLIC_KEYS_PAGE + 3);
   }
 
   @Test
@@ -649,9 +659,6 @@ class EnclaveClientTest {
         .isInstanceOf(EnclaveUnavailableException.class)
         .hasMessageContaining("restarted");
   }
-
-  /** One full page and a short one: the short page ends the listing. */
-  private static final int KEY_COUNT = Protocol.MAX_PUBLIC_KEYS_PAGE + 3;
 
   private static byte[] key(final int i) {
     return ByteBuffer.allocate(48).putInt(i).array();
