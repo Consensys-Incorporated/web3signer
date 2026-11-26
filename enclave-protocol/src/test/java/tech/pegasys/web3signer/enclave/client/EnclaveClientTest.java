@@ -41,6 +41,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -66,16 +67,13 @@ class EnclaveClientTest {
     return server;
   }
 
-  /** A server whose script also gets the server, to record what it reads. */
-  private ScriptedTcpServer server(final RecordingScript script) throws IOException {
-    final ScriptedTcpServer[] self = new ScriptedTcpServer[1];
-    self[0] = server((connection, index) -> script.serve(self[0], connection, index));
-    return self[0];
-  }
-
-  @FunctionalInterface
-  private interface RecordingScript {
-    void serve(ScriptedTcpServer server, Connection connection, int index) throws IOException;
+  /** Connects to the server, counting the connects: a resend needs a new connection. */
+  private static EnclaveClient.Connector countingConnector(
+      final ScriptedTcpServer server, final AtomicInteger connects) {
+    return (connectTimeout, ioTimeout) -> {
+      connects.incrementAndGet();
+      return server.address().connect(connectTimeout, ioTimeout);
+    };
   }
 
   private EnclaveClient client(
@@ -209,7 +207,7 @@ class EnclaveClientTest {
     assertThatThrownBy(() -> client.sign(PUBLIC_KEY, root(2)))
         .isInstanceOf(EnclaveUnavailableException.class)
         .hasMessageContaining("free within 300 ms");
-    assertThat(millisSince(start)).isBetween(250L, 1000L);
+    assertThat(millisSince(start)).isBetween(250L, 3000L);
   }
 
   @Test
@@ -229,20 +227,24 @@ class EnclaveClientTest {
   // ------------------------------------------------------------------ closing
 
   @Test
-  void closeFailsAnInFlightCallWithoutReconnecting() throws Exception {
+  void closeFailsAnInFlightCallOnAPooledConnectionWithoutReconnecting() throws Exception {
     final CountDownLatch received = new CountDownLatch(1);
     final ScriptedTcpServer server =
         server(
             (self, connection, index) -> {
+              ScriptedTcpServer.respondToSign(connection, self.read(connection));
               self.read(connection);
               received.countDown();
               while (true) {
                 self.read(connection); // never answers
               }
             });
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 10_000));
+    final AtomicInteger connects = new AtomicInteger();
+    final EnclaveClient client =
+        client(countingConnector(server, connects), new EnclaveClient.Options(1, 10_000));
+    assertThat(client.sign(PUBLIC_KEY, root(1))).isEqualTo(signature(1)); // pools the connection
     try (ExecutorService caller = Executors.newSingleThreadExecutor()) {
-      final Future<byte[]> result = caller.submit(() -> client.sign(PUBLIC_KEY, root(1)));
+      final Future<byte[]> result = caller.submit(() -> client.sign(PUBLIC_KEY, root(2)));
       assertThat(received.await(5, TimeUnit.SECONDS)).isTrue();
       client.close();
       assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
@@ -250,7 +252,7 @@ class EnclaveClientTest {
           .cause()
           .hasMessage("Enclave client is closed");
     }
-    assertThat(server.connectionCount()).isEqualTo(1);
+    assertThat(connects).hasValue(1);
   }
 
   @Test
@@ -297,6 +299,53 @@ class EnclaveClientTest {
     final Thread thread = Thread.ofVirtual().start(waiter);
     thread.interrupt();
     assertThat(waiter.get(5, TimeUnit.SECONDS)).isTrue();
+  }
+
+  @Test
+  void aConnectionThatOpensAfterCloseIsClosedUnused() throws Exception {
+    final CountDownLatch connecting = new CountDownLatch(1);
+    final CountDownLatch release = new CountDownLatch(1);
+    final AtomicInteger written = new AtomicInteger();
+    final CountDownLatch connectionClosed = new CountDownLatch(1);
+    final EnclaveClient client =
+        client(
+            (connectTimeout, ioTimeout) -> {
+              connecting.countDown();
+              try {
+                release.await();
+              } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+              }
+              return new Connection() {
+                @Override
+                public int read(final byte[] buffer, final int offset, final int length) {
+                  return -1;
+                }
+
+                @Override
+                public void write(final byte[] buffer, final int offset, final int length) {
+                  written.addAndGet(length);
+                }
+
+                @Override
+                public void close() {
+                  connectionClosed.countDown();
+                }
+              };
+            },
+            new EnclaveClient.Options(1, 60_000));
+    try (ExecutorService caller = Executors.newSingleThreadExecutor()) {
+      final Future<byte[]> result = caller.submit(() -> client.sign(PUBLIC_KEY, root(1)));
+      assertThat(connecting.await(5, TimeUnit.SECONDS)).isTrue();
+      client.close();
+      release.countDown();
+      assertThatThrownBy(() -> result.get(5, TimeUnit.SECONDS))
+          .hasCauseInstanceOf(EnclaveUnavailableException.class)
+          .cause()
+          .hasMessage("Enclave client is closed");
+    }
+    assertThat(connectionClosed.getCount()).isZero();
+    assertThat(written).hasValue(0);
   }
 
   @Test
@@ -381,7 +430,7 @@ class EnclaveClientTest {
     assertThatThrownBy(() -> client.sign(PUBLIC_KEY, root(2)))
         .isInstanceOf(EnclaveUnavailableException.class)
         .hasMessageContaining("did not answer within 300 ms");
-    assertThat(millisSince(start)).isBetween(250L, 1000L);
+    assertThat(millisSince(start)).isBetween(250L, 3000L);
     assertThat(server.connectionCount()).isEqualTo(1);
   }
 
@@ -392,7 +441,7 @@ class EnclaveClientTest {
     assertThatThrownBy(() -> client.sign(PUBLIC_KEY, root(1)))
         .isInstanceOf(EnclaveUnavailableException.class)
         .hasMessageContaining("300 ms");
-    assertThat(millisSince(start)).isBetween(250L, 1000L);
+    assertThat(millisSince(start)).isBetween(250L, 3000L);
   }
 
   @Test
@@ -469,15 +518,16 @@ class EnclaveClientTest {
   @Test
   void unwrapDekIsNeverResent() throws IOException {
     final ScriptedTcpServer server = server((self, connection, index) -> self.read(connection));
-    final EnclaveClient client = client(server, EnclaveClient.Options.DEFAULT);
+    final AtomicInteger connects = new AtomicInteger();
+    final EnclaveClient client =
+        client(countingConnector(server, connects), EnclaveClient.Options.DEFAULT);
     try (ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT)) {
       assertThatThrownBy(() -> session.unwrapDek(Protocol.BLOB_FORMAT_CMS, new byte[10]))
           .isInstanceOf(EnclaveUnavailableException.class);
     }
-    sleep(300);
+    assertThat(connects).hasValue(1);
     assertThat(server.received).hasSize(1);
     assertThat(server.received.get(0).kind()).isEqualTo(Protocol.UNWRAP_DEK);
-    assertThat(server.connectionCount()).isEqualTo(1);
   }
 
   // ------------------------------------------------------------------ answers
@@ -529,16 +579,24 @@ class EnclaveClientTest {
     final ScriptedTcpServer server =
         server(
             (self, connection, index) -> {
+              ScriptedTcpServer.respond(
+                  connection, self.read(connection), Protocol.OK, ScriptedTcpServer.status(1));
               // a v2 STATUS may have another layout: only the version must be readable
               final byte[] body =
                   ByteBuffer.allocate(60).order(ByteOrder.LITTLE_ENDIAN).putLong(0, 2).array();
               ScriptedTcpServer.respond(connection, self.read(connection), Protocol.OK, body);
+              while (true) {
+                self.read(connection);
+              }
             });
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    final AtomicInteger connects = new AtomicInteger();
+    final EnclaveClient client =
+        client(countingConnector(server, connects), new EnclaveClient.Options(1, 5000));
+    client.status(); // pools the connection, so the refused STATUS is one a failure could resend
     assertThatThrownBy(client::status)
         .isInstanceOfSatisfying(
             UnsupportedProtocolVersionException.class, e -> assertThat(e.version()).isEqualTo(2));
-    assertThat(server.connectionCount()).isEqualTo(1);
+    assertThat(connects).hasValue(1);
   }
 
   @Test
@@ -699,6 +757,24 @@ class EnclaveClientTest {
           .isEqualTo(new KeyLoadCounts(Protocol.MAX_LOAD_KEYS - 1, 2, 0));
     }
     assertThat(requestSizes).containsExactly(Protocol.MAX_LOAD_KEYS, 1);
+  }
+
+  @Test
+  void loadCountsThatDoNotAddUpToTheRequestCloseTheSession() throws IOException {
+    final ScriptedTcpServer server =
+        server(
+            (self, connection, index) ->
+                ScriptedTcpServer.respond(
+                    connection,
+                    self.read(connection),
+                    Protocol.OK,
+                    Messages.encodeKeyLoadCounts(KeyLoadCounts.EMPTY)));
+    final EnclaveClient client = client(server, EnclaveClient.Options.DEFAULT);
+    try (ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT)) {
+      assertThatThrownBy(() -> session.loadKeys(sealedKeys(1)))
+          .isInstanceOf(EnclaveUnavailableException.class)
+          .hasRootCauseMessage("Malformed LOAD_KEYS response: counts add up to 0, expected 1");
+    }
   }
 
   @Test

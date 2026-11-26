@@ -27,6 +27,7 @@ import java.nio.ByteBuffer;
  */
 public final class Frames {
   public static final int HEADER_SIZE = 9;
+  private static final int DISCARD_BUFFER_SIZE = 4096;
 
   private Frames() {}
 
@@ -53,8 +54,37 @@ public final class Frames {
     connection.write(out.array(), 0, out.capacity());
   }
 
-  /** Reads one frame. A length above {@link Protocol#MAX_BODY_SIZE} throws before the body. */
-  public static Frame read(final Connection connection) throws IOException {
+  /** Reads one response. A length above {@link Protocol#MAX_BODY_SIZE} throws before the body. */
+  public static Frame readResponse(final Connection connection) throws IOException {
+    final Header header = readHeader(connection);
+    return new Frame(header.requestId(), header.kind(), readBody(connection, header.length()));
+  }
+
+  /**
+   * Reads one request. A length above {@link Protocol#maxRequestBodySize} for its opcode throws
+   * before the body. The body of an unknown opcode is discarded unread, so that the request can
+   * still be answered with {@code UNSUPPORTED}, and comes back empty.
+   */
+  public static Frame readRequest(final Connection connection) throws IOException {
+    final Header header = readHeader(connection);
+    final int maxSize = Protocol.maxRequestBodySize(header.kind());
+    if (maxSize < 0) {
+      discard(connection, header.length());
+      return new Frame(header.requestId(), header.kind(), new byte[0]);
+    }
+    if (header.length() > maxSize) {
+      throw new IOException(
+          "Frame length out of range for "
+              + Protocol.opcodeName(header.kind())
+              + ": "
+              + header.length());
+    }
+    return new Frame(header.requestId(), header.kind(), readBody(connection, header.length()));
+  }
+
+  private record Header(int length, int requestId, int kind) {}
+
+  private static Header readHeader(final Connection connection) throws IOException {
     final byte[] header = new byte[HEADER_SIZE];
     connection.readFully(header, 0, HEADER_SIZE);
     final ByteBuffer in = ByteBuffer.wrap(header).order(LITTLE_ENDIAN);
@@ -62,10 +92,21 @@ public final class Frames {
     if (length > MAX_BODY_SIZE) {
       throw new IOException("Frame length out of range: " + length);
     }
-    final int requestId = in.getInt();
-    final int kind = in.get() & 0xff;
-    final byte[] body = new byte[(int) length];
-    connection.readFully(body, 0, body.length);
-    return new Frame(requestId, kind, body);
+    return new Header((int) length, in.getInt(), in.get() & 0xff);
+  }
+
+  private static byte[] readBody(final Connection connection, final int length) throws IOException {
+    final byte[] body = new byte[length];
+    connection.readFully(body, 0, length);
+    return body;
+  }
+
+  private static void discard(final Connection connection, final int length) throws IOException {
+    final byte[] scratch = new byte[Math.min(length, DISCARD_BUFFER_SIZE)];
+    for (int left = length; left > 0; ) {
+      final int n = Math.min(left, scratch.length);
+      connection.readFully(scratch, 0, n);
+      left -= n;
+    }
   }
 }

@@ -39,6 +39,9 @@ public final class Protocol {
   public static final int UNWRAP_FAILED = 130;
   public static final int EVIDENCE_FAILED = 131;
 
+  /** A {@code LOAD_KEYS} would take the signer past {@link #MAX_KEYS}. */
+  public static final int KEY_LIMIT_REACHED = 132;
+
   // Platforms reported by STATUS
   public static final int PLATFORM_DEV = 0;
   public static final int PLATFORM_AWS_NITRO = 1;
@@ -71,6 +74,12 @@ public final class Protocol {
   public static final int MAX_BLOB_SIZE = 65_536;
   public static final int MAX_PUBLIC_KEYS_PAGE = 16_384;
   public static final int MAX_LOAD_KEYS = 4096;
+
+  /**
+   * Keys one signer holds. Any process that reaches the signer can load keys, so this is capped.
+   */
+  public static final int MAX_KEYS = 131_072;
+
   public static final int SEALED_NONCE_SIZE = 12;
   public static final int SEALED_CIPHERTEXT_SIZE = 48;
   public static final int SEALED_KEY_SIZE =
@@ -90,6 +99,22 @@ public final class Protocol {
     };
   }
 
+  /**
+   * Largest body a request with this opcode can have, or -1 for an unknown opcode. The signer
+   * allocates no more than this per connection before it has read the request.
+   */
+  public static int maxRequestBodySize(final int opcode) {
+    return switch (opcode) {
+      case STATUS -> 0;
+      case GET_PUBLIC_KEYS -> 8; // offset and limit, two Uint32
+      case SIGN -> PUBLIC_KEY_SIZE + SIGNING_ROOT_SIZE;
+      case GET_EVIDENCE -> MAX_NONCE_SIZE;
+      case UNWRAP_DEK -> 1 + 4 + MAX_BLOB_SIZE; // format, blob offset, blob
+      case LOAD_KEYS -> MAX_LOAD_KEYS * SEALED_KEY_SIZE;
+      default -> -1;
+    };
+  }
+
   public static String resultName(final int result) {
     return switch (result) {
       case OK -> "OK";
@@ -100,6 +125,7 @@ public final class Protocol {
       case INVALID_STATE -> "INVALID_STATE";
       case UNWRAP_FAILED -> "UNWRAP_FAILED";
       case EVIDENCE_FAILED -> "EVIDENCE_FAILED";
+      case KEY_LIMIT_REACHED -> "KEY_LIMIT_REACHED";
       default -> "RESULT_" + result;
     };
   }

@@ -194,7 +194,7 @@ public final class EnclaveClient implements Closeable {
       throws IOException {
     final int requestId = requestIds.incrementAndGet();
     Frames.write(connection, new Frame(requestId, opcode, body));
-    final Frame response = Frames.read(connection);
+    final Frame response = Frames.readResponse(connection);
     if (response.requestId() != requestId) {
       throw new IOException(
           "Response to request " + response.requestId() + ", expected " + requestId);

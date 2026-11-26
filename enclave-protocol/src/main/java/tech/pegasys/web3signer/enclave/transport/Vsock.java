@@ -230,6 +230,10 @@ final class Vsock {
       return closed;
     }
 
+    synchronized boolean inCall() {
+      return inCall;
+    }
+
     synchronized void close() {
       if (closed) {
         return;
@@ -249,7 +253,7 @@ final class Vsock {
 
   // ------------------------------------------------------------------ connection
 
-  private static final class VsockConnection implements Connection {
+  static final class VsockConnection implements Connection {
     private final Arena arena = Arena.ofShared();
     private final MemorySegment capture = arena.allocate(CAPTURE_LAYOUT);
     private final MemorySegment in = arena.allocate(BUFFER_SIZE, 8);
@@ -337,11 +341,16 @@ final class Vsock {
     public void close() {
       descriptor.close();
     }
+
+    /** For tests: once true, a close shuts the socket down under the call instead of freeing it. */
+    boolean inCall() {
+      return descriptor.inCall();
+    }
   }
 
   // ------------------------------------------------------------------ listener
 
-  private static final class VsockListener implements Listener {
+  static final class VsockListener implements Listener {
     private final Arena arena = Arena.ofShared();
     private final MemorySegment capture = arena.allocate(CAPTURE_LAYOUT);
     private final Descriptor descriptor;
@@ -361,12 +370,12 @@ final class Vsock {
           final int connection =
               (int)
                   invoke(
-                      "accept",
+                      "accept4",
                       capture,
                       c ->
                           (int)
-                              Handles.ACCEPT.invokeExact(
-                                  c, fd, MemorySegment.NULL, MemorySegment.NULL));
+                              Handles.ACCEPT4.invokeExact(
+                                  c, fd, MemorySegment.NULL, MemorySegment.NULL, SOCK_CLOEXEC));
           return accepted(connection);
         } catch (final ErrnoException e) {
           if (descriptor.isClosed()) {
@@ -379,6 +388,11 @@ final class Vsock {
           descriptor.release();
         }
       }
+    }
+
+    /** For tests: true while accept is in a call, so a close ends it with "Listener closed". */
+    boolean inCall() {
+      return descriptor.inCall();
     }
 
     /** Clears the listener's wake-up timeout in case the accepted socket inherited it. */
@@ -417,8 +431,8 @@ final class Vsock {
         libc("bind", FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, JAVA_INT));
     static final MethodHandle LISTEN =
         libc("listen", FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT));
-    static final MethodHandle ACCEPT =
-        libc("accept", FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, ADDRESS));
+    static final MethodHandle ACCEPT4 =
+        libc("accept4", FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, ADDRESS, JAVA_INT));
     static final MethodHandle CONNECT =
         libc("connect", FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, JAVA_INT));
     static final MethodHandle READ =
@@ -454,11 +468,16 @@ final class Vsock {
   }
 
   private static int socket() throws IOException {
-    // fails with a clear message off Linux, before any libc handle is created
+    // fails with a clear message off 64-bit Linux on x86 or ARM, before any libc handle is created;
+    // the socket option numbers and timeval layout below are only right there
     final String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-    if (!os.startsWith("linux")) {
+    final String arch = System.getProperty("os.arch", "");
+    if (!os.startsWith("linux") || !(arch.equals("amd64") || arch.equals("aarch64"))) {
       throw new UnsupportedOperationException(
-          "vsock: addresses are only supported on Linux, not on " + os);
+          "vsock: addresses are only supported on Linux on amd64 and aarch64, not on "
+              + os
+              + " "
+              + arch);
     }
     try (Arena arena = Arena.ofConfined()) {
       return (int)

@@ -44,6 +44,18 @@ public sealed interface EnclaveAddress
    * @param port the port, an unsigned 32-bit value
    */
   record VsockAddress(long cid, long port) implements EnclaveAddress {
+    public VsockAddress {
+      checkU32(cid, "CID");
+      checkU32(port, "port");
+    }
+
+    // connect and listen cast to int, so a wider value would reach another CID or port
+    private static void checkU32(final long value, final String name) {
+      if ((value >>> 32) != 0) {
+        throw new IllegalArgumentException("vsock " + name + " out of range: " + value);
+      }
+    }
+
     @Override
     public Connection connect(final int connectTimeoutMillis, final int ioTimeoutMillis)
         throws IOException {
@@ -141,6 +153,8 @@ public sealed interface EnclaveAddress
     String host = rest.substring(0, colon);
     if (host.startsWith("[") && host.endsWith("]")) {
       host = host.substring(1, host.length() - 1);
+    } else if (host.contains(":")) {
+      throw invalid(value, "an IPv6 host needs brackets, e.g. tcp:[::1]:<port>");
     }
     if (host.isEmpty() || host.chars().anyMatch(Character::isWhitespace)) {
       throw invalid(value, "invalid host");

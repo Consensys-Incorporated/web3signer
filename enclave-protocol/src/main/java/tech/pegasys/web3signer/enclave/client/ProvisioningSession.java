@@ -93,7 +93,7 @@ public final class ProvisioningSession implements Closeable {
                 send(
                     Protocol.LOAD_KEYS,
                     Messages.encodeSealedKeys(chunk),
-                    Messages::decodeKeyLoadCounts));
+                    body -> Messages.decodeKeyLoadCounts(body, chunk.size())));
       } catch (final EnclaveException | EnclaveUnavailableException e) {
         if (from == 0) {
           throw e;

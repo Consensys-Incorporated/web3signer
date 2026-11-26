@@ -10,8 +10,6 @@ enclave signer (`enclave-signer`) and the host side (`enclave-host`, `signing`).
 | `enclave.transport` | `EnclaveAddress`, `Connection`, `Listener`; TCP and vsock behind them |
 | `enclave.client` | `EnclaveClient`, `ProvisioningSession`, `EnclaveException`, `EnclaveUnavailableException`, `PartialLoadException` |
 
-How to deploy it: [`deployments/aws-nitro/README.md`](../deployments/aws-nitro/README.md).
-
 ## Design
 
 - **The enclave has no network.** Its only channel to the parent instance is a vsock stream socket.
@@ -31,8 +29,7 @@ How to deploy it: [`deployments/aws-nitro/README.md`](../deployments/aws-nitro/R
 - **No secret travels in plaintext.** Requests carry signing roots and public keys. Provisioning
   carries public evidence, a blob that KMS encrypted to a key generated inside the enclave, and BLS
   keys sealed with AES-GCM. vsock does not leave the host, so the link has no TLS. A process on the
-  parent that can reach the socket can ask for signatures: slashing protection stays in Web3Signer,
-  as the deployment guide states.
+  parent that can reach the socket can ask for signatures: slashing protection stays in Web3Signer.
 
 ## Transports and addresses
 
@@ -58,6 +55,7 @@ production traffic.
 | `MAX_NONCE_SIZE` | `2**6` (= 64) | Bytes in a `Nonce` |
 | `MAX_PUBLIC_KEYS_PAGE` | `2**14` (= 16,384) | Public keys in one `GET_PUBLIC_KEYS` response |
 | `MAX_LOAD_KEYS` | `2**12` (= 4,096) | Sealed keys in one `LOAD_KEYS` request |
+| `MAX_KEYS` | `2**17` (= 131,072) | Keys one signer holds |
 | `MAX_VERSION_SIZE` | `2**8` (= 256) | Bytes in a `SignerVersion` |
 | `MAX_RELEASE_KEY_SIZE` | `2**11` (= 2,048) | Bytes in a `ReleaseKey` |
 | `MAX_EVIDENCE_SIZE` | `2**16` (= 65,536) | Bytes in a `PlatformEvidence` |
@@ -90,9 +88,21 @@ class FrameHeader(Container):
   server reads one request at a time and answers in request order. The client sends one request at
   a time per connection, checks the request id of every answer, and drops the connection on a
   mismatch.
-- **Errors:** a `length` above `MAX_BODY_SIZE`, a malformed response body or an answer to another
-  request closes the connection. A malformed request body is answered with `BAD_REQUEST`; the frame
-  boundaries are intact, so the connection stays.
+- **Errors:** a `length` above `MAX_BODY_SIZE`, a request `length` above its opcode's limit (below),
+  a malformed response body or an answer to another request closes the connection. A malformed
+  request body is answered with `BAD_REQUEST`; the frame boundaries are intact, so the connection
+  stays. The body of an unknown opcode is discarded unread and answered with `UNSUPPORTED`.
+- **Request limits:** the server refuses a request body longer than its message allows before it
+  reads it, so that a stalled request holds little memory.
+
+  | Opcode | Max request body |
+  |---|---|
+  | `STATUS` | 0 |
+  | `GET_PUBLIC_KEYS` | 8 |
+  | `SIGN` | 80 |
+  | `GET_EVIDENCE` | 64 |
+  | `UNWRAP_DEK` | 65,541 |
+  | `LOAD_KEYS` | 442,368 |
 
 For example, a `STATUS` request with request id 7 has an empty body, and a `RESOURCE_UNAVAILABLE`
 answer to request 7 carries the error message `no key`:
@@ -374,7 +384,10 @@ encrypts each 32-byte secret with AES-256-GCM, with the public key as additional
 is the encrypted secret followed by the tag. `loaded` counts the keys added, `duplicates` the
 entries whose public key was already loaded, by an earlier request or an earlier entry of this one,
 and `rejected` the entries that did not open or whose secret does not match its public key. Without
-a data key the answer is `INVALID_STATE`.
+a data key the answer is `INVALID_STATE`. A request whose new keys would take the signer past
+`MAX_KEYS` adds nothing and is answered with `KEY_LIMIT_REACHED`; duplicates do not count.
+`loaded + duplicates + rejected` always equals the number of entries, and the client treats any
+other answer as malformed.
 
 ### Result codes
 
@@ -391,6 +404,7 @@ start at 128.
 | 129 | `INVALID_STATE` | Provisioning step out of order |
 | 130 | `UNWRAP_FAILED` | The release blob did not open |
 | 131 | `EVIDENCE_FAILED` | The platform produced no evidence |
+| 132 | `KEY_LIMIT_REACHED` | A `LOAD_KEYS` would take the signer past `MAX_KEYS` |
 
 ## Provisioning
 
@@ -429,7 +443,7 @@ Failures:
   malformed request (`BAD_REQUEST`) changes nothing.
 - **`UNWRAP_DEK` refused** (`UNWRAP_FAILED`, `UNSUPPORTED`, `BAD_REQUEST`) in KeyPending: → Idle. The
   release key is used up whatever the outcome.
-- **`LOAD_KEYS` refused** (`BAD_REQUEST`) in DekHeld: stays DekHeld.
+- **`LOAD_KEYS` refused** (`BAD_REQUEST`, `KEY_LIMIT_REACHED`) in DekHeld: stays DekHeld.
 
 Invariants:
 
@@ -441,6 +455,11 @@ Invariants:
 - **`LOAD_KEYS` only adds keys.** An entry is accepted only if GCM authenticates it, the secret is a
   valid BLS scalar, and its public key equals the entry's. Already loaded keys count as duplicates.
   Removing keys means restarting the enclave.
+- **Loading is not limited to the operator's keys.** GCM proves only that an entry was sealed under
+  the unwrapped data key, not where that data key came from. The release key is public in the
+  `GET_EVIDENCE` answer, so any process that can reach the signer can wrap a data key of its own and
+  load keys it sealed itself. It cannot read, replace or remove keys already loaded, and `MAX_KEYS`
+  stops it from running the enclave out of memory.
 
 ## Client behaviour
 

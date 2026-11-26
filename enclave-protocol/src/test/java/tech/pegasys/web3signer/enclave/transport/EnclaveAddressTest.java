@@ -37,6 +37,8 @@ class EnclaveAddressTest {
         .isEqualTo(new TcpAddress("enclave.local", 1));
     assertThat(EnclaveAddress.parseConnect("tcp:[::1]:5000"))
         .isEqualTo(new TcpAddress("::1", 5000));
+    assertThat(EnclaveAddress.parseConnect("tcp:[2001:db8::1]:5000"))
+        .isEqualTo(new TcpAddress("2001:db8::1", 5000));
   }
 
   @Test
@@ -105,6 +107,24 @@ class EnclaveAddressTest {
       })
   void rejectsInvalidListenForms(final String value) {
     assertThatThrownBy(() -> EnclaveAddress.parseListen(value))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"tcp:2001:db8::1:5000", "tcp:2001:db8::1", "tcp:::1"})
+  void anUnbracketedIpv6HostPointsToTheBracketedForm(final String value) {
+    assertThatThrownBy(() -> EnclaveAddress.parseConnect(value))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("needs brackets");
+  }
+
+  @Test
+  void vsockAddressesRefuseValuesOutOfRange() {
+    assertThatThrownBy(() -> new VsockAddress((1L << 32) | 16, 5000))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new VsockAddress(16, 1L << 32))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new VsockAddress(-1, 5000))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

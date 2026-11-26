@@ -33,9 +33,10 @@ final class ScriptedTcpServer implements AutoCloseable {
     /**
      * Serves one connection.
      *
+     * @param server this server, to record what the script reads
      * @param index 0 for the first connection, 1 for the second, ...
      */
-    void serve(Connection connection, int index) throws IOException;
+    void serve(ScriptedTcpServer server, Connection connection, int index) throws IOException;
   }
 
   private final Listener listener;
@@ -61,7 +62,7 @@ final class ScriptedTcpServer implements AutoCloseable {
                     .start(
                         () -> {
                           try (connection) {
-                            script.serve(connection, index);
+                            script.serve(this, connection, index);
                           } catch (final IOException e) {
                             // peer gone
                           }
@@ -80,7 +81,7 @@ final class ScriptedTcpServer implements AutoCloseable {
 
   /** Reads one request and records it. */
   Frame read(final Connection connection) throws IOException {
-    final Frame frame = Frames.read(connection);
+    final Frame frame = Frames.readRequest(connection);
     received.add(frame);
     return frame;
   }

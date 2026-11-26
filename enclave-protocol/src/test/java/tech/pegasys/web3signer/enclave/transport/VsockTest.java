@@ -35,6 +35,7 @@ import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,8 @@ import org.junit.jupiter.api.condition.OS;
 @EnabledOnOs(OS.LINUX)
 class VsockTest {
   private static final int LOOPBACK_CID = 1;
+  private static final int EPERM = 1;
+  private static final int ENODEV = 19;
   private static final int EAFNOSUPPORT = 97;
 
   private final Random random = new Random();
@@ -57,7 +60,9 @@ class VsockTest {
     try {
       return Vsock.listen(20_000 + random.nextInt(20_000));
     } catch (final Vsock.ErrnoException e) {
-      Assumptions.assumeTrue(e.errno() != EAFNOSUPPORT, "no AF_VSOCK support");
+      // EPERM: a container's seccomp profile refuses AF_VSOCK
+      Assumptions.assumeTrue(
+          e.errno() != EAFNOSUPPORT && e.errno() != EPERM, "no AF_VSOCK support");
       throw e;
     }
   }
@@ -69,7 +74,9 @@ class VsockTest {
               LOOPBACK_CID, ((EnclaveAddress.VsockAddress) listener.address()).port())
           .connect(5000, 5000);
     } catch (final Vsock.ErrnoException e) {
-      Assumptions.assumeTrue(e.errno() != Vsock.ENETUNREACH, "vsock loopback transport not loaded");
+      Assumptions.assumeTrue(
+          e.errno() != Vsock.ENETUNREACH && e.errno() != ENODEV,
+          "vsock loopback transport not loaded");
       throw e;
     }
   }
@@ -83,7 +90,7 @@ class VsockTest {
               () -> {
                 try (Connection connection = listener.accept()) {
                   for (int i = 0; i < 3; i++) {
-                    final Frame request = Frames.read(connection);
+                    final Frame request = Frames.readRequest(connection);
                     Frames.write(
                         connection, new Frame(request.requestId(), Protocol.OK, request.body()));
                   }
@@ -96,8 +103,8 @@ class VsockTest {
         final byte[] big = new byte[200_000];
         random.nextBytes(big);
         for (final byte[] body : new byte[][] {new byte[0], new byte[] {1, 2, 3}, big}) {
-          Frames.write(client, new Frame(body.length, Protocol.SIGN, body));
-          final Frame echoed = Frames.read(client);
+          Frames.write(client, new Frame(body.length, Protocol.LOAD_KEYS, body));
+          final Frame echoed = Frames.readResponse(client);
           assertThat(echoed.requestId()).isEqualTo(body.length);
           assertThat(echoed.body()).isEqualTo(body);
         }
@@ -155,10 +162,12 @@ class VsockTest {
                 throw new CompletionException(e);
               }
             });
-    Thread.sleep(200); // let accept block
+    awaitInCall(((Vsock.VsockListener) listener)::inCall);
     listener.close();
     assertThatThrownBy(() -> accepted.get(5, TimeUnit.SECONDS))
-        .hasCauseInstanceOf(SocketException.class);
+        .cause()
+        .isInstanceOf(SocketException.class)
+        .hasMessage("Listener closed");
   }
 
   @Test
@@ -180,7 +189,6 @@ class VsockTest {
     final Connection right = Vsock.wrap(fds[1]);
     try (left;
         right) {
-      Vsock.setTimeouts(fds[0], 200);
       final byte[] big = new byte[300_000];
       random.nextBytes(big);
       final CompletableFuture<Void> writer =
@@ -197,6 +205,7 @@ class VsockTest {
       writer.get(10, TimeUnit.SECONDS);
       assertThat(received).isEqualTo(big);
 
+      Vsock.setTimeouts(fds[0], 200);
       final long start = System.nanoTime();
       assertThatThrownBy(() -> left.read(new byte[1], 0, 1))
           .isInstanceOf(SocketTimeoutException.class);
@@ -233,23 +242,22 @@ class VsockTest {
     final int[] fds = socketPair();
     final Connection left = Vsock.wrap(fds[0]);
     try (Connection right = Vsock.wrap(fds[1])) {
-      final byte[] chunk = new byte[1 << 20];
+      // one call, far more than the socket buffers hold, so it stays in the call until closed
+      final byte[] big = new byte[8 << 20];
       final CompletableFuture<Void> writer =
           CompletableFuture.runAsync(
               () -> {
                 try {
-                  while (true) {
-                    left.write(chunk, 0, chunk.length); // blocks once the buffers are full
-                  }
+                  left.write(big, 0, big.length);
                 } catch (final IOException e) {
                   throw new CompletionException(e);
                 }
               });
-      Thread.sleep(300); // let the writer block in write(2)
-      assertThat(writer).isNotDone();
+      awaitInCall(((Vsock.VsockConnection) left)::inCall);
       left.close();
+      // EPIPE from the shutdown, not the "Socket closed" of a write that had not started
       assertThatThrownBy(() -> writer.get(5, TimeUnit.SECONDS))
-          .hasCauseInstanceOf(IOException.class);
+          .hasCauseInstanceOf(Vsock.ErrnoException.class);
     }
   }
 
@@ -271,7 +279,7 @@ class VsockTest {
                 throw new IllegalStateException(e);
               }
             });
-    Thread.sleep(200); // let the reader block in read(2)
+    awaitInCall(((Vsock.VsockConnection) left)::inCall);
     left.close();
     assertThat(reader.get(5, TimeUnit.SECONDS)).isEqualTo(-1);
     right.close();
@@ -290,6 +298,18 @@ class VsockTest {
           .isInstanceOf(SocketException.class);
       assertThatThrownBy(() -> peerOfReused.read(new byte[1], 0, 1))
           .isInstanceOf(SocketTimeoutException.class);
+    }
+  }
+
+  /**
+   * Waits until a call holds the descriptor. From then on a close shuts the socket down, which ends
+   * the call the same way whether or not it has reached the syscall yet.
+   */
+  private static void awaitInCall(final BooleanSupplier inCall) throws InterruptedException {
+    final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (!inCall.getAsBoolean()) {
+      assertThat(System.nanoTime()).isLessThan(deadline);
+      Thread.sleep(1);
     }
   }
 

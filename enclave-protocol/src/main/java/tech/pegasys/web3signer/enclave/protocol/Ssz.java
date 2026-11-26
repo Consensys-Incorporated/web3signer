@@ -104,7 +104,7 @@ final class Ssz {
   }
 
   /** Throws the {@link IOException} of a malformed body. */
-  private static void checkBody(final boolean valid, final String what, final String reason)
+  static void checkBody(final boolean valid, final String what, final String reason)
       throws IOException {
     if (!valid) {
       throw new IOException("Malformed " + what + ": " + reason);

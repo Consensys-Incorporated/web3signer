@@ -23,6 +23,7 @@ import java.net.SocketTimeoutException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** TCP connections and listeners on plain {@link Socket} and {@link ServerSocket}. */
 final class Tcp {
@@ -79,7 +80,6 @@ final class Tcp {
     private final InputStream in;
     private final OutputStream out;
     private final int writeTimeoutMillis;
-    private volatile boolean writeTimedOut;
 
     /**
      * @param writeTimeoutMillis limit of one {@link #write}; 0 waits forever
@@ -107,23 +107,30 @@ final class Tcp {
         out.write(buffer, offset, length);
         return;
       }
+      final AtomicBoolean claimed = new AtomicBoolean();
       final ScheduledFuture<?> watchdog =
-          WRITE_WATCHDOG.schedule(this::expireWrite, writeTimeoutMillis, TimeUnit.MILLISECONDS);
+          WRITE_WATCHDOG.schedule(
+              () -> {
+                if (claimed.compareAndSet(false, true)) {
+                  close();
+                }
+              },
+              writeTimeoutMillis,
+              TimeUnit.MILLISECONDS);
+      IOException failure = null;
       try {
         out.write(buffer, offset, length);
       } catch (final IOException e) {
-        if (writeTimedOut) {
-          throw new SocketTimeoutException("Write timed out after " + writeTimeoutMillis + " ms");
-        }
-        throw e;
-      } finally {
-        watchdog.cancel(false);
+        failure = e;
       }
-    }
-
-    private void expireWrite() {
-      writeTimedOut = true;
-      close();
+      watchdog.cancel(false);
+      // whoever claims first decides: the watchdog closes the socket, or the write keeps it
+      if (!claimed.compareAndSet(false, true)) {
+        throw new SocketTimeoutException("Write timed out after " + writeTimeoutMillis + " ms");
+      }
+      if (failure != null) {
+        throw failure;
+      }
     }
 
     @Override

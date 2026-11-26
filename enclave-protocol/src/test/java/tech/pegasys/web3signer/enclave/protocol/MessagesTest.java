@@ -80,7 +80,7 @@ class MessagesTest {
   }
 
   private static Frame read(final byte[] bytes) throws IOException {
-    return Frames.read(new BytesConnection(bytes));
+    return Frames.readResponse(new BytesConnection(bytes));
   }
 
   private static SealedKey sealedKey() {
@@ -117,6 +117,76 @@ class MessagesTest {
     assertThatThrownBy(() -> read(header)).isInstanceOf(IOException.class);
     assertThatThrownBy(() -> frame(1, Protocol.SIGN, new byte[Protocol.MAX_BODY_SIZE + 1]))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  private static final int[] OPCODES = {
+    Protocol.STATUS,
+    Protocol.GET_PUBLIC_KEYS,
+    Protocol.SIGN,
+    Protocol.GET_EVIDENCE,
+    Protocol.UNWRAP_DEK,
+    Protocol.LOAD_KEYS
+  };
+
+  @Test
+  void requestLimitsAreTheLargestEncodedRequests() {
+    assertThat(Messages.encodeStatusRequest())
+        .hasSize(Protocol.maxRequestBodySize(Protocol.STATUS));
+    assertThat(Messages.encodePublicKeysRequest(new PublicKeysRequest(0, 1)))
+        .hasSize(Protocol.maxRequestBodySize(Protocol.GET_PUBLIC_KEYS));
+    assertThat(
+            Messages.encodeSignRequest(
+                new Messages.SignRequest(
+                    new byte[Protocol.PUBLIC_KEY_SIZE], new byte[Protocol.SIGNING_ROOT_SIZE])))
+        .hasSize(Protocol.maxRequestBodySize(Protocol.SIGN));
+    assertThat(Messages.encodeNonce(new byte[Protocol.MAX_NONCE_SIZE]))
+        .hasSize(Protocol.maxRequestBodySize(Protocol.GET_EVIDENCE));
+    assertThat(
+            Messages.encodeUnwrapDekRequest(
+                new UnwrapDekRequest(Protocol.BLOB_FORMAT_CMS, new byte[Protocol.MAX_BLOB_SIZE])))
+        .hasSize(Protocol.maxRequestBodySize(Protocol.UNWRAP_DEK));
+    assertThat(Messages.encodeSealedKeys(Collections.nCopies(Protocol.MAX_LOAD_KEYS, sealedKey())))
+        .hasSize(Protocol.maxRequestBodySize(Protocol.LOAD_KEYS));
+  }
+
+  @Test
+  void aRequestAtItsLimitIsReadAndOneByteOverIsRefusedBeforeItsBody() throws IOException {
+    for (final int opcode : OPCODES) {
+      final int max = Protocol.maxRequestBodySize(opcode);
+      final byte[] body = new byte[max];
+      assertThat(Frames.readRequest(new BytesConnection(frame(1, opcode, body))).body())
+          .isEqualTo(body);
+
+      final byte[] header = Arrays.copyOf(frame(1, opcode, new byte[0]), Frames.HEADER_SIZE);
+      putUint32(header, 0, max + 1L);
+      assertThatThrownBy(() -> Frames.readRequest(new BytesConnection(header)))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("out of range for " + Protocol.opcodeName(opcode));
+    }
+  }
+
+  @Test
+  void anUnknownOpcodesBodyIsDiscardedAndTheNextRequestIsRead() throws IOException {
+    final byte[] unknown = frame(1, 0x7f, new byte[Protocol.MAX_BODY_SIZE]);
+    final byte[] status = frame(2, Protocol.STATUS, new byte[0]);
+    final byte[] stream = Arrays.copyOf(unknown, unknown.length + status.length);
+    System.arraycopy(status, 0, stream, unknown.length, status.length);
+    final BytesConnection connection = new BytesConnection(stream);
+
+    final Frame first = Frames.readRequest(connection);
+    assertThat(first.requestId()).isEqualTo(1);
+    assertThat(first.kind()).isEqualTo(0x7f);
+    assertThat(first.body()).isEmpty();
+    final Frame second = Frames.readRequest(connection);
+    assertThat(second.requestId()).isEqualTo(2);
+    assertThat(second.kind()).isEqualTo(Protocol.STATUS);
+  }
+
+  @Test
+  void resultCodesHaveNames() {
+    assertThat(Protocol.resultName(Protocol.KEY_LIMIT_REACHED)).isEqualTo("KEY_LIMIT_REACHED");
+    assertThat(Protocol.resultName(Protocol.EVIDENCE_FAILED)).isEqualTo("EVIDENCE_FAILED");
+    assertThat(Protocol.resultName(200)).isEqualTo("RESULT_200");
   }
 
   @Test
@@ -190,11 +260,22 @@ class MessagesTest {
   }
 
   @Test
+  void keyLoadCountsMustAccountForEveryEntry() throws IOException {
+    final byte[] result = Messages.encodeKeyLoadCounts(new KeyLoadCounts(1, 2, 3));
+    assertThat(Messages.decodeKeyLoadCounts(result, 6)).isEqualTo(new KeyLoadCounts(1, 2, 3));
+    assertThatThrownBy(() -> Messages.decodeKeyLoadCounts(result, 7))
+        .isInstanceOf(IOException.class)
+        .hasMessage("Malformed LOAD_KEYS response: counts add up to 6, expected 7");
+    assertThatThrownBy(() -> Messages.decodeKeyLoadCounts(result, 5))
+        .hasMessageContaining("counts add up to 6, expected 5");
+  }
+
+  @Test
   void fixedSizeBodiesMustHaveExactlyTheirSize() throws IOException {
     final byte[] result = Messages.encodeKeyLoadCounts(new KeyLoadCounts(1, 2, 3));
-    assertThatThrownBy(() -> Messages.decodeKeyLoadCounts(Arrays.copyOf(result, 13)))
+    assertThatThrownBy(() -> Messages.decodeKeyLoadCounts(Arrays.copyOf(result, 13), 6))
         .hasMessageContaining("trailing bytes");
-    assertThatThrownBy(() -> Messages.decodeKeyLoadCounts(Arrays.copyOf(result, 11)))
+    assertThatThrownBy(() -> Messages.decodeKeyLoadCounts(Arrays.copyOf(result, 11), 6))
         .isInstanceOf(IOException.class);
     assertThatThrownBy(() -> Messages.decodeSignature(new byte[95]))
         .isInstanceOf(IOException.class);

@@ -315,9 +315,7 @@ public final class Messages {
                     in.vector(PUBLIC_KEY_SIZE),
                     in.vector(SEALED_NONCE_SIZE),
                     in.vector(SEALED_CIPHERTEXT_SIZE)));
-    if (keys.isEmpty()) {
-      throw malformed("LOAD_KEYS request", "no entries");
-    }
+    Ssz.checkBody(!keys.isEmpty(), "LOAD_KEYS request", "no entries");
     return keys;
   }
 
@@ -329,9 +327,18 @@ public final class Messages {
         .toBytes();
   }
 
-  public static KeyLoadCounts decodeKeyLoadCounts(final byte[] body) throws IOException {
-    return Ssz.readContainer(
-        body, "LOAD_KEYS response", in -> new KeyLoadCounts(in.uint32(), in.uint32(), in.uint32()));
+  /** Decodes the answer to a request of {@code entries} sealed keys, which it must account for. */
+  public static KeyLoadCounts decodeKeyLoadCounts(final byte[] body, final int entries)
+      throws IOException {
+    final KeyLoadCounts counts =
+        Ssz.readContainer(
+            body,
+            "LOAD_KEYS response",
+            in -> new KeyLoadCounts(in.uint32(), in.uint32(), in.uint32()));
+    final long sum = counts.loaded() + counts.duplicates() + counts.rejected();
+    Ssz.checkBody(
+        sum == entries, "LOAD_KEYS response", "counts add up to " + sum + ", expected " + entries);
+    return counts;
   }
 
   // ------------------------------------------------------------------ errors
@@ -353,14 +360,7 @@ public final class Messages {
 
   /** SSZ has no empty container: a message that carries nothing has an empty body. */
   private static void requireEmpty(final byte[] body, final String what) throws IOException {
-    if (body.length != 0) {
-      throw malformed(what, "body not empty");
-    }
-  }
-
-  /** The decoders' failure for a message rule, worded like the {@link Ssz} ones. */
-  private static IOException malformed(final String what, final String reason) {
-    return new IOException("Malformed " + what + ": " + reason);
+    Ssz.checkBody(body.length == 0, what, "body not empty");
   }
 
   /** Anything outside printable ASCII (line breaks, control characters, non-ASCII) becomes '?'. */
