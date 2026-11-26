@@ -42,7 +42,7 @@ public final class Protocol {
   /** A {@code LOAD_KEYS} would take the signer past {@link #MAX_KEYS}. */
   public static final int KEY_LIMIT_REACHED = 132;
 
-  /** A {@code SIGN} before any {@code LOAD_KEYS} was answered {@code OK}; not about key count. */
+  /** A {@code SIGN} or {@code GET_PUBLIC_KEYS} before any {@code LOAD_KEYS} answered {@code OK}. */
   public static final int NOT_INITIALIZED = 133;
 
   // Platforms reported by STATUS

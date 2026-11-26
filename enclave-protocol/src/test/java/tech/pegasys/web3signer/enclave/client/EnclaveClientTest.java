@@ -782,6 +782,33 @@ class EnclaveClientTest {
   }
 
   @Test
+  void publicKeysFromASignerWithNoKeysLoadedSinceItStartedAreRefused() throws IOException {
+    final ScriptedTcpServer server =
+        server(
+            (self, connection, index) -> {
+              while (true) {
+                final Frame request = self.read(connection);
+                if (request.kind() == Protocol.STATUS) {
+                  ScriptedTcpServer.respond(
+                      connection, request, Protocol.OK, ScriptedTcpServer.status(1));
+                } else {
+                  ScriptedTcpServer.respond(
+                      connection,
+                      request,
+                      Protocol.NOT_INITIALIZED,
+                      Messages.encodeErrorMessage("no keys loaded since start"));
+                }
+              }
+            });
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(5)));
+    assertThatThrownBy(client::publicKeys)
+        .isInstanceOfSatisfying(
+            EnclaveException.class,
+            e -> assertThat(e.result()).isEqualTo(Protocol.NOT_INITIALIZED));
+  }
+
+  @Test
   void publicKeysFromTwoRunsOfTheEnclaveAreRefused() throws IOException {
     final ScriptedTcpServer server =
         server(

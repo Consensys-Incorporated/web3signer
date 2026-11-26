@@ -146,6 +146,8 @@ public final class EnclaveClient implements Closeable {
    * @throws EnclaveUnavailableException also when the enclave restarted while the keys were listed,
    *     since the pages then come from two different key sets, listed more than {@link
    *     Protocol#MAX_KEYS} keys, or listed a number of keys its key counts rule out
+   * @throws EnclaveException with {@link Protocol#NOT_INITIALIZED} when the signer has loaded no
+   *     keys since it started, so that a restarted signer is not taken to hold none
    * @throws UnsupportedProtocolVersionException when the signer speaks another protocol version
    */
   public List<byte[]> publicKeys() {
