@@ -48,6 +48,8 @@ final class Vsock {
   private static final int SOL_SOCKET = 1;
   private static final int SO_RCVTIMEO = 20;
   private static final int SO_SNDTIMEO = 21;
+  // level AF_VSOCK; the 64-bit timeval form on 64-bit Linux
+  private static final int SO_VM_SOCKETS_CONNECT_TIMEOUT = 6;
   private static final int SHUT_RDWR = 2;
   private static final int SOCKADDR_VM_SIZE = 16;
   private static final int BACKLOG = 128;
@@ -109,21 +111,26 @@ final class Vsock {
   }
 
   /**
-   * Connects to {@code cid:port}. Without an enclave at that CID the kernel gives up with {@code
-   * ETIMEDOUT} after about 2 s.
+   * Connects to {@code cid:port}. Without an enclave at that CID the connect gives up with {@code
+   * ETIMEDOUT} after the connect timeout.
    *
-   * @param timeoutMillis read and write timeout; 0 waits forever
+   * @param connectTimeoutMillis connect timeout; 0 keeps the kernel's default of 2 s
+   * @param ioTimeoutMillis read and write timeout; 0 waits forever
    */
-  static Connection connect(final int cid, final int port, final int timeoutMillis)
+  static Connection connect(
+      final int cid, final int port, final int connectTimeoutMillis, final int ioTimeoutMillis)
       throws IOException {
     final int fd = socket();
     try (Arena call = Arena.ofConfined()) {
+      if (connectTimeoutMillis > 0) {
+        setConnectTimeout(fd, connectTimeoutMillis);
+      }
       final MemorySegment address = sockaddrVm(call, cid, port);
       invoke(
           "connect(vsock:" + Integer.toUnsignedString(cid) + ")",
           call.allocate(CAPTURE_LAYOUT),
           capture -> (int) Handles.CONNECT.invokeExact(capture, fd, address, SOCKADDR_VM_SIZE));
-      setTimeouts(fd, timeoutMillis);
+      setTimeouts(fd, ioTimeoutMillis);
       return new VsockConnection(fd);
     } catch (final IOException | RuntimeException e) {
       closeQuietly(fd);
@@ -490,17 +497,26 @@ final class Vsock {
 
   /** Sets SO_RCVTIMEO and SO_SNDTIMEO. 0 means no timeout. */
   static void setTimeouts(final int fd, final int timeoutMillis) throws IOException {
+    setOption(fd, SOL_SOCKET, SO_RCVTIMEO, timeoutMillis);
+    setOption(fd, SOL_SOCKET, SO_SNDTIMEO, timeoutMillis);
+  }
+
+  /** Sets how long a connect waits for the peer; the kernel's default is 2 s. */
+  static void setConnectTimeout(final int fd, final int timeoutMillis) throws IOException {
+    setOption(fd, AF_VSOCK, SO_VM_SOCKETS_CONNECT_TIMEOUT, timeoutMillis);
+  }
+
+  /** Sets a socket option whose value is a 64-bit {@code struct timeval}. */
+  private static void setOption(final int fd, final int level, final int option, final int millis)
+      throws IOException {
     try (Arena arena = Arena.ofConfined()) {
-      final MemorySegment capture = arena.allocate(CAPTURE_LAYOUT);
       final MemorySegment timeval = arena.allocate(16, 8);
-      timeval.set(JAVA_LONG, 0, timeoutMillis / 1000);
-      timeval.set(JAVA_LONG, 8, (timeoutMillis % 1000) * 1000L);
-      for (final int option : new int[] {SO_RCVTIMEO, SO_SNDTIMEO}) {
-        invoke(
-            "setsockopt",
-            capture,
-            c -> (int) Handles.SETSOCKOPT.invokeExact(c, fd, SOL_SOCKET, option, timeval, 16));
-      }
+      timeval.set(JAVA_LONG, 0, millis / 1000);
+      timeval.set(JAVA_LONG, 8, (millis % 1000) * 1000L);
+      invoke(
+          "setsockopt",
+          arena.allocate(CAPTURE_LAYOUT),
+          c -> (int) Handles.SETSOCKOPT.invokeExact(c, fd, level, option, timeval, 16));
     }
   }
 

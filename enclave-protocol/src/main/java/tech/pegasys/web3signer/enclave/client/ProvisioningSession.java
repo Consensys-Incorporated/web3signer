@@ -79,8 +79,9 @@ public final class ProvisioningSession implements Closeable {
    * Loads sealed keys in requests of at most {@value Protocol#MAX_LOAD_KEYS} and adds up the
    * counts.
    *
-   * @throws PartialLoadException when a request fails after earlier ones loaded keys; those keys
-   *     stay in the enclave, and the exception carries their counts
+   * @throws PartialLoadException when a request fails after earlier ones succeeded; their keys stay
+   *     in the enclave, and the exception carries their counts. A request that failed other than by
+   *     a refusal may have loaded its keys as well
    */
   public KeyLoadCounts loadKeys(final List<SealedKey> keys) {
     KeyLoadCounts total = KeyLoadCounts.EMPTY;

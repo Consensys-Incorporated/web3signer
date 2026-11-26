@@ -18,15 +18,15 @@ package tech.pegasys.web3signer.enclave.protocol;
  */
 public final class UnsupportedProtocolVersionException extends RuntimeException {
   private static final long serialVersionUID = 1L;
-  private final long version;
+  private final int version;
 
-  public UnsupportedProtocolVersionException(final long version) {
+  public UnsupportedProtocolVersionException(final int version) {
     super("Signer speaks protocol version " + version + ", expected " + Protocol.VERSION);
     this.version = version;
   }
 
   /** The protocol version the signer reported. */
-  public long version() {
+  public int version() {
     return version;
   }
 }

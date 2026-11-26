@@ -53,7 +53,7 @@ production traffic.
 | `MAX_BODY_SIZE` | `2**20` (= 1,048,576) | Bytes in a frame body |
 | `MAX_ERROR_MESSAGE_SIZE` | `2**8` (= 256) | Bytes in an `ErrorMessage` |
 | `MAX_NONCE_SIZE` | `2**6` (= 64) | Bytes in a `Nonce` |
-| `MAX_PUBLIC_KEYS_PAGE` | `2**14` (= 16,384) | Public keys in one `GET_PUBLIC_KEYS` response |
+| `MAX_PUBLIC_KEYS_PAGE` | `2**12` (= 4,096) | Public keys in one `GET_PUBLIC_KEYS` response |
 | `MAX_LOAD_KEYS` | `2**12` (= 4,096) | Sealed keys in one `LOAD_KEYS` request |
 | `MAX_KEYS` | `2**17` (= 131,072) | Keys one signer holds |
 | `MAX_VERSION_SIZE` | `2**8` (= 256) | Bytes in a `SignerVersion` |
@@ -483,10 +483,11 @@ Invariants:
   Provisioning is never retried.
 - **Listing keys:** `publicKeys` reads the boot id from `STATUS` before and after paging. If it
   changed, the enclave restarted in between and the pages come from two key sets, so the call fails
-  with `EnclaveUnavailableException` and the caller can list again.
-- **Timeouts:** `requestTimeoutMillis` (default 2000 ms) bounds the wait for a free connection, the
-  connect, and each read and write call; a vsock connect is bounded by the kernel instead (about 2
-  s), and provisioning responses take the session's timeout. A frame takes at least two reads, the
+  with `EnclaveUnavailableException` and the caller can list again. A signer that lists more than
+  `MAX_KEYS` keys fails the call the same way, rather than being paged forever. So does a list
+  shorter than the first `STATUS` key count or longer than the second: keys are only ever added.
+- **Timeouts:** `requestTimeout` (default 2 s) bounds the wait for a free connection, the
+  connect, and each read and write call; provisioning responses take the session's timeout. A frame takes at least two reads, the
   header and the body, so a signer that answers slowly but steadily can take longer than one
   timeout. A request to a signer that stops answering fails after about one timeout (the read on its
   pooled connection). The worst case is a full wait for a free connection, then a stale pooled
@@ -502,7 +503,9 @@ Invariants:
   enclave's message when it refuses; `UnsupportedProtocolVersionException` from `STATUS` when the
   signer speaks another protocol version, which no retry can fix. `ProvisioningSession.loadKeys`
   throws `PartialLoadException`, with the counts of the requests that succeeded, when a later
-  request fails: those keys stay loaded.
+  request fails: those keys stay loaded. A request that failed other than by a refusal (a timeout,
+  a lost connection) may have loaded its keys as well, since the signer loads before it answers.
+  Loading again is safe: keys already held count as duplicates.
 
 ## Versioning
 

@@ -54,7 +54,7 @@ class TekuSszCompatibilityTest {
   private static final int MAX_RELEASE_KEY_SIZE = 2048;
   private static final int MAX_EVIDENCE_SIZE = 65_536;
   private static final int MAX_BLOB_SIZE = 65_536;
-  private static final int MAX_PUBLIC_KEYS_PAGE = 16_384;
+  private static final int MAX_PUBLIC_KEYS_PAGE = 4096;
   private static final int MAX_LOAD_KEYS = 4096;
 
   private static final SszByteVectorSchema<?> PUBLIC_KEY = SszByteVectorSchema.create(48);

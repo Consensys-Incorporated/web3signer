@@ -196,7 +196,7 @@ public final class Messages {
         });
   }
 
-  /** A {@code List[Bytes48, 16384]}; a page shorter than asked is the last. */
+  /** A {@code List[Bytes48, 4096]}; a page shorter than asked is the last. */
   public static byte[] encodePublicKeys(final List<byte[]> publicKeys) {
     return Ssz.writeList(
         publicKeys, MAX_PUBLIC_KEYS_PAGE, (out, key) -> out.vector(key, PUBLIC_KEY_SIZE));

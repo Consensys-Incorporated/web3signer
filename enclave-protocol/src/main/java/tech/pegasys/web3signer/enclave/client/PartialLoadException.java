@@ -17,6 +17,11 @@ import tech.pegasys.web3signer.enclave.protocol.Messages.KeyLoadCounts;
 /**
  * A {@code LOAD_KEYS} request failed after earlier requests of the same {@link
  * ProvisioningSession#loadKeys} call succeeded. The keys they loaded stay in the enclave.
+ *
+ * <p>The counts cover only the requests that succeeded. When the cause is an {@link
+ * EnclaveUnavailableException}, the failed request may have loaded its keys too: the signer loads
+ * them before it answers. Loading again is safe, since keys already held count as duplicates, and
+ * {@code STATUS} reports how many keys the enclave holds.
  */
 public final class PartialLoadException extends RuntimeException {
   private static final long serialVersionUID = 1L;

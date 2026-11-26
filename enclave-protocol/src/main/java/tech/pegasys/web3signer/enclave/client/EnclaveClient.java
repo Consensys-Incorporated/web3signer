@@ -57,21 +57,33 @@ public final class EnclaveClient implements Closeable {
    *
    * @param connections largest number of pooled connections, and so of requests in flight; the
    *     signer accepts 64 connections, so the default of 32 leaves room for provisioning
-   * @param requestTimeoutMillis how long a request waits for a free connection, and the timeout of
-   *     connect, read and write; a vsock connect is bounded by the kernel instead (about 2 s)
+   * @param requestTimeout how long a request waits for a free connection, and the timeout of
+   *     connect, read and write; 1 ms to {@link Integer#MAX_VALUE} ms
    */
-  public record Options(int connections, int requestTimeoutMillis) {
-    public static final Options DEFAULT = new Options(32, 2000);
+  public record Options(int connections, Duration requestTimeout) {
+    public static final Options DEFAULT = new Options(32, Duration.ofSeconds(2));
 
     public Options {
       if (connections < 1) {
         throw new IllegalArgumentException("connections must be at least 1: " + connections);
       }
-      if (requestTimeoutMillis < 1) {
-        throw new IllegalArgumentException(
-            "requestTimeoutMillis must be at least 1: " + requestTimeoutMillis);
-      }
+      timeoutMillis(requestTimeout, "request timeout");
     }
+
+    int requestTimeoutMillis() {
+      return (int) requestTimeout.toMillis();
+    }
+  }
+
+  private static final Duration MAX_TIMEOUT = Duration.ofMillis(Integer.MAX_VALUE);
+
+  /** A timeout in whole milliseconds, 1 to {@link Integer#MAX_VALUE}. */
+  private static int timeoutMillis(final Duration timeout, final String name) {
+    // compared before toMillis(), which overflows on a huge duration
+    if (timeout.compareTo(MAX_TIMEOUT) > 0 || timeout.toMillis() < 1) {
+      throw new IllegalArgumentException("Invalid " + name + ": " + timeout);
+    }
+    return (int) timeout.toMillis();
   }
 
   /** Opens a connection to the enclave signer. */
@@ -132,14 +144,26 @@ public final class EnclaveClient implements Closeable {
    * All public keys, in load order.
    *
    * @throws EnclaveUnavailableException also when the enclave restarted while the keys were listed,
-   *     since the pages then come from two different key sets
+   *     since the pages then come from two different key sets, listed more than {@link
+   *     Protocol#MAX_KEYS} keys, or listed a number of keys its key counts rule out
    * @throws UnsupportedProtocolVersionException when the signer speaks another protocol version
    */
   public List<byte[]> publicKeys() {
-    final String bootId = status().bootId();
+    final Status before = status();
     final List<byte[]> keys = publicKeyPages();
-    if (!status().bootId().equals(bootId)) {
+    final Status after = status();
+    if (!after.bootId().equals(before.bootId())) {
       throw new EnclaveUnavailableException("Enclave signer restarted while its keys were listed");
+    }
+    // keys are only added, so the list must hold at least the first count and at most the second
+    if (keys.size() < before.keyCount() || keys.size() > after.keyCount()) {
+      throw new EnclaveUnavailableException(
+          "Enclave signer listed "
+              + keys.size()
+              + " keys, but holds "
+              + before.keyCount()
+              + " to "
+              + after.keyCount());
     }
     return keys;
   }
@@ -153,6 +177,11 @@ public final class EnclaveClient implements Closeable {
       final List<byte[]> page =
           sendPooled(Protocol.GET_PUBLIC_KEYS, request, Messages::decodePublicKeys);
       keys.addAll(page);
+      // a signer that keeps filling pages would otherwise be listed until we run out of memory
+      if (keys.size() > Protocol.MAX_KEYS) {
+        throw new EnclaveUnavailableException(
+            "Enclave signer listed more than " + Protocol.MAX_KEYS + " keys");
+      }
       // keys are only ever added, so a short page is the last one
       if (page.size() < Protocol.MAX_PUBLIC_KEYS_PAGE) {
         return keys;
@@ -165,17 +194,15 @@ public final class EnclaveClient implements Closeable {
    *
    * @param responseTimeout how long each provisioning response may take, for example while a key
    *     release waits for approval
+   * @throws IllegalArgumentException when the timeout is under 1 ms or over {@link
+   *     Integer#MAX_VALUE} ms
+   * @throws EnclaveUnavailableException when the client is closed or the connect fails
    */
   public ProvisioningSession openProvisioningSession(final Duration responseTimeout) {
-    final long millis = responseTimeout.toMillis();
-    if (millis < 1 || millis > Integer.MAX_VALUE) {
-      throw new IllegalArgumentException("Invalid provisioning timeout: " + responseTimeout);
-    }
+    final int millis = timeoutMillis(responseTimeout, "provisioning timeout");
     requireOpen();
     try {
-      return new ProvisioningSession(
-          this,
-          registerConnection(connector.connect(options.requestTimeoutMillis(), (int) millis)));
+      return new ProvisioningSession(this, connect(millis));
     } catch (final IOException e) {
       throw new EnclaveUnavailableException("Enclave signer unavailable", e);
     }
@@ -225,7 +252,7 @@ public final class EnclaveClient implements Closeable {
         }
       }
       try {
-        return sendAndDecode(connect(), opcode, body, decoder);
+        return sendAndDecode(connect(options.requestTimeoutMillis()), opcode, body, decoder);
       } catch (final IOException e) {
         throw unavailable(e);
       }
@@ -271,9 +298,9 @@ public final class EnclaveClient implements Closeable {
     }
   }
 
-  private Connection connect() throws IOException {
-    final int timeout = options.requestTimeoutMillis();
-    return registerConnection(connector.connect(timeout, timeout));
+  /** Opens a connection, pooled or provisioning, with the request timeout for the connect. */
+  private Connection connect(final int ioTimeoutMillis) throws IOException {
+    return registerConnection(connector.connect(options.requestTimeoutMillis(), ioTimeoutMillis));
   }
 
   /** Registers a new connection, pooled or provisioning, so that {@link #close()} reaches it. */
@@ -287,12 +314,9 @@ public final class EnclaveClient implements Closeable {
     return connection;
   }
 
-  /** Puts a working connection back in the idle pool, or closes it if the client has closed. */
+  /** Puts a working connection back in the idle pool. {@link #close()} closes it if needed. */
   private void releaseConnection(final Connection connection) {
     idle.offerFirst(connection);
-    if (closed && idle.remove(connection)) {
-      closeConnection(connection);
-    }
   }
 
   void closeConnection(final Connection connection) {

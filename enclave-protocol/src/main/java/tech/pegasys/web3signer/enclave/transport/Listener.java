@@ -21,7 +21,10 @@ public interface Listener extends Closeable {
   /** Blocks until a peer connects. Throws once the listener is closed. */
   Connection accept() throws IOException;
 
-  /** The bound address, with the actual port when port 0 was requested. */
+  /**
+   * The bound address. On TCP, port 0 binds any free port and this reports the one chosen; vsock
+   * has no such port.
+   */
   EnclaveAddress address();
 
   /** Closes the listener and wakes a thread blocked in {@link #accept()}. Never throws. */

@@ -107,7 +107,11 @@ final class ScriptedTcpServer implements AutoCloseable {
   }
 
   static byte[] status(final int cpus) {
-    return Messages.encodeStatus(Protocol.PLATFORM_DEV, cpus, 0, new byte[16], "test");
+    return status(cpus, 0);
+  }
+
+  static byte[] status(final int cpus, final long keyCount) {
+    return Messages.encodeStatus(Protocol.PLATFORM_DEV, cpus, keyCount, new byte[16], "test");
   }
 
   @Override

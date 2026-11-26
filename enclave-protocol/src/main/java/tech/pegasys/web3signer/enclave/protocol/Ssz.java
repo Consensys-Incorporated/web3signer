@@ -14,7 +14,6 @@ package tech.pegasys.web3signer.enclave.protocol;
 
 import static java.nio.ByteOrder.LITTLE_ENDIAN;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -63,7 +62,9 @@ final class Ssz {
     final Reader reader = new Reader(body, what);
     final List<T> items = new ArrayList<>();
     while (reader.in.hasRemaining()) {
-      reader.checkBody(items.size() < maxCount, "list longer than " + maxCount);
+      if (items.size() >= maxCount) {
+        throw reader.malformed("list longer than " + maxCount);
+      }
       items.add(decoder.decode(reader));
     }
     return items;
@@ -74,7 +75,7 @@ final class Ssz {
     checkArgument(
         value.length <= maxSize,
         "Byte list of " + value.length + " bytes, at most " + maxSize + " allowed");
-    return value.clone();
+    return value;
   }
 
   /** Decodes a whole body as a byte list of at most {@code maxSize} bytes. */
@@ -113,7 +114,8 @@ final class Ssz {
 
   /** Encodes one container. {@link #toBytes()} places the offsets at the end of the fixed part. */
   static final class Writer {
-    private final ByteArrayOutputStream fixed = new ByteArrayOutputStream();
+    private final List<byte[]> fixed = new ArrayList<>();
+    private int fixedLength;
     private final List<byte[]> byteLists = new ArrayList<>(2);
 
     private Writer() {}
@@ -132,52 +134,60 @@ final class Ssz {
 
     /** A byte vector of exactly {@code size} bytes. */
     Writer vector(final byte[] value, final int size) {
-      checkArgument(
-          value.length == size, "Byte vector of " + value.length + " bytes, expected " + size);
-      fixed().writeBytes(value);
+      if (value.length != size) {
+        throw new IllegalArgumentException(
+            "Byte vector of " + value.length + " bytes, expected " + size);
+      }
+      requireFixed();
+      fixed.add(value); // copied once, by toBytes
+      fixedLength += size;
       return this;
     }
 
     Writer byteList(final byte[] value, final int maxSize) {
-      checkArgument(
-          value.length <= maxSize,
-          "Byte list of " + value.length + " bytes, at most " + maxSize + " allowed");
+      if (value.length > maxSize) {
+        throw new IllegalArgumentException(
+            "Byte list of " + value.length + " bytes, at most " + maxSize + " allowed");
+      }
       byteLists.add(value);
       return this;
     }
 
     private Writer uint(final long value, final int size) {
-      checkArgument(
-          value >= 0 && value < 1L << (8 * size), "uint" + 8 * size + " out of range: " + value);
-      final ByteArrayOutputStream out = fixed();
-      for (int i = 0; i < size; i++) {
-        out.write((int) (value >>> (8 * i)));
+      if (value < 0 || value >= 1L << (8 * size)) {
+        throw new IllegalArgumentException("uint" + 8 * size + " out of range: " + value);
       }
+      requireFixed();
+      final byte[] bytes = new byte[size];
+      for (int i = 0; i < size; i++) {
+        bytes[i] = (byte) (value >>> (8 * i));
+      }
+      fixed.add(bytes);
+      fixedLength += size;
       return this;
     }
 
-    private ByteArrayOutputStream fixed() {
+    private void requireFixed() {
       if (!byteLists.isEmpty()) {
         throw new IllegalStateException("Fixed fields must come before byte lists");
       }
-      return fixed;
     }
 
     byte[] toBytes() {
-      final int fixedSize = fixed.size() + BYTES_PER_LENGTH_OFFSET * byteLists.size();
+      final int fixedSize = fixedLength + BYTES_PER_LENGTH_OFFSET * byteLists.size();
       int size = fixedSize;
       for (final byte[] byteList : byteLists) {
         size += byteList.length;
       }
       final ByteBuffer out = ByteBuffer.allocate(size).order(LITTLE_ENDIAN);
-      out.put(fixed.toByteArray());
+      for (final byte[] part : fixed) {
+        out.put(part);
+      }
       int offset = fixedSize;
       for (final byte[] byteList : byteLists) {
         out.putInt(offset);
+        out.put(offset, byteList);
         offset += byteList.length;
-      }
-      for (final byte[] byteList : byteLists) {
-        out.put(byteList);
       }
       return out.array();
     }
@@ -224,12 +234,14 @@ final class Ssz {
         readOffsets();
       }
       final int count = bounds.length - 1;
-      checkBody(
-          nextByteList < count,
-          "has " + count + " byte lists, expected at least " + (nextByteList + 1));
+      if (nextByteList >= count) {
+        throw malformed("has " + count + " byte lists, expected at least " + (nextByteList + 1));
+      }
       final int from = bounds[nextByteList];
       final int to = bounds[++nextByteList];
-      checkBody(to - from <= maxSize, "byte list longer than " + maxSize);
+      if (to - from > maxSize) {
+        throw malformed("byte list longer than " + maxSize);
+      }
       final byte[] value = new byte[to - from];
       in.get(from, value);
       return value;
@@ -256,12 +268,11 @@ final class Ssz {
       final int count = (int) (fixedSize - start) / BYTES_PER_LENGTH_OFFSET;
       bounds = new int[count + 1];
       bounds[0] = (int) fixedSize;
-      for (int i = 1; i < count; i++) {
-        // read signed: an offset of 2^31 or more is negative, so the order check refuses it
-        bounds[i] = in.getInt();
-      }
-      bounds[count] = in.limit();
       for (int i = 1; i <= count; i++) {
+        // read signed: an offset of 2^31 or more is negative, so the order check refuses it; the
+        // end
+        // of the body closes the last byte list
+        bounds[i] = i < count ? in.getInt() : in.limit();
         checkBody(bounds[i] >= bounds[i - 1], "offsets decrease or point past the end");
       }
     }
@@ -277,6 +288,11 @@ final class Ssz {
 
     void checkBody(final boolean valid, final String reason) throws IOException {
       Ssz.checkBody(valid, what, reason);
+    }
+
+    /** The {@link IOException} of a malformed body, for the caller to throw. */
+    IOException malformed(final String reason) {
+      return new IOException("Malformed " + what + ": " + reason);
     }
   }
 }

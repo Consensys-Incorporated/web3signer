@@ -15,6 +15,7 @@ package tech.pegasys.web3signer.enclave.client;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import tech.pegasys.web3signer.enclave.protocol.Frames;
 import tech.pegasys.web3signer.enclave.protocol.Frames.Frame;
@@ -28,11 +29,13 @@ import tech.pegasys.web3signer.enclave.protocol.UnsupportedProtocolVersionExcept
 import tech.pegasys.web3signer.enclave.transport.Connection;
 
 import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -153,7 +156,8 @@ class EnclaveClientTest {
   @Test
   void concurrentCallersEachGetTheirOwnAnswerOverAtMostThePoolSize() throws Exception {
     final ScriptedTcpServer server = answeringServer(2);
-    final EnclaveClient client = client(server, new EnclaveClient.Options(4, 10_000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(4, Duration.ofSeconds(10)));
     final int calls = 50;
     final CountDownLatch start = new CountDownLatch(1);
     try (ExecutorService callers = Executors.newFixedThreadPool(calls)) {
@@ -179,7 +183,8 @@ class EnclaveClientTest {
   @Test
   void sequentialCallsReuseOneConnection() throws IOException {
     final ScriptedTcpServer server = answeringServer(0);
-    final EnclaveClient client = client(server, new EnclaveClient.Options(4, 5000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(4, Duration.ofSeconds(5)));
     for (int i = 0; i < 5; i++) {
       assertThat(client.sign(PUBLIC_KEY, root(i))).isEqualTo(signature(i));
     }
@@ -199,7 +204,7 @@ class EnclaveClientTest {
   void aCallerWaitsForAFreeConnectionNoLongerThanTheRequestTimeout() throws Exception {
     final CountDownLatch connecting = new CountDownLatch(1);
     final EnclaveClient client =
-        client(hungConnector(connecting), new EnclaveClient.Options(1, 300));
+        client(hungConnector(connecting), new EnclaveClient.Options(1, Duration.ofMillis(300)));
     Thread.ofVirtual().start(() -> client.sign(PUBLIC_KEY, root(1))); // holds the only connection
     assertThat(connecting.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -212,14 +217,20 @@ class EnclaveClientTest {
 
   @Test
   void optionsAndProvisioningTimeoutAreChecked() throws IOException {
-    assertThatThrownBy(() -> new EnclaveClient.Options(0, 1000))
+    assertThatThrownBy(() -> new EnclaveClient.Options(0, Duration.ofSeconds(1)))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> new EnclaveClient.Options(1, 0))
+    assertThatThrownBy(() -> new EnclaveClient.Options(1, Duration.ofMillis(0)))
         .isInstanceOf(IllegalArgumentException.class);
     final EnclaveClient client = client(answeringServer(0), EnclaveClient.Options.DEFAULT);
     for (final Duration timeout :
-        new Duration[] {Duration.ZERO, Duration.ofMillis(Integer.MAX_VALUE + 1L)}) {
+        new Duration[] {
+          Duration.ZERO,
+          Duration.ofMillis(Integer.MAX_VALUE + 1L),
+          Duration.ofSeconds(Long.MAX_VALUE)
+        }) {
       assertThatThrownBy(() -> client.openProvisioningSession(timeout))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> new EnclaveClient.Options(1, timeout))
           .isInstanceOf(IllegalArgumentException.class);
     }
   }
@@ -241,7 +252,9 @@ class EnclaveClientTest {
             });
     final AtomicInteger connects = new AtomicInteger();
     final EnclaveClient client =
-        client(countingConnector(server, connects), new EnclaveClient.Options(1, 10_000));
+        client(
+            countingConnector(server, connects),
+            new EnclaveClient.Options(1, Duration.ofSeconds(10)));
     assertThat(client.sign(PUBLIC_KEY, root(1))).isEqualTo(signature(1)); // pools the connection
     try (ExecutorService caller = Executors.newSingleThreadExecutor()) {
       final Future<byte[]> result = caller.submit(() -> client.sign(PUBLIC_KEY, root(2)));
@@ -267,7 +280,8 @@ class EnclaveClientTest {
                 self.read(connection); // never answers, like a release waiting for approval
               }
             });
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 2000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(2)));
     final ProvisioningSession session = client.openProvisioningSession(Duration.ofMinutes(1));
     resources.add(session);
     try (ExecutorService caller = Executors.newSingleThreadExecutor()) {
@@ -284,7 +298,7 @@ class EnclaveClientTest {
   void aCallerInterruptedWhileWaitingForAConnectionFailsAndStaysInterrupted() throws Exception {
     final CountDownLatch connecting = new CountDownLatch(1);
     final EnclaveClient client =
-        client(hungConnector(connecting), new EnclaveClient.Options(1, 60_000));
+        client(hungConnector(connecting), new EnclaveClient.Options(1, Duration.ofSeconds(60)));
     Thread.ofVirtual().start(() -> client.sign(PUBLIC_KEY, root(1))); // holds the only connection
     assertThat(connecting.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -333,7 +347,7 @@ class EnclaveClientTest {
                 }
               };
             },
-            new EnclaveClient.Options(1, 60_000));
+            new EnclaveClient.Options(1, Duration.ofSeconds(60)));
     try (ExecutorService caller = Executors.newSingleThreadExecutor()) {
       final Future<byte[]> result = caller.submit(() -> client.sign(PUBLIC_KEY, root(1)));
       assertThat(connecting.await(5, TimeUnit.SECONDS)).isTrue();
@@ -352,7 +366,7 @@ class EnclaveClientTest {
   void closeFailsTheCallersWaitingForAConnection() throws Exception {
     final CountDownLatch connecting = new CountDownLatch(1);
     final EnclaveClient client =
-        client(hungConnector(connecting), new EnclaveClient.Options(1, 60_000));
+        client(hungConnector(connecting), new EnclaveClient.Options(1, Duration.ofSeconds(60)));
     Thread.ofVirtual().start(() -> client.sign(PUBLIC_KEY, root(1))); // holds the only connection
     assertThat(connecting.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -394,7 +408,8 @@ class EnclaveClientTest {
                 ScriptedTcpServer.respondToSign(connection, self.read(connection));
               }
             });
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(5)));
     assertThat(client.sign(PUBLIC_KEY, root(1))).isEqualTo(signature(1));
     assertThat(client.sign(PUBLIC_KEY, root(2))).isEqualTo(signature(2));
     assertThat(server.connectionCount()).isEqualTo(2);
@@ -405,7 +420,8 @@ class EnclaveClientTest {
   @Test
   void aFailureOnANewConnectionIsNotRetried() throws IOException {
     final ScriptedTcpServer server = server((self, connection, index) -> self.read(connection));
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(5)));
     assertThatThrownBy(() -> client.sign(PUBLIC_KEY, root(1)))
         .isInstanceOf(EnclaveUnavailableException.class)
         .hasMessageContaining("unavailable");
@@ -423,7 +439,8 @@ class EnclaveClientTest {
                 self.read(connection); // silent from the second request on
               }
             });
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 300));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofMillis(300)));
     assertThat(client.sign(PUBLIC_KEY, root(1))).isEqualTo(signature(1));
 
     final long start = System.nanoTime();
@@ -436,7 +453,8 @@ class EnclaveClientTest {
 
   @Test
   void silentServerTimesOutWithinTheConfiguredTime() throws IOException {
-    final EnclaveClient client = client(silentServer(), new EnclaveClient.Options(1, 300));
+    final EnclaveClient client =
+        client(silentServer(), new EnclaveClient.Options(1, Duration.ofMillis(300)));
     final long start = System.nanoTime();
     assertThatThrownBy(() -> client.sign(PUBLIC_KEY, root(1)))
         .isInstanceOf(EnclaveUnavailableException.class)
@@ -467,7 +485,7 @@ class EnclaveClientTest {
                 }
               };
             },
-            new EnclaveClient.Options(2, 1000));
+            new EnclaveClient.Options(2, Duration.ofSeconds(1)));
     for (int i = 0; i < 3; i++) {
       assertThatThrownBy(client::status).isInstanceOf(OutOfMemoryError.class);
     }
@@ -496,7 +514,7 @@ class EnclaveClientTest {
                 }
               };
             },
-            new EnclaveClient.Options(1, 1000));
+            new EnclaveClient.Options(1, Duration.ofSeconds(1)));
     final ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT);
     assertThatThrownBy(session::status).isInstanceOf(OutOfMemoryError.class);
     assertThat(closed).containsExactly(true);
@@ -509,7 +527,7 @@ class EnclaveClientTest {
             (connectTimeout, ioTimeout) -> {
               throw new IOException("connection refused");
             },
-            new EnclaveClient.Options(1, 300));
+            new EnclaveClient.Options(1, Duration.ofMillis(300)));
     assertThatThrownBy(() -> client.sign(PUBLIC_KEY, root(1)))
         .isInstanceOf(EnclaveUnavailableException.class)
         .hasRootCauseMessage("connection refused");
@@ -551,7 +569,8 @@ class EnclaveClientTest {
                         Messages.encodeSignature(ScriptedTcpServer.fakeSignature(root))));
               }
             });
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(5)));
     assertThat(client.sign(PUBLIC_KEY, root(2))).isEqualTo(signature(2));
     assertThat(client.sign(PUBLIC_KEY, root(3))).isEqualTo(signature(3));
     assertThat(server.connectionCount()).isEqualTo(2);
@@ -568,7 +587,8 @@ class EnclaveClientTest {
               final byte[] second = index == 0 ? Arrays.copyOf(status, 20) : status;
               ScriptedTcpServer.respond(connection, self.read(connection), Protocol.OK, second);
             });
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(5)));
     assertThat(client.status().cpus()).isEqualTo(2);
     assertThat(client.status().cpus()).isEqualTo(2);
     assertThat(server.connectionCount()).isEqualTo(2);
@@ -591,7 +611,9 @@ class EnclaveClientTest {
             });
     final AtomicInteger connects = new AtomicInteger();
     final EnclaveClient client =
-        client(countingConnector(server, connects), new EnclaveClient.Options(1, 5000));
+        client(
+            countingConnector(server, connects),
+            new EnclaveClient.Options(1, Duration.ofSeconds(5)));
     client.status(); // pools the connection, so the refused STATUS is one a failure could resend
     assertThatThrownBy(client::status)
         .isInstanceOfSatisfying(
@@ -609,7 +631,8 @@ class EnclaveClientTest {
               ScriptedTcpServer.respond(connection, self.read(connection), Protocol.OK, body);
               self.read(connection); // the session closes instead of sending more
             });
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(5)));
     try (ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT)) {
       assertThatThrownBy(session::status)
           .isInstanceOfSatisfying(
@@ -632,7 +655,8 @@ class EnclaveClientTest {
                     "no such key\nX".getBytes(US_ASCII));
               }
             });
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(5)));
     for (int i = 0; i < 2; i++) {
       assertThatThrownBy(() -> client.sign(PUBLIC_KEY, root(3)))
           .isInstanceOfSatisfying(
@@ -655,7 +679,8 @@ class EnclaveClientTest {
         0,
         Protocol.MAX_PUBLIC_KEYS_PAGE,
         Protocol.MAX_PUBLIC_KEYS_PAGE + 3,
-        2 * Protocol.MAX_PUBLIC_KEYS_PAGE
+        2 * Protocol.MAX_PUBLIC_KEYS_PAGE,
+        Protocol.MAX_KEYS
       })
   void publicKeysPagesThroughTheKeySet(final int keyCount) throws IOException {
     final ScriptedTcpServer server =
@@ -665,7 +690,7 @@ class EnclaveClientTest {
                 final Frame request = self.read(connection);
                 if (request.kind() == Protocol.STATUS) {
                   ScriptedTcpServer.respond(
-                      connection, request, Protocol.OK, ScriptedTcpServer.status(1));
+                      connection, request, Protocol.OK, ScriptedTcpServer.status(1, keyCount));
                   continue;
                 }
                 final PublicKeysRequest page = Messages.decodePublicKeysRequest(request.body());
@@ -679,7 +704,8 @@ class EnclaveClientTest {
                     connection, request, Protocol.OK, Messages.encodePublicKeys(keys));
               }
             });
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(5)));
     final List<byte[]> keys = client.publicKeys();
     assertThat(keys).hasSize(keyCount);
     for (int i = 0; i < keyCount; i++) {
@@ -687,6 +713,72 @@ class EnclaveClientTest {
     }
     // STATUS, the full pages, a short or empty page, STATUS
     assertThat(server.received).hasSize(keyCount / Protocol.MAX_PUBLIC_KEYS_PAGE + 3);
+  }
+
+  @Test
+  void publicKeysFromASignerThatKeepsFillingPagesFail() throws IOException {
+    final List<byte[]> fullPage = Collections.nCopies(Protocol.MAX_PUBLIC_KEYS_PAGE, key(0));
+    final ScriptedTcpServer server =
+        server(
+            (self, connection, index) -> {
+              while (true) {
+                final Frame request = self.read(connection);
+                // ignores the offset: every page is full
+                final byte[] body =
+                    request.kind() == Protocol.STATUS
+                        ? ScriptedTcpServer.status(1)
+                        : Messages.encodePublicKeys(fullPage);
+                ScriptedTcpServer.respond(connection, request, Protocol.OK, body);
+              }
+            });
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(5)));
+    assertThatThrownBy(client::publicKeys)
+        .isInstanceOf(EnclaveUnavailableException.class)
+        .hasMessage("Enclave signer listed more than " + Protocol.MAX_KEYS + " keys");
+    // STATUS, then one full page past MAX_KEYS, and no second STATUS
+    assertThat(server.received).hasSize(1 + Protocol.MAX_KEYS / Protocol.MAX_PUBLIC_KEYS_PAGE + 1);
+  }
+
+  /** A signer that holds 10 keys, but lists {@code listed} of them before a short page. */
+  private ScriptedTcpServer miscountingServer(final int listed) throws IOException {
+    return server(
+        (self, connection, index) -> {
+          while (true) {
+            final Frame request = self.read(connection);
+            if (request.kind() == Protocol.STATUS) {
+              ScriptedTcpServer.respond(
+                  connection, request, Protocol.OK, ScriptedTcpServer.status(1, 10));
+              continue;
+            }
+            final List<byte[]> keys = new ArrayList<>();
+            if (Messages.decodePublicKeysRequest(request.body()).offset() == 0) {
+              for (int i = 0; i < listed; i++) {
+                keys.add(key(i));
+              }
+            }
+            ScriptedTcpServer.respond(
+                connection, request, Protocol.OK, Messages.encodePublicKeys(keys));
+          }
+        });
+  }
+
+  @Test
+  void publicKeysThatEndBeforeTheKeyCountAreRefused() throws IOException {
+    final EnclaveClient client =
+        client(miscountingServer(5), new EnclaveClient.Options(1, Duration.ofSeconds(5)));
+    assertThatThrownBy(client::publicKeys)
+        .isInstanceOf(EnclaveUnavailableException.class)
+        .hasMessage("Enclave signer listed 5 keys, but holds 10 to 10");
+  }
+
+  @Test
+  void publicKeysBeyondTheKeyCountAreRefused() throws IOException {
+    final EnclaveClient client =
+        client(miscountingServer(12), new EnclaveClient.Options(1, Duration.ofSeconds(5)));
+    assertThatThrownBy(client::publicKeys)
+        .isInstanceOf(EnclaveUnavailableException.class)
+        .hasMessage("Enclave signer listed 12 keys, but holds 10 to 10");
   }
 
   @Test
@@ -712,7 +804,8 @@ class EnclaveClientTest {
                 }
               }
             });
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(5)));
     assertThatThrownBy(client::publicKeys)
         .isInstanceOf(EnclaveUnavailableException.class)
         .hasMessageContaining("restarted");
@@ -939,7 +1032,8 @@ class EnclaveClientTest {
   @Test
   void loadingNoKeysSendsNothing() throws IOException {
     final ScriptedTcpServer server = server((self, connection, index) -> self.read(connection));
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(5)));
     try (ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT)) {
       assertThat(session.loadKeys(List.of())).isEqualTo(KeyLoadCounts.EMPTY);
     }
@@ -949,7 +1043,8 @@ class EnclaveClientTest {
   @Test
   void aSessionUsedAfterCloseFailsWithoutSending() throws IOException {
     final ScriptedTcpServer server = server((self, connection, index) -> self.read(connection));
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 5000));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofSeconds(5)));
     final ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT);
     session.close();
     assertThatThrownBy(session::status)
@@ -968,9 +1063,58 @@ class EnclaveClientTest {
               ScriptedTcpServer.respond(
                   connection, request, Protocol.OK, Messages.encodeUnwrapDekResponse());
             });
-    final EnclaveClient client = client(server, new EnclaveClient.Options(1, 200));
+    final EnclaveClient client =
+        client(server, new EnclaveClient.Options(1, Duration.ofMillis(200)));
     try (ProvisioningSession session = client.openProvisioningSession(PROVISIONING_TIMEOUT)) {
       session.unwrapDek(Protocol.BLOB_FORMAT_CMS, new byte[10]);
     }
+  }
+
+  @Test
+  void aProvisioningSessionGivesUpAfterItsTimeout() throws IOException {
+    final EnclaveClient client =
+        client(silentServer(), new EnclaveClient.Options(1, Duration.ofSeconds(5)));
+    try (ProvisioningSession session = client.openProvisioningSession(Duration.ofMillis(300))) {
+      final long start = System.nanoTime();
+      assertTimeoutPreemptively(
+          Duration.ofSeconds(10),
+          () ->
+              assertThatThrownBy(() -> session.unwrapDek(Protocol.BLOB_FORMAT_CMS, new byte[10]))
+                  .isInstanceOf(EnclaveUnavailableException.class)
+                  .hasMessage("Provisioning connection failed")
+                  .hasCauseInstanceOf(SocketTimeoutException.class));
+      assertThat(millisSince(start)).isBetween(250L, 3000L);
+    }
+  }
+
+  @Test
+  void aProvisioningSessionCannotOpenOnAClosedClient() {
+    final AtomicInteger connects = new AtomicInteger();
+    final EnclaveClient client =
+        client(
+            (connectTimeout, ioTimeout) -> {
+              connects.incrementAndGet();
+              throw new IOException("not expected");
+            },
+            EnclaveClient.Options.DEFAULT);
+    client.close();
+    assertThatThrownBy(() -> client.openProvisioningSession(PROVISIONING_TIMEOUT))
+        .isInstanceOf(EnclaveUnavailableException.class)
+        .hasMessage("Enclave client is closed");
+    assertThat(connects).hasValue(0);
+  }
+
+  @Test
+  void aProvisioningSessionThatCannotConnectReportsWhy() {
+    final EnclaveClient client =
+        client(
+            (connectTimeout, ioTimeout) -> {
+              throw new IOException("connection refused");
+            },
+            EnclaveClient.Options.DEFAULT);
+    assertThatThrownBy(() -> client.openProvisioningSession(PROVISIONING_TIMEOUT))
+        .isInstanceOf(EnclaveUnavailableException.class)
+        .hasMessage("Enclave signer unavailable")
+        .hasRootCauseMessage("connection refused");
   }
 }

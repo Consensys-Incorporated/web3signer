@@ -36,7 +36,8 @@ public final class Frames {
   public record Frame(int requestId, int kind, byte[] body) {}
 
   /**
-   * Writes one frame with one write.
+   * Writes one frame: the header, then the body as it is, so that a body is never copied while a
+   * slow peer holds up the write.
    *
    * @throws IllegalArgumentException when the kind does not fit a {@code Uint8} or the body is
    *     above {@link Protocol#MAX_BODY_SIZE}
@@ -49,9 +50,15 @@ public final class Frames {
     if (frame.kind() < 0 || frame.kind() > 0xff) {
       throw new IllegalArgumentException("Frame kind out of range: " + frame.kind());
     }
-    final ByteBuffer out = ByteBuffer.allocate(HEADER_SIZE + body.length).order(LITTLE_ENDIAN);
-    out.putInt(body.length).putInt(frame.requestId()).put((byte) frame.kind()).put(body);
-    connection.write(out.array(), 0, out.capacity());
+    final byte[] header =
+        ByteBuffer.allocate(HEADER_SIZE)
+            .order(LITTLE_ENDIAN)
+            .putInt(body.length)
+            .putInt(frame.requestId())
+            .put((byte) frame.kind())
+            .array();
+    connection.write(header, 0, HEADER_SIZE);
+    connection.write(body, 0, body.length);
   }
 
   /** Reads one response. A length above {@link Protocol#MAX_BODY_SIZE} throws before the body. */

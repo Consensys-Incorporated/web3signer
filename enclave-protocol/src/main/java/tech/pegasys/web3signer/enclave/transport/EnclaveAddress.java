@@ -28,8 +28,8 @@ public sealed interface EnclaveAddress
   /**
    * Connects to this address.
    *
-   * @param connectTimeoutMillis connect timeout for TCP; the kernel bounds a vsock connect (about 2
-   *     s); 0 waits forever
+   * @param connectTimeoutMillis connect timeout; 0 waits forever on TCP and keeps the kernel's
+   *     default of 2 s on vsock
    * @param ioTimeoutMillis read and write timeout; 0 waits forever
    */
   Connection connect(int connectTimeoutMillis, int ioTimeoutMillis) throws IOException;
@@ -59,7 +59,7 @@ public sealed interface EnclaveAddress
     @Override
     public Connection connect(final int connectTimeoutMillis, final int ioTimeoutMillis)
         throws IOException {
-      return Vsock.connect((int) cid, (int) port, ioTimeoutMillis);
+      return Vsock.connect((int) cid, (int) port, connectTimeoutMillis, ioTimeoutMillis);
     }
 
     @Override
@@ -135,6 +135,10 @@ public sealed interface EnclaveAddress
       // the kernel would bind a random port, which address() could not report
       if (number == VMADDR_PORT_ANY) {
         throw invalid(value, "port " + number + " means any port");
+      }
+      // unlike TCP, port 0 is an ordinary (privileged) vsock port
+      if (number == 0) {
+        throw invalid(value, "port 0 does not mean any port on vsock");
       }
       return vsock(VMADDR_CID_ANY, number);
     }

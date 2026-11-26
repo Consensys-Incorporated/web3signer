@@ -101,6 +101,7 @@ class EnclaveAddressTest {
         "vsock:16:5000",
         "vsock:x",
         "vsock:4294967295",
+        "vsock:0",
         "tcp:5000",
         "tcp::5000",
         "tcp:h:70000"

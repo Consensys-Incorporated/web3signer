@@ -75,7 +75,7 @@ public final class Protocol {
   public static final int MAX_RELEASE_KEY_SIZE = 2048;
   public static final int MAX_EVIDENCE_SIZE = 65_536;
   public static final int MAX_BLOB_SIZE = 65_536;
-  public static final int MAX_PUBLIC_KEYS_PAGE = 16_384;
+  public static final int MAX_PUBLIC_KEYS_PAGE = 4096;
   public static final int MAX_LOAD_KEYS = 4096;
 
   /**

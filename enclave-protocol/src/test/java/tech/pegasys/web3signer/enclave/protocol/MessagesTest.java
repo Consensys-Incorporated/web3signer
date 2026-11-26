@@ -28,12 +28,15 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class MessagesTest {
   private static final byte[] BOOT_ID = new byte[16];
@@ -107,6 +110,39 @@ class MessagesTest {
   }
 
   @Test
+  void aFrameIsWrittenAsItsHeaderThenItsBodyUncopied() throws IOException {
+    for (final int size : new int[] {0, 80, 100_000}) {
+      final byte[] body = new byte[size];
+      Arrays.fill(body, (byte) size);
+      final List<byte[]> writes = new ArrayList<>();
+      final ByteArrayOutputStream stream = new ByteArrayOutputStream();
+      final Connection recording =
+          new Connection() {
+            @Override
+            public int read(final byte[] buffer, final int offset, final int length) {
+              return -1;
+            }
+
+            @Override
+            public void write(final byte[] buffer, final int offset, final int length) {
+              writes.add(buffer);
+              stream.write(buffer, offset, length);
+            }
+
+            @Override
+            public void close() {}
+          };
+      Frames.write(recording, new Frame(7, Protocol.OK, body));
+      assertThat(writes).hasSize(2);
+      assertThat(writes.get(0)).hasSize(Frames.HEADER_SIZE);
+      assertThat(writes.get(1)).isSameAs(body);
+      final Frame read = read(stream.toByteArray());
+      assertThat(read.requestId()).isEqualTo(7);
+      assertThat(read.body()).isEqualTo(body);
+    }
+  }
+
+  @Test
   void aBodyAboveTheLimitIsRejectedBeforeItIsRead() {
     final byte[] header = new byte[Frames.HEADER_SIZE];
     putUint32(header, 0, Protocol.MAX_BODY_SIZE + 1L);
@@ -165,9 +201,13 @@ class MessagesTest {
     }
   }
 
-  @Test
-  void anUnknownOpcodesBodyIsDiscardedAndTheNextRequestIsRead() throws IOException {
-    final byte[] unknown = frame(1, 0x7f, new byte[Protocol.MAX_BODY_SIZE]);
+  /** Lengths around the 4 KB pieces that discard reads, so a last partial piece is covered. */
+  @ParameterizedTest
+  @ValueSource(ints = {0, 1, 4095, 4096, 4097, Protocol.MAX_BODY_SIZE})
+  void anUnknownOpcodesBodyIsDiscardedAndTheNextRequestIsRead(final int length) throws IOException {
+    final byte[] body = new byte[length];
+    Arrays.fill(body, (byte) 0x5a);
+    final byte[] unknown = frame(1, 0x7f, body);
     final byte[] status = frame(2, Protocol.STATUS, new byte[0]);
     final byte[] stream = Arrays.copyOf(unknown, unknown.length + status.length);
     System.arraycopy(status, 0, stream, unknown.length, status.length);
@@ -180,6 +220,7 @@ class MessagesTest {
     final Frame second = Frames.readRequest(connection);
     assertThat(second.requestId()).isEqualTo(2);
     assertThat(second.kind()).isEqualTo(Protocol.STATUS);
+    assertThat(second.body()).isEmpty();
   }
 
   @Test

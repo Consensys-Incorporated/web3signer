@@ -14,6 +14,7 @@ package tech.pegasys.web3signer.enclave.transport;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
+import static java.lang.foreign.ValueLayout.JAVA_LONG;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
@@ -298,6 +299,42 @@ class VsockTest {
           .isInstanceOf(SocketException.class);
       assertThatThrownBy(() -> peerOfReused.read(new byte[1], 0, 1))
           .isInstanceOf(SocketTimeoutException.class);
+    }
+  }
+
+  /** The connect timeout is set on the socket before connect, in the kernel's own units. */
+  @Test
+  void theConnectTimeoutReachesTheKernel() throws Throwable {
+    final Linker linker = Linker.nativeLinker();
+    final MethodHandle socket =
+        linker.downcallHandle(
+            linker.defaultLookup().find("socket").orElseThrow(),
+            FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT));
+    final MethodHandle getsockopt =
+        linker.downcallHandle(
+            linker.defaultLookup().find("getsockopt").orElseThrow(),
+            FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, ADDRESS, ADDRESS));
+    final MethodHandle close =
+        linker.downcallHandle(
+            linker.defaultLookup().find("close").orElseThrow(),
+            FunctionDescriptor.of(JAVA_INT, JAVA_INT));
+    final int fd = (int) socket.invokeExact(40 /* AF_VSOCK */, 1 /* SOCK_STREAM */, 0);
+    Assumptions.assumeTrue(fd >= 0, "no AF_VSOCK support");
+    try (Arena arena = Arena.ofConfined()) {
+      Vsock.setConnectTimeout(fd, 750);
+      final MemorySegment timeval = arena.allocate(16, 8);
+      final MemorySegment length = arena.allocate(JAVA_INT);
+      length.set(JAVA_INT, 0, 16);
+      final int rc =
+          (int)
+              getsockopt.invokeExact(
+                  fd, 40, 6 /* SO_VM_SOCKETS_CONNECT_TIMEOUT */, timeval, length);
+      assertThat(rc).isZero();
+      final long millis = timeval.get(JAVA_LONG, 0) * 1000 + timeval.get(JAVA_LONG, 8) / 1000;
+      // kept in clock ticks, so it can come back a few ms longer
+      assertThat(millis).isBetween(750L, 760L);
+    } finally {
+      final int _ = (int) close.invokeExact(fd);
     }
   }
 
