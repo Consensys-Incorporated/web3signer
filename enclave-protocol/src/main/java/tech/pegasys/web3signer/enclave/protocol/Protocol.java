@@ -31,7 +31,7 @@ public final class Protocol {
   public static final int BAD_REQUEST = 1;
   public static final int INTERNAL_ERROR = 2;
 
-  /** The enclave does not hold the key a {@code SIGN} asked for. */
+  /** Initialized, but missing the key a {@code SIGN} asked for; see {@link #NOT_INITIALIZED}. */
   public static final int RESOURCE_UNAVAILABLE = 3;
 
   public static final int UNSUPPORTED = 128;
@@ -41,6 +41,9 @@ public final class Protocol {
 
   /** A {@code LOAD_KEYS} would take the signer past {@link #MAX_KEYS}. */
   public static final int KEY_LIMIT_REACHED = 132;
+
+  /** A {@code SIGN} before any {@code LOAD_KEYS} was answered {@code OK}; not about key count. */
+  public static final int NOT_INITIALIZED = 133;
 
   // Platforms reported by STATUS
   public static final int PLATFORM_DEV = 0;
@@ -126,6 +129,7 @@ public final class Protocol {
       case UNWRAP_FAILED -> "UNWRAP_FAILED";
       case EVIDENCE_FAILED -> "EVIDENCE_FAILED";
       case KEY_LIMIT_REACHED -> "KEY_LIMIT_REACHED";
+      case NOT_INITIALIZED -> "NOT_INITIALIZED";
       default -> "RESULT_" + result;
     };
   }

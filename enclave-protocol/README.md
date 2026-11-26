@@ -298,7 +298,11 @@ Response Content:
 ```
 
 Signs the 32-byte signing root with the key whose compressed public key is `pubkey`, and returns the
-compressed signature. A key the signer does not hold is answered with `RESOURCE_UNAVAILABLE`.
+compressed signature. A signer that has answered no `LOAD_KEYS` with `OK` since it started answers
+`NOT_INITIALIZED`. This depends on whether a load was answered `OK`, not on the key count: once
+initialized, a key the signer does not hold is answered with `RESOURCE_UNAVAILABLE`, even if every
+entry was rejected. A refused `LOAD_KEYS` (`BAD_REQUEST`, `KEY_LIMIT_REACHED`, `INVALID_STATE`)
+does not initialize the signer.
 Web3Signer's signing extension endpoint, which signs other payloads, is not available for enclave
 keys.
 
@@ -399,12 +403,13 @@ start at 128.
 | 0 | `OK` | Success |
 | 1 | `BAD_REQUEST` | Malformed body (req/resp `InvalidRequest`) |
 | 2 | `INTERNAL_ERROR` | The signer failed (req/resp `ServerError`) |
-| 3 | `RESOURCE_UNAVAILABLE` | The signer does not hold the key a `SIGN` asks for (req/resp `ResourceUnavailable`) |
+| 3 | `RESOURCE_UNAVAILABLE` | The signer is initialized but does not hold the key a `SIGN` asks for (req/resp `ResourceUnavailable`) |
 | 128 | `UNSUPPORTED` | Unknown opcode or blob format |
 | 129 | `INVALID_STATE` | Provisioning step out of order |
 | 130 | `UNWRAP_FAILED` | The release blob did not open |
 | 131 | `EVIDENCE_FAILED` | The platform produced no evidence |
 | 132 | `KEY_LIMIT_REACHED` | A `LOAD_KEYS` would take the signer past `MAX_KEYS` |
+| 133 | `NOT_INITIALIZED` | A `SIGN` reached a signer that has accepted no `LOAD_KEYS` since it started |
 
 ## Provisioning
 
@@ -455,6 +460,9 @@ Invariants:
 - **`LOAD_KEYS` only adds keys.** An entry is accepted only if GCM authenticates it, the secret is a
   valid BLS scalar, and its public key equals the entry's. Already loaded keys count as duplicates.
   Removing keys means restarting the enclave.
+- **The first `LOAD_KEYS` answered `OK` initializes the signer** until it restarts, whatever its
+  counts. From then on, a key not yet loaded answers `RESOURCE_UNAVAILABLE`, including keys of later
+  requests in the same run.
 - **Loading is not limited to the operator's keys.** GCM proves only that an entry was sealed under
   the unwrapped data key, not where that data key came from. The release key is public in the
   `GET_EVIDENCE` answer, so any process that can reach the signer can wrap a data key of its own and

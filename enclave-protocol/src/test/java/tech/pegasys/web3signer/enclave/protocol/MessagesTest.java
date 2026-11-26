@@ -185,6 +185,7 @@ class MessagesTest {
   @Test
   void resultCodesHaveNames() {
     assertThat(Protocol.resultName(Protocol.KEY_LIMIT_REACHED)).isEqualTo("KEY_LIMIT_REACHED");
+    assertThat(Protocol.resultName(Protocol.NOT_INITIALIZED)).isEqualTo("NOT_INITIALIZED");
     assertThat(Protocol.resultName(Protocol.EVIDENCE_FAILED)).isEqualTo("EVIDENCE_FAILED");
     assertThat(Protocol.resultName(200)).isEqualTo("RESULT_200");
   }
