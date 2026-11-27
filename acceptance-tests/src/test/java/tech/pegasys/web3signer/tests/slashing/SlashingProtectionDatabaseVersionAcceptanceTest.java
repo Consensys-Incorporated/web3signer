@@ -17,10 +17,10 @@ import static tech.pegasys.web3signer.dsl.utils.WaitUtils.waitFor;
 
 import tech.pegasys.web3signer.dsl.signer.Signer;
 import tech.pegasys.web3signer.dsl.signer.SignerConfigurationBuilder;
-import tech.pegasys.web3signer.dsl.utils.DatabaseUtil;
 
 import java.nio.file.Path;
 
+import db.DatabaseUtil;
 import org.jdbi.v3.core.Jdbi;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

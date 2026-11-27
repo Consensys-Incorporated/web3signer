@@ -17,6 +17,8 @@ import tech.pegasys.web3signer.slashingprotection.SlashingProtectionParameters;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
+import db.DatabaseUtil;
+
 public class TestSlashingProtectionParameters implements SlashingProtectionParameters {
 
   private final String dbUrl;
@@ -69,7 +71,7 @@ public class TestSlashingProtectionParameters implements SlashingProtectionParam
         pruningInterval,
         3000,
         3000,
-        true);
+        DatabaseUtil.DB_CONNECTION_POOL_ENABLED);
   }
 
   public TestSlashingProtectionParameters(

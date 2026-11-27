@@ -54,7 +54,7 @@ public class InterchangeV5ExporterTest {
   @Test
   public void populateInterchangeDataThrowsUncheckedIOException() {
     final DatabaseUtil.TestDatabaseInfo testDatabaseInfo = DatabaseUtil.createWithoutMigration();
-    final Jdbi jdbi = testDatabaseInfo.getJdbi();
+    final Jdbi jdbi = testDatabaseInfo.jdbi();
     final InterchangeV5Exporter exporter =
         new InterchangeV5Exporter(
             jdbi,
