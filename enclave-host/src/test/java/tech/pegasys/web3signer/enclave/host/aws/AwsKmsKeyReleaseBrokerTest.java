@@ -269,6 +269,7 @@ class AwsKmsKeyReleaseBrokerTest {
     assertThat(reEncrypt.getValue().sourceKeyId()).isEqualTo(KEY_ARN);
     assertThat(reEncrypt.getValue().sourceEncryptionContext()).isEqualTo(CONTEXT);
     assertThat(reEncrypt.getValue().destinationKeyId()).isEqualTo(KEY_ARN);
+    assertThat(reEncrypt.getValue().destinationEncryptionContext()).isEqualTo(CONTEXT);
 
     final ArgumentCaptor<CreateGrantRequest> grant =
         ArgumentCaptor.forClass(CreateGrantRequest.class);

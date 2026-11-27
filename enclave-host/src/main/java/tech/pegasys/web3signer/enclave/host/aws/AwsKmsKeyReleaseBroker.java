@@ -234,6 +234,8 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
         .sourceKeyId(dek.keyId())
         .sourceEncryptionContext(dek.encryptionContext())
         .destinationKeyId(dek.keyId())
+        // on both sides, so a policy that requires the context does not refuse for lack of it
+        .destinationEncryptionContext(dek.encryptionContext())
         .dryRun(true)
         .build();
   }
