@@ -1,0 +1,102 @@
+/*
+ * Copyright 2026 Consensys Incorporated.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+package tech.pegasys.web3signer.enclave.host;
+
+import tech.pegasys.web3signer.enclave.protocol.Messages.Evidence;
+import tech.pegasys.web3signer.enclave.protocol.Protocol;
+
+import java.util.Arrays;
+
+/**
+ * Creates data keys and releases them to an enclave whose evidence the provider accepts. One
+ * implementation per key release provider; the enclave only ever sees the release blob, a CMS
+ * EnvelopedData in format {@link Protocol#BLOB_FORMAT_CMS}.
+ */
+public interface KeyReleaseBroker extends AutoCloseable {
+
+  /**
+   * A new data key: the plaintext for sealing, and its wrapped form for the bundle. The plaintext
+   * is not copied, so that {@link #close()} zeroes the array the sealer used.
+   */
+  @SuppressWarnings("ArrayRecordComponent")
+  record DataKey(byte[] plaintext, KeyBundle.Dek dek) implements AutoCloseable {
+
+    /** Overwrites the plaintext data key with zeros. */
+    @Override
+    public void close() {
+      Arrays.fill(plaintext, (byte) 0);
+    }
+  }
+
+  /** The bundle {@code provider} this broker wraps and releases data keys for. */
+  String provider();
+
+  /** Fails when {@code dek} was wrapped by another provider. */
+  default void checkProvider(final KeyBundle.Dek dek) {
+    if (!provider().equals(dek.provider())) {
+      throw new IllegalArgumentException(
+          String.format(
+              "The bundle was sealed with provider %s, but the %s broker was given",
+              dek.provider(), provider()));
+    }
+  }
+
+  /** The {@code platform} the enclave must report for this provider. */
+  int expectedPlatform();
+
+  /** Fails when an enclave on {@code platform} cannot receive this provider's data keys. */
+  default void checkPlatform(final int platform) {
+    if (platform != expectedPlatform()) {
+      throw new IllegalArgumentException(
+          String.format(
+              "The %s broker releases data keys only to an enclave on platform %s, but the enclave"
+                  + " runs %s",
+              provider(),
+              Protocol.platformName(expectedPlatform()),
+              Protocol.platformName(platform)));
+    }
+  }
+
+  /** The evidence type this provider accepts, one of {@code Protocol.EVIDENCE_*}. */
+  int expectedEvidenceType();
+
+  /** Fails when {@code evidence} is not of the type this provider accepts. */
+  default void checkEvidenceType(final Evidence evidence) {
+    if (evidence.evidenceType() != expectedEvidenceType()) {
+      throw new IllegalArgumentException(
+          String.format(
+              "The %s broker accepts evidence type %d, but the enclave produced type %d",
+              provider(), expectedEvidenceType(), evidence.evidenceType()));
+    }
+  }
+
+  /** A new data key; the caller closes it to wipe the plaintext. */
+  DataKey newDataKey();
+
+  /**
+   * Asks the provider to release the data key to the release key that {@code evidence} binds.
+   *
+   * @return the release blob, in format {@link Protocol#BLOB_FORMAT_CMS}
+   * @throws IllegalArgumentException when {@code dek} or {@code evidence} is for another provider
+   */
+  byte[] release(KeyBundle.Dek dek, Evidence evidence);
+
+  /**
+   * Fails when the caller could obtain the data key without presenting evidence. A pass is only as
+   * strong as the checks the provider can make; see each implementation.
+   */
+  void assertEvidenceRequired(KeyBundle.Dek dek);
+
+  @Override
+  void close();
+}
