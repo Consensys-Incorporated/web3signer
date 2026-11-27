@@ -16,6 +16,7 @@ jar {
 
 dependencies {
   implementation project(":common")
+  implementation project(':enclave-protocol')
   implementation project(':keystorage')
   implementation project(":bls-keystore")
   implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
@@ -62,6 +63,7 @@ dependencies {
 
   // Test Fixtures dependencies
   testFixturesApi 'tech.pegasys.teku.internal:bls'
+  testFixturesApi project(':enclave-protocol')
   testFixturesImplementation 'com.fasterxml.jackson.core:jackson-databind'
   testFixturesImplementation 'org.apache.commons:commons-lang3'
   testFixturesImplementation 'org.apache.logging.log4j:log4j-api'
