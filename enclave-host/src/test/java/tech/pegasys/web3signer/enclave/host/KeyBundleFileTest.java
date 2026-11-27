@@ -18,10 +18,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import tech.pegasys.web3signer.enclave.protocol.Messages.SealedKey;
 
-import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -76,12 +75,11 @@ class KeyBundleFileTest {
   }
 
   @Test
-  void writeReplacesAnExistingBundle(@TempDir final Path dir) throws Exception {
-    final Path file = dir.resolve("keys.bundle.json");
-    Files.writeString(file, "old");
-    KeyBundleFile.write(BUNDLE, file);
-    assertThat(Files.readString(file)).isEqualTo(KeyBundleFile.toJson(BUNDLE));
-    assertThat(dir.toFile().list()).containsExactly("keys.bundle.json");
+  void writeRefusesToReplaceAnExistingFile(@TempDir final Path dir) throws Exception {
+    final Path file = Files.writeString(dir.resolve("keys.bundle.json"), "old");
+    assertThatThrownBy(() -> KeyBundleFile.write(BUNDLE, file))
+        .isInstanceOf(FileAlreadyExistsException.class);
+    assertThat(Files.readString(file)).isEqualTo("old");
   }
 
   @Test
@@ -92,60 +90,6 @@ class KeyBundleFileTest {
     final Path reference = Files.createFile(dir.resolve("reference"));
     assertThat(Files.getPosixFilePermissions(file))
         .isEqualTo(Files.getPosixFilePermissions(reference));
-  }
-
-  @ParameterizedTest
-  @ValueSource(strings = {"rw-r-----", "rw-rw-r--", "r--r--r--"})
-  void replacedBundleKeepsItsPermissions(final String permissions, @TempDir final Path dir)
-      throws Exception {
-    assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"));
-    final Path file = Files.writeString(dir.resolve("keys.bundle.json"), "old");
-    Files.setPosixFilePermissions(file, PosixFilePermissions.fromString(permissions));
-    KeyBundleFile.write(BUNDLE, file);
-    assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(file)))
-        .isEqualTo(permissions);
-    assertThat(KeyBundleFile.read(file).dek()).isEqualTo(BUNDLE.dek());
-    assertThat(dir.toFile().list()).containsExactly("keys.bundle.json");
-  }
-
-  @Test
-  void writeFollowsASymlinkAndKeepsIt(@TempDir final Path dir) throws Exception {
-    final Path real = Files.createDirectory(dir.resolve("real")).resolve("keys.bundle.json");
-    Files.writeString(real, "old");
-    final Path link =
-        createSymlinkOrSkip(dir.resolve("link.json"), Path.of("real/keys.bundle.json"));
-    KeyBundleFile.write(BUNDLE, link);
-    assertThat(Files.isSymbolicLink(link)).isTrue();
-    assertThat(Files.readString(real)).isEqualTo(KeyBundleFile.toJson(BUNDLE));
-    assertThat(real.getParent().toFile().list()).containsExactly("keys.bundle.json");
-  }
-
-  @Test
-  void writeCreatesTheFileADanglingSymlinkPointsTo(@TempDir final Path dir) throws Exception {
-    final Path real = dir.resolve("keys.bundle.json");
-    final Path link = createSymlinkOrSkip(dir.resolve("link.json"), real);
-    KeyBundleFile.write(BUNDLE, link);
-    assertThat(Files.isSymbolicLink(link)).isTrue();
-    assertThat(KeyBundleFile.read(real).dek()).isEqualTo(BUNDLE.dek());
-  }
-
-  @Test
-  void writeRefusesASymlinkLoop(@TempDir final Path dir) throws Exception {
-    final Path a = dir.resolve("a");
-    createSymlinkOrSkip(a, dir.resolve("b"));
-    createSymlinkOrSkip(dir.resolve("b"), a);
-    assertThatThrownBy(() -> KeyBundleFile.write(BUNDLE, a))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("Too many levels of symbolic links");
-  }
-
-  private static Path createSymlinkOrSkip(final Path link, final Path target) {
-    try {
-      return Files.createSymbolicLink(link, target);
-    } catch (final IOException | UnsupportedOperationException e) {
-      assumeTrue(false, "symbolic links not supported: " + e);
-      return link;
-    }
   }
 
   @Test
@@ -177,14 +121,12 @@ class KeyBundleFileTest {
     final String json = KeyBundleFile.toJson(BUNDLE).replace("0x" + "02".repeat(12), "0x0202");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("nonce");
+        .hasMessage("Sealed key has wrong field sizes");
   }
 
   static Stream<String> badPubkeys() {
     return Stream.of(
-        "01".repeat(48),
         "0X" + "01".repeat(48),
-        "0x" + "AB".repeat(48),
         "0x" + "01".repeat(47),
         "0x" + "01".repeat(47) + "0",
         "0x" + "zz".repeat(48));
@@ -192,11 +134,19 @@ class KeyBundleFileTest {
 
   @ParameterizedTest
   @MethodSource("badPubkeys")
-  void hexFieldsMustBeWrittenAsWeWriteThem(final String pubkey) {
+  void badHexIsRefused(final String pubkey) {
     final String json = KeyBundleFile.toJson(BUNDLE).replace("0x" + "01".repeat(48), pubkey);
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Key bundle field pubkey must be 0x followed by 96 lowercase hex digits");
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"0x", ""})
+  void hexIsReadLikeTheRestOfWeb3signer(final String prefix) {
+    // tuweni, as elsewhere: the 0x is optional and either case is read
+    final String json =
+        KeyBundleFile.toJson(BUNDLE).replace("0x" + "04".repeat(48), prefix + "0A".repeat(48));
+    assertThat(KeyBundleFile.fromJson(json).keys().get(1).pubKey()).containsOnly(0x0a);
   }
 
   @Test
@@ -204,7 +154,7 @@ class KeyBundleFileTest {
     final String json = KeyBundleFile.toJson(BUNDLE).replace("\"provider\" : \"aws-kms\",", "");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Key bundle field missing: provider");
+        .hasMessageStartingWith("Key bundle is not valid: Missing creator property 'provider'");
   }
 
   @Test
@@ -214,7 +164,7 @@ class KeyBundleFileTest {
             .replace(",\n    \"wrapped\" : \"BwcHBwcHBwcHBwcHBwcHBwcHBwc=\"", "");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Key bundle field missing: wrapped");
+        .hasMessageStartingWith("Key bundle is not valid: Missing creator property 'wrapped'");
   }
 
   @Test
@@ -232,7 +182,8 @@ class KeyBundleFileTest {
         KeyBundleFile.toJson(BUNDLE).replace("BwcHBwcHBwcHBwcHBwcHBwcHBwc=", "Bw!HBwc=");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Key bundle field is not base64: wrapped");
+        .hasMessageStartingWith(
+            "Key bundle is not valid: Cannot deserialize value of type `byte[]`");
   }
 
   @Test
@@ -242,7 +193,7 @@ class KeyBundleFileTest {
             + "\"encryptionContext\":{},\"wrapped\":\"AQID\"}}";
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Key bundle field missing: keys");
+        .hasMessageStartingWith("Key bundle is not valid: Missing creator property 'keys'");
   }
 
   private static final String KEY =
@@ -281,19 +232,19 @@ class KeyBundleFileTest {
   @CsvSource(
       delimiter = '|',
       value = {
-        "version as a string | \"1\" | \"dev\" | {} | AQID | Unsupported key bundle version",
-        "version true | true | \"dev\" | {} | AQID | Unsupported key bundle version",
-        "version 1.9 | 1.9 | \"dev\" | {} | AQID | Unsupported key bundle version",
+        "version as a string | \"1\" | \"dev\" | {} | AQID | Key bundle is not valid: Cannot coerce String",
+        "version true | true | \"dev\" | {} | AQID | Key bundle is not valid: Cannot deserialize value of type `int`",
+        "version 1.9 | 1.9 | \"dev\" | {} | AQID | Key bundle is not valid: Cannot coerce Floating-point",
         "unknown provider | 1 | \"bogus\" | {} | AQID | Unknown key bundle provider: bogus",
         "empty wrapped key | 1 | \"dev\" | {} | '' | The wrapped data key is empty",
         "context as an array | 1 | \"dev\" | [\"a\"] | AQID"
-            + " | Key bundle field missing: encryptionContext",
+            + " | Key bundle is not valid: Cannot deserialize value of type `java.util.LinkedHashMap",
         "context as a string | 1 | \"dev\" | \"a\" | AQID"
-            + " | Key bundle field missing: encryptionContext",
+            + " | Key bundle is not valid: Cannot construct instance of `java.util.LinkedHashMap`",
         "context object value | 1 | \"dev\" | {\"a\":{}} | AQID"
-            + " | Key bundle encryption context value is not a string: a",
+            + " | Key bundle is not valid: Cannot deserialize value of type `java.lang.String`",
         "context number value | 1 | \"dev\" | {\"a\":12} | AQID"
-            + " | Key bundle encryption context value is not a string: a",
+            + " | Key bundle is not valid: Cannot coerce Integer value (12) to `java.lang.String`",
       })
   void looseFieldsAreRefused(
       final String name,
@@ -314,14 +265,15 @@ class KeyBundleFileTest {
         KeyBundleFile.toJson(BUNDLE).replaceAll("\"encryptionContext\" : \\{[^}]*},", "");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Key bundle field missing: encryptionContext");
+        .hasMessageStartingWith(
+            "Key bundle is not valid: Missing creator property 'encryptionContext'");
   }
 
   @Test
   void missingDekIsRefused() {
     assertThatThrownBy(() -> KeyBundleFile.fromJson(bundle("1", "\"dev\"", KEY, "")))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Key bundle field missing: dek");
+        .hasMessageStartingWith("Key bundle is not valid: Cannot construct instance");
   }
 
   @Test
@@ -329,7 +281,15 @@ class KeyBundleFileTest {
     final String json = bundle("1", dek("\"aws-kms\",\"provider\":\"dev\"", "{}", "AQID"), KEY, "");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Key bundle is not valid JSON");
+        .hasMessageStartingWith("Key bundle is not valid: Duplicate field 'provider'");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"", "   ", "null"})
+  void emptyInputIsRefused(final String json) {
+    assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Key bundle is empty");
   }
 
   @Test
@@ -337,7 +297,7 @@ class KeyBundleFileTest {
     final String json = bundle("1", dek("\"dev\"", "{}", "AQID"), KEY, " {");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Key bundle is not valid JSON");
+        .hasMessageStartingWith("Key bundle is not valid: Trailing token");
   }
 
   @Test
