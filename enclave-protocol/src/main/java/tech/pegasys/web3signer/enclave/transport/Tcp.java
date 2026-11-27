@@ -1,0 +1,170 @@
+/*
+ * Copyright 2026 Consensys Incorporated.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+package tech.pegasys.web3signer.enclave.transport;
+
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/** TCP connections and listeners on plain {@link Socket} and {@link ServerSocket}. */
+final class Tcp {
+  private static final int BUFFER_SIZE = 64 * 1024;
+  private static final int BACKLOG = 128;
+
+  /** Ends timed-out writes; its one daemon thread starts with the first timed write. */
+  private static final ScheduledThreadPoolExecutor WRITE_WATCHDOG =
+      new ScheduledThreadPoolExecutor(
+          1,
+          runnable ->
+              Thread.ofPlatform().name("tcp-write-watchdog").daemon(true).unstarted(runnable));
+
+  static {
+    WRITE_WATCHDOG.setRemoveOnCancelPolicy(true);
+  }
+
+  private Tcp() {}
+
+  /**
+   * Connects to {@code host:port}.
+   *
+   * @param connectTimeoutMillis connect timeout; 0 waits forever
+   * @param ioTimeoutMillis read and write timeout; 0 waits forever
+   */
+  static Connection connect(
+      final String host, final int port, final int connectTimeoutMillis, final int ioTimeoutMillis)
+      throws IOException {
+    final Socket socket = new Socket();
+    try {
+      socket.connect(new InetSocketAddress(host, port), connectTimeoutMillis);
+      socket.setSoTimeout(ioTimeoutMillis);
+      return new TcpConnection(socket, ioTimeoutMillis);
+    } catch (final IOException | RuntimeException e) {
+      socket.close();
+      throw e;
+    }
+  }
+
+  static Listener listen(final String host, final int port) throws IOException {
+    final ServerSocket serverSocket = new ServerSocket();
+    try {
+      serverSocket.setReuseAddress(true);
+      serverSocket.bind(new InetSocketAddress(host, port), BACKLOG);
+      return new TcpListener(serverSocket, EnclaveAddress.tcp(host, serverSocket.getLocalPort()));
+    } catch (final IOException | RuntimeException e) {
+      serverSocket.close();
+      throw e;
+    }
+  }
+
+  private static final class TcpConnection implements Connection {
+    private final Socket socket;
+    private final InputStream in;
+    private final OutputStream out;
+    private final int writeTimeoutMillis;
+
+    /**
+     * @param writeTimeoutMillis limit of one {@link #write}; 0 waits forever
+     */
+    TcpConnection(final Socket socket, final int writeTimeoutMillis) throws IOException {
+      this.socket = socket;
+      this.writeTimeoutMillis = writeTimeoutMillis;
+      socket.setTcpNoDelay(true);
+      this.in = new BufferedInputStream(socket.getInputStream(), BUFFER_SIZE);
+      this.out = socket.getOutputStream();
+    }
+
+    @Override
+    public int read(final byte[] buffer, final int offset, final int length) throws IOException {
+      return in.read(buffer, offset, length);
+    }
+
+    /**
+     * Java sockets have no send timeout, so a write that outlasts the limit is ended by closing the
+     * socket, which wakes the blocked writer. The connection is unusable afterwards.
+     */
+    @Override
+    public void write(final byte[] buffer, final int offset, final int length) throws IOException {
+      if (writeTimeoutMillis == 0) {
+        out.write(buffer, offset, length);
+        return;
+      }
+      final AtomicBoolean claimed = new AtomicBoolean();
+      final ScheduledFuture<?> watchdog =
+          WRITE_WATCHDOG.schedule(
+              () -> {
+                if (claimed.compareAndSet(false, true)) {
+                  close();
+                }
+              },
+              writeTimeoutMillis,
+              TimeUnit.MILLISECONDS);
+      IOException failure = null;
+      try {
+        out.write(buffer, offset, length);
+      } catch (final IOException e) {
+        failure = e;
+      }
+      watchdog.cancel(false);
+      // whoever claims first decides: the watchdog closes the socket, or the write keeps it
+      if (!claimed.compareAndSet(false, true)) {
+        throw new SocketTimeoutException("Write timed out after " + writeTimeoutMillis + " ms");
+      }
+      if (failure != null) {
+        throw failure;
+      }
+    }
+
+    @Override
+    public void close() {
+      try {
+        socket.close();
+      } catch (final IOException e) {
+        // nothing left to release
+      }
+    }
+  }
+
+  private record TcpListener(ServerSocket serverSocket, EnclaveAddress address)
+      implements Listener {
+
+    @Override
+    public Connection accept() throws IOException {
+      final Socket socket = serverSocket.accept();
+      try {
+        // the server side keeps no write timeout
+        return new TcpConnection(socket, 0);
+      } catch (final IOException | RuntimeException e) {
+        socket.close();
+        throw e;
+      }
+    }
+
+    @Override
+    public void close() {
+      try {
+        serverSocket.close();
+      } catch (final IOException e) {
+        // nothing left to release
+      }
+    }
+  }
+}
