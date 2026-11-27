@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.nio.charset.CharacterCodingException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Map;
@@ -117,15 +118,11 @@ public final class KeyBundleFile {
   public static KeyBundle fromJson(final String json) {
     final FileJson file;
     try {
-      // through a tree, whose duplicate field check needs no jackson-core feature
+      // read as a tree, so the version is checked first and duplicate fields are refused
       final JsonNode tree = MAPPER.readTree(json);
-      if (tree.isMissingNode() || tree.isNull()) {
-        throw new IllegalArgumentException("Key bundle is empty");
-      }
       if (!tree.isObject()) {
         throw new IllegalArgumentException("Key bundle is not a JSON object");
       }
-      // first and exactly, so a later format is refused by its version whatever else changed
       final JsonNode version = tree.path("version");
       if (!version.isInt() || version.intValue() != VERSION) {
         throw new IllegalArgumentException(
@@ -147,7 +144,10 @@ public final class KeyBundleFile {
         "Key bundle is not valid" + where(e) + ": " + e.getOriginalMessage(), e);
   }
 
-  /** The field, as mapping runs on a tree and has no line to report; else the line and column. */
+  /**
+   * Where the error is: the field path if there is one, since a tree has no line numbers, otherwise
+   * the line and column.
+   */
   private static String where(final JsonProcessingException e) {
     if (e instanceof JsonMappingException mapping && !mapping.getPath().isEmpty()) {
       return mapping.getPath().stream()
@@ -189,19 +189,15 @@ public final class KeyBundleFile {
     }
   }
 
-  /** Writes a new bundle file. Never replaces an existing one. */
+  /** Writes the bundle file, replacing any existing one. */
   public static void write(final KeyBundle bundle, final Path file) throws IOException {
-    // written and synced beside it first, so a crash never leaves a partial bundle in its place
+    // synced beside it then renamed over it, so a crash leaves the old bundle or the new one
     final Path temp = file.resolveSibling(file.getFileName() + ".tmp-" + UUID.randomUUID());
     // as a resource, so a failed delete is added to a write error rather than hiding it
-    try (Closeable deleteTemp = () -> Files.deleteIfExists(temp)) {
+    try (Closeable _ = () -> Files.deleteIfExists(temp)) {
       Files.writeString(
           temp, toJson(bundle), StandardOpenOption.CREATE_NEW, StandardOpenOption.SYNC);
-      // a hard link refuses an existing file in one step, unlike move's check then rename
-      Files.createLink(file, temp);
-    } catch (final UnsupportedOperationException e) {
-      throw new IOException(
-          "Cannot write key bundle " + file + ": hard links are not supported", e);
+      Files.move(temp, file, StandardCopyOption.ATOMIC_MOVE);
     }
   }
 }

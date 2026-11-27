@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import tech.pegasys.web3signer.enclave.protocol.Messages.SealedKey;
 
-import java.nio.file.FileAlreadyExistsException;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -75,12 +75,35 @@ class KeyBundleFileTest {
   }
 
   @Test
-  void writeRefusesToReplaceAnExistingFile(@TempDir final Path dir) throws Exception {
-    final Path file = Files.writeString(dir.resolve("keys.bundle.json"), "old");
-    assertThatThrownBy(() -> KeyBundleFile.write(BUNDLE, file))
-        .isInstanceOf(FileAlreadyExistsException.class);
-    assertThat(Files.readString(file)).isEqualTo("old");
+  void writeReplacesAnExistingBundle(@TempDir final Path dir) throws Exception {
+    final Path file = dir.resolve("keys.bundle.json");
+    KeyBundleFile.write(new KeyBundle(BUNDLE.dek(), List.of(BUNDLE.keys().getFirst())), file);
+    KeyBundleFile.write(BUNDLE, file);
+    final KeyBundle read = KeyBundleFile.read(file);
+    assertThat(read.dek()).isEqualTo(BUNDLE.dek());
+    assertThat(read.keys()).usingRecursiveFieldByFieldElementComparator().isEqualTo(BUNDLE.keys());
     assertThat(dir.toFile().list()).containsExactly("keys.bundle.json");
+  }
+
+  @Test
+  void failedWriteLeavesTheTargetAndNoTempFile(@TempDir final Path dir) throws Exception {
+    // a non-empty directory cannot be renamed over
+    final Path target = Files.createDirectory(dir.resolve("keys.bundle.json"));
+    Files.writeString(target.resolve("inside"), "kept");
+    assertThatThrownBy(() -> KeyBundleFile.write(BUNDLE, target)).isInstanceOf(IOException.class);
+    assertThat(Files.readString(target.resolve("inside"))).isEqualTo("kept");
+    assertThat(dir.toFile().list()).containsExactly("keys.bundle.json");
+  }
+
+  @Test
+  void everyTruncatedBundleIsRefused() {
+    final String json = KeyBundleFile.toJson(BUNDLE);
+    for (int length = 0; length < json.length(); length++) {
+      final String partial = json.substring(0, length);
+      assertThatThrownBy(() -> KeyBundleFile.fromJson(partial))
+          .as("truncated to %d chars", length)
+          .isInstanceOf(IllegalArgumentException.class);
+    }
   }
 
   @Test
@@ -149,7 +172,7 @@ class KeyBundleFileTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"[]", "\"x\"", "1"})
+  @ValueSource(strings = {"", "   ", "null", "[]", "\"x\"", "1"})
   void bundleThatIsNotAnObjectIsRefused(final String json) {
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
@@ -369,14 +392,6 @@ class KeyBundleFileTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageStartingWith(
             "Key bundle is not valid at line 1, column 53: Duplicate field 'provider'");
-  }
-
-  @ParameterizedTest
-  @ValueSource(strings = {"", "   ", "null"})
-  void emptyInputIsRefused(final String json) {
-    assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Key bundle is empty");
   }
 
   @Test
