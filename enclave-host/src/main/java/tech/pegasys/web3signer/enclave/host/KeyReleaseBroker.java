@@ -66,6 +66,7 @@ public interface KeyReleaseBroker extends AutoCloseable {
     }
   }
 
+  /** A new data key; the caller closes it to wipe the plaintext. */
   DataKey newDataKey();
 
   /**

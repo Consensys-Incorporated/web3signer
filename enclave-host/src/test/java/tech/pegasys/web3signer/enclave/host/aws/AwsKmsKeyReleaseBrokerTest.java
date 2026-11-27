@@ -15,6 +15,7 @@ package tech.pegasys.web3signer.enclave.host.aws;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -30,6 +31,9 @@ import java.util.Arrays;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.core.SdkBytes;
@@ -53,12 +57,18 @@ class AwsKmsKeyReleaseBrokerTest {
   private static final KeyBundle.Dek DEK =
       new KeyBundle.Dek(KeyBundle.Dek.PROVIDER_AWS_KMS, KEY_ARN, CONTEXT, new byte[] {1, 2, 3});
 
+  private final KmsClient kms = mock(KmsClient.class);
+  private final AwsKmsKeyReleaseBroker broker = new AwsKmsKeyReleaseBroker(kms, "alias/test");
+
   private static Evidence evidence(final byte[] document) {
     return new Evidence(Protocol.EVIDENCE_AWS_NITRO, new byte[] {9, 9}, document);
   }
 
-  private final KmsClient kms = mock(KmsClient.class);
-  private final AwsKmsKeyReleaseBroker broker = new AwsKmsKeyReleaseBroker(kms, "alias/test");
+  private static byte[] filled32() {
+    final byte[] bytes = new byte[32];
+    Arrays.fill(bytes, (byte) 5);
+    return bytes;
+  }
 
   private static KmsException kmsError(final String code) {
     return (KmsException)
@@ -81,10 +91,11 @@ class AwsKmsKeyReleaseBrokerTest {
         .thenReturn(
             GenerateDataKeyResponse.builder()
                 .keyId(KEY_ARN)
-                .plaintext(SdkBytes.fromByteArray(new byte[32]))
+                .plaintext(SdkBytes.fromByteArray(filled32()))
                 .ciphertextBlob(SdkBytes.fromByteArray(new byte[] {9, 9}))
                 .build());
     try (KeyReleaseBroker.DataKey dataKey = broker.newDataKey()) {
+      assertThat(dataKey.plaintext()).isEqualTo(filled32());
       assertThat(dataKey.dek().provider()).isEqualTo("aws-kms");
       assertThat(dataKey.dek().keyId()).isEqualTo(KEY_ARN);
       assertThat(dataKey.dek().wrapped()).containsExactly(9, 9);
@@ -96,212 +107,6 @@ class AwsKmsKeyReleaseBrokerTest {
     assertThat(request.getValue().keyId()).isEqualTo("alias/test");
     assertThat(request.getValue().keySpec()).isEqualTo(DataKeySpec.AES_256);
     assertThat(request.getValue().encryptionContext()).isEqualTo(CONTEXT);
-  }
-
-  @Test
-  void releaseSendsTheAttestationDocumentAsRecipient() {
-    when(kms.decrypt(any(DecryptRequest.class)))
-        .thenReturn(
-            DecryptResponse.builder()
-                .keyId(KEY_ARN)
-                .ciphertextForRecipient(SdkBytes.fromByteArray(new byte[] {0x30, (byte) 0x80}))
-                .build());
-    assertThat(broker.release(DEK, evidence(new byte[] {7, 7, 7}))).containsExactly(0x30, 0x80);
-    final ArgumentCaptor<DecryptRequest> request = ArgumentCaptor.forClass(DecryptRequest.class);
-    verify(kms).decrypt(request.capture());
-    final DecryptRequest sent = request.getValue();
-    assertThat(sent.ciphertextBlob().asByteArray()).containsExactly(1, 2, 3);
-    assertThat(sent.encryptionContext()).isEqualTo(CONTEXT);
-    assertThat(sent.keyId()).isEqualTo(KEY_ARN);
-    assertThat(sent.recipient().attestationDocument().asByteArray()).containsExactly(7, 7, 7);
-    assertThat(sent.recipient().keyEncryptionAlgorithm())
-        .isEqualTo(KeyEncryptionMechanism.RSAES_OAEP_SHA_256);
-    assertThat(sent.dryRun()).isNull();
-  }
-
-  @Test
-  void releaseFailsWhenKmsReturnsAPlaintext() {
-    final SdkBytes plaintext = SdkBytes.fromByteArray(filled32());
-    when(kms.decrypt(any(DecryptRequest.class)))
-        .thenReturn(
-            DecryptResponse.builder()
-                .plaintext(plaintext)
-                .ciphertextForRecipient(SdkBytes.fromByteArray(new byte[] {0x30}))
-                .build());
-    assertThatThrownBy(() -> broker.release(DEK, evidence(new byte[] {7})))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("plaintext");
-    assertThat(plaintext.asByteArrayUnsafe()).containsOnly(0);
-  }
-
-  @Test
-  void releaseExplainsAnAccessDeniedAndKeepsTheKmsMessage() {
-    final KmsException denied = kmsError("AccessDeniedException");
-    when(kms.decrypt(any(DecryptRequest.class))).thenThrow(denied);
-    assertThatThrownBy(() -> broker.release(DEK, evidence(new byte[] {7})))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("KMS refused to release the data key to the enclave")
-        .hasMessageContaining("--debug-mode")
-        .hasMessageContaining("PCR0")
-        .hasMessageContaining("KMS said: " + denied.getMessage())
-        .hasCause(denied);
-  }
-
-  @Test
-  void releasePassesOtherKmsErrorsThrough() {
-    final KmsException notFound = kmsError("NotFoundException");
-    when(kms.decrypt(any(DecryptRequest.class))).thenThrow(notFound);
-    assertThatThrownBy(() -> broker.release(DEK, evidence(new byte[] {7}))).isSameAs(notFound);
-  }
-
-  @Test
-  void policyCheckIsADryRunWithoutRecipient() {
-    denyAllDryRuns();
-    broker.assertEvidenceRequired(DEK);
-    final ArgumentCaptor<DecryptRequest> request = ArgumentCaptor.forClass(DecryptRequest.class);
-    verify(kms).decrypt(request.capture());
-    assertThat(request.getValue().dryRun()).isTrue();
-    assertThat(request.getValue().recipient()).isNull();
-    assertThat(request.getValue().encryptionContext()).isEqualTo(CONTEXT);
-    assertThat(request.getValue().keyId()).isEqualTo(KEY_ARN);
-  }
-
-  @Test
-  void policyCheckFailsWhenTheDryRunWouldSucceed() {
-    when(kms.decrypt(any(DecryptRequest.class)))
-        .thenThrow(DryRunOperationException.builder().message("would succeed").build());
-    assertThatThrownBy(() -> broker.assertEvidenceRequired(DEK))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("without attestation");
-  }
-
-  @Test
-  void policyCheckDryRunsAReEncryptToTheSameKey() {
-    denyAllDryRuns();
-    broker.assertEvidenceRequired(DEK);
-    final ArgumentCaptor<ReEncryptRequest> request =
-        ArgumentCaptor.forClass(ReEncryptRequest.class);
-    verify(kms).reEncrypt(request.capture());
-    assertThat(request.getValue().dryRun()).isTrue();
-    assertThat(request.getValue().ciphertextBlob().asByteArray()).containsExactly(1, 2, 3);
-    assertThat(request.getValue().sourceKeyId()).isEqualTo(KEY_ARN);
-    assertThat(request.getValue().sourceEncryptionContext()).isEqualTo(CONTEXT);
-    assertThat(request.getValue().destinationKeyId()).isEqualTo(KEY_ARN);
-  }
-
-  @Test
-  void policyCheckDryRunsAGrantOfDecryptToTheKeysAccount() {
-    denyAllDryRuns();
-    broker.assertEvidenceRequired(DEK);
-    final ArgumentCaptor<CreateGrantRequest> request =
-        ArgumentCaptor.forClass(CreateGrantRequest.class);
-    verify(kms).createGrant(request.capture());
-    assertThat(request.getValue().dryRun()).isTrue();
-    assertThat(request.getValue().keyId()).isEqualTo(KEY_ARN);
-    assertThat(request.getValue().granteePrincipal()).isEqualTo("arn:aws:iam::111122223333:root");
-    assertThat(request.getValue().operations()).containsExactly(GrantOperation.DECRYPT);
-  }
-
-  @Test
-  void policyCheckFailsWhenADryRunReturnsWithoutError() {
-    when(kms.decrypt(any(DecryptRequest.class))).thenReturn(DecryptResponse.builder().build());
-    assertThatThrownBy(() -> broker.assertEvidenceRequired(DEK))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessage(
-            "This principal can obtain the data key with Decrypt without attestation; fix the"
-                + " KMS key policy");
-  }
-
-  @Test
-  void policyCheckFailsWhenAReEncryptWouldSucceed() {
-    when(kms.decrypt(any(DecryptRequest.class))).thenThrow(kmsError("AccessDeniedException"));
-    when(kms.reEncrypt(any(ReEncryptRequest.class)))
-        .thenThrow(DryRunOperationException.builder().message("would succeed").build());
-    assertThatThrownBy(() -> broker.assertEvidenceRequired(DEK))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessage(
-            "This principal can obtain the data key with ReEncrypt without attestation; fix the"
-                + " KMS key policy");
-  }
-
-  @Test
-  void policyCheckFailsWhenAGrantWouldSucceed() {
-    when(kms.decrypt(any(DecryptRequest.class))).thenThrow(kmsError("AccessDeniedException"));
-    when(kms.reEncrypt(any(ReEncryptRequest.class))).thenThrow(kmsError("AccessDeniedException"));
-    when(kms.createGrant(any(CreateGrantRequest.class)))
-        .thenThrow(DryRunOperationException.builder().message("would succeed").build());
-    assertThatThrownBy(() -> broker.assertEvidenceRequired(DEK))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessage(
-            "This principal can obtain the data key with CreateGrant without attestation; fix the"
-                + " KMS key policy");
-  }
-
-  @Test
-  void policyCheckFailsOnAnyOtherError() {
-    when(kms.decrypt(any(DecryptRequest.class))).thenThrow(kmsError("NotFoundException"));
-    assertThatThrownBy(() -> broker.assertEvidenceRequired(DEK))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("NotFoundException");
-  }
-
-  @Test
-  void releaseFailsWhenKmsReturnsNoCiphertextForRecipient() {
-    when(kms.decrypt(any(DecryptRequest.class)))
-        .thenReturn(DecryptResponse.builder().keyId(KEY_ARN).build());
-    assertThatThrownBy(() -> broker.release(DEK, evidence(new byte[] {7})))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessage("KMS returned no CiphertextForRecipient");
-  }
-
-  @Test
-  void releaseHintNamesTheParentRoleAsACause() {
-    when(kms.decrypt(any(DecryptRequest.class))).thenThrow(kmsError("AccessDeniedException"));
-    assertThatThrownBy(() -> broker.release(DEK, evidence(new byte[] {7})))
-        .hasMessageContaining("names this instance's role");
-  }
-
-  @Test
-  void policyCheckAsksForWhatTheReleaseAsksFor() {
-    when(kms.reEncrypt(any(ReEncryptRequest.class))).thenThrow(kmsError("AccessDeniedException"));
-    when(kms.createGrant(any(CreateGrantRequest.class)))
-        .thenThrow(kmsError("AccessDeniedException"));
-    when(kms.decrypt(any(DecryptRequest.class)))
-        .thenThrow(kmsError("AccessDeniedException"))
-        .thenReturn(
-            DecryptResponse.builder()
-                .ciphertextForRecipient(SdkBytes.fromByteArray(new byte[] {0x30}))
-                .build());
-    broker.assertEvidenceRequired(DEK);
-    broker.release(DEK, evidence(new byte[] {7}));
-    final ArgumentCaptor<DecryptRequest> requests = ArgumentCaptor.forClass(DecryptRequest.class);
-    verify(kms, times(2)).decrypt(requests.capture());
-    final DecryptRequest dryRun = requests.getAllValues().get(0);
-    final DecryptRequest release = requests.getAllValues().get(1);
-    assertThat(dryRun.toBuilder().dryRun(null).recipient(release.recipient()).build())
-        .isEqualTo(release);
-  }
-
-  @Test
-  void refusesADataKeyFromAnotherProvider() {
-    final KeyBundle.Dek devDek =
-        new KeyBundle.Dek(KeyBundle.Dek.PROVIDER_DEV, "dev", Map.of(), new byte[60]);
-    assertThatThrownBy(() -> broker.release(devDek, evidence(new byte[] {7})))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("The bundle was sealed with provider dev, but the aws-kms broker was given");
-    assertThatThrownBy(() -> broker.assertEvidenceRequired(devDek))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("provider dev");
-    verifyNoInteractions(kms);
-  }
-
-  @Test
-  void refusesEvidenceOfAnotherType() {
-    final Evidence dev = new Evidence(Protocol.EVIDENCE_DEV, new byte[] {9}, new byte[] {9});
-    assertThatThrownBy(() -> broker.release(DEK, dev))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("The aws-kms broker accepts evidence type 1, but the enclave produced type 0");
-    verifyNoInteractions(kms);
   }
 
   @Test
@@ -331,31 +136,10 @@ class AwsKmsKeyReleaseBrokerTest {
                 .plaintext(plaintext)
                 .ciphertextBlob(SdkBytes.fromByteArray(new byte[] {9}))
                 .build());
-    assertThatThrownBy(broker::newDataKey).isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(broker::newDataKey)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessage("keyId");
     assertThat(plaintext.asByteArrayUnsafe()).containsOnly(0);
-  }
-
-  @Test
-  void releaseFailsWhenKmsReturnsAnEmptyCiphertextForRecipient() {
-    when(kms.decrypt(any(DecryptRequest.class)))
-        .thenReturn(
-            DecryptResponse.builder()
-                .keyId(KEY_ARN)
-                .ciphertextForRecipient(SdkBytes.fromByteArray(new byte[0]))
-                .build());
-    assertThatThrownBy(() -> broker.release(DEK, evidence(new byte[] {7})))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessage("KMS returned no CiphertextForRecipient");
-  }
-
-  @Test
-  void policyCheckRefusesAKeyIdThatIsNotAnArnBeforeCallingKms() {
-    final KeyBundle.Dek aliasDek =
-        new KeyBundle.Dek(KeyBundle.Dek.PROVIDER_AWS_KMS, "alias/test", CONTEXT, new byte[] {1});
-    assertThatThrownBy(() -> broker.assertEvidenceRequired(aliasDek))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Not a KMS key ARN: alias/test");
-    verifyNoInteractions(kms);
   }
 
   @Test
@@ -382,6 +166,216 @@ class AwsKmsKeyReleaseBrokerTest {
   }
 
   @Test
+  void releaseSendsTheAttestationDocumentAsRecipient() {
+    when(kms.decrypt(any(DecryptRequest.class)))
+        .thenReturn(
+            DecryptResponse.builder()
+                .keyId(KEY_ARN)
+                .ciphertextForRecipient(SdkBytes.fromByteArray(new byte[] {0x30, (byte) 0x80}))
+                .build());
+    assertThat(broker.release(DEK, evidence(new byte[] {7, 7, 7}))).containsExactly(0x30, 0x80);
+    final ArgumentCaptor<DecryptRequest> request = ArgumentCaptor.forClass(DecryptRequest.class);
+    verify(kms).decrypt(request.capture());
+    final DecryptRequest sent = request.getValue();
+    assertThat(sent.ciphertextBlob().asByteArray()).containsExactly(1, 2, 3);
+    assertThat(sent.encryptionContext()).isEqualTo(CONTEXT);
+    assertThat(sent.keyId()).isEqualTo(KEY_ARN);
+    assertThat(sent.recipient().attestationDocument().asByteArray()).containsExactly(7, 7, 7);
+    assertThat(sent.recipient().keyEncryptionAlgorithm())
+        .isEqualTo(KeyEncryptionMechanism.RSAES_OAEP_SHA_256);
+    assertThat(sent.dryRun()).isNull();
+  }
+
+  @Test
+  void releaseAcceptsAnEmptyPlaintextBesideTheCiphertextForRecipient() {
+    when(kms.decrypt(any(DecryptRequest.class)))
+        .thenReturn(
+            DecryptResponse.builder()
+                .plaintext(SdkBytes.fromByteArray(new byte[0]))
+                .ciphertextForRecipient(SdkBytes.fromByteArray(new byte[] {0x30}))
+                .build());
+    assertThat(broker.release(DEK, evidence(new byte[] {7}))).containsExactly(0x30);
+  }
+
+  @Test
+  void releaseFailsWhenKmsReturnsAPlaintext() {
+    final SdkBytes plaintext = SdkBytes.fromByteArray(filled32());
+    when(kms.decrypt(any(DecryptRequest.class)))
+        .thenReturn(
+            DecryptResponse.builder()
+                .plaintext(plaintext)
+                .ciphertextForRecipient(SdkBytes.fromByteArray(new byte[] {0x30}))
+                .build());
+    assertThatThrownBy(() -> broker.release(DEK, evidence(new byte[] {7})))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage(
+            "KMS returned the data key in plaintext although a recipient was given; aborting");
+    assertThat(plaintext.asByteArrayUnsafe()).containsOnly(0);
+  }
+
+  @ParameterizedTest
+  @NullAndEmptySource
+  void releaseFailsWhenKmsReturnsNoCiphertextForRecipient(final byte[] ciphertext) {
+    when(kms.decrypt(any(DecryptRequest.class)))
+        .thenReturn(
+            DecryptResponse.builder()
+                .keyId(KEY_ARN)
+                .ciphertextForRecipient(
+                    ciphertext == null ? null : SdkBytes.fromByteArray(ciphertext))
+                .build());
+    assertThatThrownBy(() -> broker.release(DEK, evidence(new byte[] {7})))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("KMS returned no CiphertextForRecipient");
+  }
+
+  @Test
+  void releaseExplainsAnAccessDeniedAndKeepsTheKmsMessage() {
+    final KmsException denied = kmsError("AccessDeniedException");
+    when(kms.decrypt(any(DecryptRequest.class))).thenThrow(denied);
+    assertThatThrownBy(() -> broker.release(DEK, evidence(new byte[] {7})))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("KMS refused to release the data key to the enclave")
+        .hasMessageContaining("--debug-mode")
+        .hasMessageContaining("PCR0")
+        .hasMessageContaining("names this instance's role")
+        .hasMessageContaining("KMS said: " + denied.getMessage())
+        .hasCause(denied);
+  }
+
+  @Test
+  void releasePassesOtherKmsErrorsThrough() {
+    final KmsException notFound = kmsError("NotFoundException");
+    when(kms.decrypt(any(DecryptRequest.class))).thenThrow(notFound);
+    assertThatThrownBy(() -> broker.release(DEK, evidence(new byte[] {7}))).isSameAs(notFound);
+  }
+
+  @Test
+  void policyCheckDryRunsEachOperationWithoutAttestation() {
+    denyAllDryRuns();
+    broker.assertEvidenceRequired(DEK);
+
+    final ArgumentCaptor<DecryptRequest> decrypt = ArgumentCaptor.forClass(DecryptRequest.class);
+    verify(kms).decrypt(decrypt.capture());
+    assertThat(decrypt.getValue().dryRun()).isTrue();
+    assertThat(decrypt.getValue().recipient()).isNull();
+    assertThat(decrypt.getValue().encryptionContext()).isEqualTo(CONTEXT);
+    assertThat(decrypt.getValue().keyId()).isEqualTo(KEY_ARN);
+
+    final ArgumentCaptor<ReEncryptRequest> reEncrypt =
+        ArgumentCaptor.forClass(ReEncryptRequest.class);
+    verify(kms).reEncrypt(reEncrypt.capture());
+    assertThat(reEncrypt.getValue().dryRun()).isTrue();
+    assertThat(reEncrypt.getValue().ciphertextBlob().asByteArray()).containsExactly(1, 2, 3);
+    assertThat(reEncrypt.getValue().sourceKeyId()).isEqualTo(KEY_ARN);
+    assertThat(reEncrypt.getValue().sourceEncryptionContext()).isEqualTo(CONTEXT);
+    assertThat(reEncrypt.getValue().destinationKeyId()).isEqualTo(KEY_ARN);
+
+    final ArgumentCaptor<CreateGrantRequest> grant =
+        ArgumentCaptor.forClass(CreateGrantRequest.class);
+    verify(kms).createGrant(grant.capture());
+    assertThat(grant.getValue().dryRun()).isTrue();
+    assertThat(grant.getValue().keyId()).isEqualTo(KEY_ARN);
+    assertThat(grant.getValue().granteePrincipal()).isEqualTo("arn:aws:iam::111122223333:root");
+    assertThat(grant.getValue().operations()).containsExactly(GrantOperation.DECRYPT);
+  }
+
+  @Test
+  void policyCheckAsksForWhatTheReleaseAsksFor() {
+    when(kms.reEncrypt(any(ReEncryptRequest.class))).thenThrow(kmsError("AccessDeniedException"));
+    when(kms.createGrant(any(CreateGrantRequest.class)))
+        .thenThrow(kmsError("AccessDeniedException"));
+    when(kms.decrypt(any(DecryptRequest.class)))
+        .thenThrow(kmsError("AccessDeniedException"))
+        .thenReturn(
+            DecryptResponse.builder()
+                .ciphertextForRecipient(SdkBytes.fromByteArray(new byte[] {0x30}))
+                .build());
+    broker.assertEvidenceRequired(DEK);
+    broker.release(DEK, evidence(new byte[] {7}));
+    final ArgumentCaptor<DecryptRequest> requests = ArgumentCaptor.forClass(DecryptRequest.class);
+    verify(kms, times(2)).decrypt(requests.capture());
+    final DecryptRequest dryRun = requests.getAllValues().get(0);
+    final DecryptRequest release = requests.getAllValues().get(1);
+    assertThat(dryRun.toBuilder().dryRun(null).recipient(release.recipient()).build())
+        .isEqualTo(release);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"Decrypt", "ReEncrypt", "CreateGrant"})
+  void policyCheckFailsWhenADryRunWouldSucceed(final String operation) {
+    denyAllDryRuns();
+    final DryRunOperationException wouldSucceed =
+        DryRunOperationException.builder().message("would succeed").build();
+    switch (operation) {
+      case "Decrypt" -> doThrow(wouldSucceed).when(kms).decrypt(any(DecryptRequest.class));
+      case "ReEncrypt" -> doThrow(wouldSucceed).when(kms).reEncrypt(any(ReEncryptRequest.class));
+      default -> doThrow(wouldSucceed).when(kms).createGrant(any(CreateGrantRequest.class));
+    }
+    assertThatThrownBy(() -> broker.assertEvidenceRequired(DEK))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage(
+            "This principal can obtain the data key with "
+                + operation
+                + " without attestation; fix the KMS key policy");
+  }
+
+  @Test
+  void policyCheckFailsWhenADryRunReturnsWithoutError() {
+    when(kms.decrypt(any(DecryptRequest.class))).thenReturn(DecryptResponse.builder().build());
+    assertThatThrownBy(() -> broker.assertEvidenceRequired(DEK))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage(
+            "This principal can obtain the data key with Decrypt without attestation; fix the"
+                + " KMS key policy");
+  }
+
+  @Test
+  void policyCheckFailsOnAnyOtherError() {
+    when(kms.decrypt(any(DecryptRequest.class))).thenThrow(kmsError("NotFoundException"));
+    assertThatThrownBy(() -> broker.assertEvidenceRequired(DEK))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("NotFoundException");
+  }
+
+  @Test
+  void policyCheckRefusesAKeyIdThatIsNotAnArnBeforeCallingKms() {
+    final KeyBundle.Dek aliasDek =
+        new KeyBundle.Dek(KeyBundle.Dek.PROVIDER_AWS_KMS, "alias/test", CONTEXT, new byte[] {1});
+    assertThatThrownBy(() -> broker.assertEvidenceRequired(aliasDek))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Not a KMS key ARN: alias/test");
+    verifyNoInteractions(kms);
+  }
+
+  @Test
+  void refusesADataKeyFromAnotherProvider() {
+    final KeyBundle.Dek devDek =
+        new KeyBundle.Dek(KeyBundle.Dek.PROVIDER_DEV, "dev", Map.of(), new byte[60]);
+    assertThatThrownBy(() -> broker.release(devDek, evidence(new byte[] {7})))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("The bundle was sealed with provider dev, but the aws-kms broker was given");
+    assertThatThrownBy(() -> broker.assertEvidenceRequired(devDek))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("provider dev");
+    verifyNoInteractions(kms);
+  }
+
+  @Test
+  void refusesEvidenceOfAnotherType() {
+    final Evidence dev = new Evidence(Protocol.EVIDENCE_DEV, new byte[] {9}, new byte[] {9});
+    assertThatThrownBy(() -> broker.release(DEK, dev))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("The aws-kms broker accepts evidence type 1, but the enclave produced type 0");
+    verifyNoInteractions(kms);
+  }
+
+  @Test
+  void closeClosesTheKmsClient() {
+    broker.close();
+    verify(kms).close();
+  }
+
+  @Test
   void regionComesFromTheKeyArn() {
     assertThat(AwsKmsKeyReleaseBroker.regionOf(KEY_ARN)).isEqualTo("us-east-1");
     assertThat(AwsKmsKeyReleaseBroker.regionOf("arn:aws-cn:kms:cn-north-1:111122223333:key/x"))
@@ -403,22 +397,5 @@ class AwsKmsKeyReleaseBrokerTest {
         .isEqualTo("arn:aws-cn:iam::444455556666:root");
     assertThatThrownBy(() -> AwsKmsKeyReleaseBroker.accountRootOf("arn:aws:kms:us-east-1::key/x"))
         .isInstanceOf(IllegalArgumentException.class);
-  }
-
-  private static byte[] filled32() {
-    final byte[] bytes = new byte[32];
-    Arrays.fill(bytes, (byte) 5);
-    return bytes;
-  }
-
-  @Test
-  void releaseAcceptsAnEmptyPlaintextBesideTheCiphertextForRecipient() {
-    when(kms.decrypt(any(DecryptRequest.class)))
-        .thenReturn(
-            DecryptResponse.builder()
-                .plaintext(SdkBytes.fromByteArray(new byte[0]))
-                .ciphertextForRecipient(SdkBytes.fromByteArray(new byte[] {0x30}))
-                .build());
-    assertThat(broker.release(DEK, evidence(new byte[] {7}))).containsExactly(0x30);
   }
 }

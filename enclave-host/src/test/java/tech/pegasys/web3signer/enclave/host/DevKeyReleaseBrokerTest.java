@@ -28,6 +28,11 @@ import java.security.KeyPairGenerator;
 import java.util.Arrays;
 import java.util.Map;
 
+import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.RSAESOAEPparams;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.cms.CMSAlgorithm;
 import org.bouncycastle.cms.CMSEnvelopedData;
 import org.bouncycastle.cms.RecipientInformation;
 import org.bouncycastle.cms.jcajce.JceKeyTransEnvelopedRecipient;
@@ -76,6 +81,39 @@ class DevKeyReleaseBrokerTest {
       assertThat(expected).hasSize(Protocol.DEK_SIZE);
       assertThat(dataKey.dek().provider()).isEqualTo(KeyBundle.Dek.PROVIDER_DEV);
       assertThat(open(broker.release(dataKey.dek(), devEvidence()))).isEqualTo(expected);
+    }
+  }
+
+  @Test
+  void releaseEnvelopeUsesRsaOaepSha256AndAes256Cbc() throws Exception {
+    try (DevKeyReleaseBroker broker = new DevKeyReleaseBroker(masterKey(1));
+        DataKey dataKey = broker.newDataKey()) {
+      final CMSEnvelopedData envelope =
+          new CMSEnvelopedData(broker.release(dataKey.dek(), devEvidence()));
+      final RecipientInformation recipient =
+          envelope.getRecipientInfos().getRecipients().iterator().next();
+
+      assertThat(envelope.getEncryptionAlgOID()).isEqualTo(CMSAlgorithm.AES256_CBC.getId());
+      assertThat(recipient.getKeyEncryptionAlgOID())
+          .isEqualTo(PKCSObjectIdentifiers.id_RSAES_OAEP.getId());
+      final RSAESOAEPparams oaep =
+          RSAESOAEPparams.getInstance(recipient.getKeyEncryptionAlgorithm().getParameters());
+      assertThat(oaep.getHashAlgorithm().getAlgorithm()).isEqualTo(NISTObjectIdentifiers.id_sha256);
+      assertThat(
+              AlgorithmIdentifier.getInstance(oaep.getMaskGenAlgorithm().getParameters())
+                  .getAlgorithm())
+          .isEqualTo(NISTObjectIdentifiers.id_sha256);
+    }
+  }
+
+  @Test
+  void refusesAWrappedKeyNoLongerThanItsNonce() {
+    final KeyBundle.Dek tooShort =
+        new KeyBundle.Dek(KeyBundle.Dek.PROVIDER_DEV, "dev", Map.of(), new byte[12]);
+    try (DevKeyReleaseBroker broker = new DevKeyReleaseBroker(masterKey(1))) {
+      assertThatThrownBy(() -> broker.release(tooShort, devEvidence()))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("The wrapped data key is too short");
     }
   }
 

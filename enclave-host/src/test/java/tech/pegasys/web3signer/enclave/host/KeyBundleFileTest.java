@@ -29,6 +29,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -51,6 +52,30 @@ class KeyBundleFileTest {
           List.of(
               new SealedKey(filled(48, 1), filled(12, 2), filled(48, 3)),
               new SealedKey(filled(48, 4), filled(12, 5), filled(48, 6))));
+
+  private static final String KEY =
+      "{\"pubkey\":\"0x"
+          + "01".repeat(48)
+          + "\",\"nonce\":\"0x"
+          + "02".repeat(12)
+          + "\",\"ciphertext\":\"0x"
+          + "03".repeat(48)
+          + "\"}";
+
+  private static String bundle(
+      final String version, final String dek, final String keys, final String after) {
+    return "{\"version\":" + version + ",\"dek\":" + dek + ",\"keys\":[" + keys + "]}" + after;
+  }
+
+  private static String dek(final String provider, final String context, final String wrapped) {
+    return "{\"provider\":"
+        + provider
+        + ",\"keyId\":\"dev\",\"encryptionContext\":"
+        + context
+        + ",\"wrapped\":\""
+        + wrapped
+        + "\"}";
+  }
 
   @Test
   void roundTripsThroughJsonAndFiles(@TempDir final Path dir) throws Exception {
@@ -156,14 +181,6 @@ class KeyBundleFileTest {
   }
 
   @Test
-  void unknownVersionIsRefused() {
-    final String json = KeyBundleFile.toJson(BUNDLE).replace("\"version\" : 1", "\"version\" : 2");
-    assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("version");
-  }
-
-  @Test
   void unknownVersionIsRefusedBeforeItsFieldsAreRead() {
     final String json = "{\"version\":2,\"dataKey\":{}}";
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
@@ -195,20 +212,20 @@ class KeyBundleFileTest {
         .hasMessage("Key bundle is not valid at `keys.1`: Sealed key has wrong field sizes");
   }
 
-  static Stream<String> badPubkeys() {
+  static Stream<Arguments> badPubkeys() {
     return Stream.of(
-        "0X" + "01".repeat(48),
-        "0x" + "01".repeat(47),
-        "0x" + "01".repeat(47) + "0",
-        "0x" + "zz".repeat(48));
+        Arguments.of("0X" + "01".repeat(48), "Illegal character 'X' found at index 1"),
+        Arguments.of("0x" + "01".repeat(47) + "0", "Invalid odd-length hex"),
+        Arguments.of("0x" + "zz".repeat(48), "Illegal character 'z' found at index 0"));
   }
 
   @ParameterizedTest
   @MethodSource("badPubkeys")
-  void badHexIsRefused(final String pubkey) {
+  void badHexIsRefused(final String pubkey, final String reason) {
     final String json = KeyBundleFile.toJson(BUNDLE).replace("0x" + "01".repeat(48), pubkey);
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith("Key bundle is not valid at `keys.0.pubkey`: " + reason);
   }
 
   @ParameterizedTest
@@ -298,30 +315,6 @@ class KeyBundleFileTest {
             "Key bundle is not valid at `keys`: Missing creator property 'keys'");
   }
 
-  private static final String KEY =
-      "{\"pubkey\":\"0x"
-          + "01".repeat(48)
-          + "\",\"nonce\":\"0x"
-          + "02".repeat(12)
-          + "\",\"ciphertext\":\"0x"
-          + "03".repeat(48)
-          + "\"}";
-
-  private static String bundle(
-      final String version, final String dek, final String keys, final String after) {
-    return "{\"version\":" + version + ",\"dek\":" + dek + ",\"keys\":[" + keys + "]}" + after;
-  }
-
-  private static String dek(final String provider, final String context, final String wrapped) {
-    return "{\"provider\":"
-        + provider
-        + ",\"keyId\":\"dev\",\"encryptionContext\":"
-        + context
-        + ",\"wrapped\":\""
-        + wrapped
-        + "\"}";
-  }
-
   @Test
   void strictBaselineIsAccepted() {
     final KeyBundle parsed =
@@ -378,10 +371,33 @@ class KeyBundleFileTest {
   }
 
   @Test
-  void missingDekIsRefused() {
+  void dekThatIsNotAnObjectIsRefused() {
     assertThatThrownBy(() -> KeyBundleFile.fromJson(bundle("1", "\"dev\"", KEY, "")))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageStartingWith("Key bundle is not valid at `dek`: Cannot construct instance");
+  }
+
+  @Test
+  void missingDekIsRefused() {
+    assertThatThrownBy(() -> KeyBundleFile.fromJson("{\"version\":1,\"keys\":[]}"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith("Key bundle is not valid at `dek`: Missing creator property 'dek'");
+  }
+
+  @Test
+  void nullDekIsRefused() {
+    assertThatThrownBy(() -> KeyBundleFile.fromJson(bundle("1", "null", KEY, "")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith("Key bundle is not valid at `dek`: Invalid `null` value");
+  }
+
+  @Test
+  void nullKeysAreRefused() {
+    final String json =
+        "{\"version\":1,\"dek\":" + dek("\"dev\"", "{}", "0x010203") + ",\"keys\":null}";
+    assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith("Key bundle is not valid at `keys`: Invalid `null` value");
   }
 
   @Test

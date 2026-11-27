@@ -17,7 +17,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import tech.pegasys.web3signer.enclave.protocol.Messages.SealedKey;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -96,5 +98,21 @@ class KeyBundleTest {
   void wrappedKeyCannotBeChangedThroughTheRecord() {
     DEK.wrapped()[0] = 0;
     assertThat(DEK.wrapped()).containsOnly(7);
+  }
+
+  @Test
+  void changingTheArgumentsLeavesTheRecordUnchanged() {
+    final byte[] wrapped = filled(20, 7);
+    final Map<String, String> context = new HashMap<>(Map.of("a", "b"));
+    final List<SealedKey> keys = new ArrayList<>(List.of(sealedKey(1)));
+    final KeyBundle bundle =
+        new KeyBundle(new KeyBundle.Dek(KeyBundle.Dek.PROVIDER_DEV, "dev", context, wrapped), keys);
+
+    wrapped[0] = 0;
+    context.put("c", "d");
+    keys.add(sealedKey(4));
+
+    assertThat(bundle.dek()).isEqualTo(DEK);
+    assertThat(bundle.keys()).hasSize(1);
   }
 }
