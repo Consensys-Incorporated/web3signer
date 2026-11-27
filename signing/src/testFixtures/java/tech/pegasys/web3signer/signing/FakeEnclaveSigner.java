@@ -27,6 +27,7 @@ import tech.pegasys.web3signer.enclave.transport.Listener;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -46,7 +47,9 @@ public final class FakeEnclaveSigner implements AutoCloseable {
   private static final SecureRandom RANDOM = new SecureRandom();
 
   private final Listener listener;
+  private final Thread acceptThread;
   private final Set<Connection> connections = ConcurrentHashMap.newKeySet();
+  private final Set<Thread> serveThreads = ConcurrentHashMap.newKeySet();
   private final List<BLSKeyPair> keys = new CopyOnWriteArrayList<>();
   private final Map<Bytes, BLSKeyPair> byPublicKey = new ConcurrentHashMap<>();
   private final byte[] bootId = new byte[16];
@@ -60,7 +63,7 @@ public final class FakeEnclaveSigner implements AutoCloseable {
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
-    Thread.ofPlatform().daemon(true).start(this::acceptLoop);
+    acceptThread = Thread.ofPlatform().daemon(true).start(this::acceptLoop);
   }
 
   public static List<BLSKeyPair> randomKeys(final int count) {
@@ -100,7 +103,7 @@ public final class FakeEnclaveSigner implements AutoCloseable {
         return;
       }
       connections.add(connection);
-      Thread.ofPlatform().daemon(true).start(() -> serve(connection));
+      serveThreads.add(Thread.ofPlatform().daemon(true).start(() -> serve(connection)));
     }
   }
 
@@ -169,6 +172,17 @@ public final class FakeEnclaveSigner implements AutoCloseable {
   @Override
   public void close() {
     listener.close();
+    // on Linux a socket is only closed once the thread blocked on it wakes, so wait for them
+    join(acceptThread);
     connections.forEach(Connection::close);
+    serveThreads.forEach(this::join);
+  }
+
+  private void join(final Thread thread) {
+    try {
+      thread.join(Duration.ofSeconds(5));
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 }

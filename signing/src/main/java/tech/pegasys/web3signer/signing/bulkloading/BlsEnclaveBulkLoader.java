@@ -130,7 +130,7 @@ public class BlsEnclaveBulkLoader implements Closeable {
       lastLoaded = List.copyOf(signers);
       return MappedResults.newInstance(signers, 0);
     } catch (final RuntimeException e) {
-      LOG.error("Unable to load keys from the enclave signer: {}", e.getMessage());
+      LOG.error("Unable to load keys from the enclave signer", e);
       return failedLoad();
     }
   }
