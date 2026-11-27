@@ -202,6 +202,18 @@ class DevKeyReleaseBrokerTest {
   }
 
   @Test
+  void acceptsOnlyTheDevPlatform() {
+    try (DevKeyReleaseBroker broker = new DevKeyReleaseBroker(masterKey(1))) {
+      broker.checkPlatform(Protocol.PLATFORM_DEV);
+      assertThatThrownBy(() -> broker.checkPlatform(Protocol.PLATFORM_AWS_NITRO))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage(
+              "The dev broker releases data keys only to an enclave on platform dev, but the"
+                  + " enclave runs aws-nitro");
+    }
+  }
+
+  @Test
   void refusesAReleaseKeyThatIsNotRsa() throws Exception {
     final KeyPairGenerator ec = KeyPairGenerator.getInstance("EC");
     ec.initialize(256);
@@ -210,8 +222,8 @@ class DevKeyReleaseBrokerTest {
         DataKey dataKey = broker.newDataKey()) {
       assertThatThrownBy(
               () -> broker.release(dataKey.dek(), new Evidence(Protocol.EVIDENCE_DEV, spki, spki)))
-          .isInstanceOf(IllegalStateException.class)
-          .hasMessage("Cannot build the release envelope")
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("The release key is not an RSA public key")
           .hasCauseInstanceOf(GeneralSecurityException.class);
     }
   }

@@ -24,8 +24,10 @@ import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.SecureRandom;
+import java.security.spec.InvalidKeySpecException;
 import java.security.spec.MGF1ParameterSpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
@@ -127,11 +129,10 @@ public final class DevKeyReleaseBroker implements KeyReleaseBroker {
   public byte[] release(final KeyBundle.Dek dek, final Evidence evidence) {
     checkProvider(dek);
     checkEvidenceType(evidence);
+    final byte[] releaseKey = evidence.releaseKey();
+    final PublicKey recipient = rsaPublicKey(releaseKey);
     final byte[] plaintext = unwrap(dek);
     try {
-      final byte[] releaseKey = evidence.releaseKey();
-      final PublicKey recipient =
-          KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(releaseKey));
       final byte[] subjectKeyId = MessageDigest.getInstance("SHA-256").digest(releaseKey);
       final JceKeyTransRecipientInfoGenerator recipientInfo =
           new JceKeyTransRecipientInfoGenerator(
@@ -154,6 +155,16 @@ public final class DevKeyReleaseBroker implements KeyReleaseBroker {
       throw new IllegalStateException("Cannot build the release envelope", e);
     } finally {
       Arrays.fill(plaintext, (byte) 0);
+    }
+  }
+
+  private PublicKey rsaPublicKey(final byte[] releaseKey) {
+    try {
+      return KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(releaseKey));
+    } catch (final InvalidKeySpecException e) {
+      throw new IllegalArgumentException("The release key is not an RSA public key", e);
+    } catch (final NoSuchAlgorithmException e) {
+      throw new IllegalStateException("RSA is not available", e);
     }
   }
 

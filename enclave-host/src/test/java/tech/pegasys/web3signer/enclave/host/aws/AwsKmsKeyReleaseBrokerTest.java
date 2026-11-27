@@ -370,6 +370,20 @@ class AwsKmsKeyReleaseBrokerTest {
   }
 
   @Test
+  void acceptsOnlyTheAwsNitroPlatform() {
+    broker.checkPlatform(Protocol.PLATFORM_AWS_NITRO);
+    assertThatThrownBy(() -> broker.checkPlatform(Protocol.PLATFORM_DEV))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(
+            "The aws-kms broker releases data keys only to an enclave on platform aws-nitro, but"
+                + " the enclave runs dev");
+    assertThatThrownBy(() -> broker.checkPlatform(7))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageEndingWith("but the enclave runs platform-7");
+    verifyNoInteractions(kms);
+  }
+
+  @Test
   void closeClosesTheKmsClient() {
     broker.close();
     verify(kms).close();

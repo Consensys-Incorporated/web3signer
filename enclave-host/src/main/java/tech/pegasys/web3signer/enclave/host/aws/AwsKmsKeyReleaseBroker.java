@@ -52,7 +52,7 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
    * @param kms the client; closed with this broker
    * @param keyId key id, ARN or alias for {@link #newDataKey()}; may be null when only releasing
    */
-  public AwsKmsKeyReleaseBroker(final KmsClient kms, final String keyId) {
+  AwsKmsKeyReleaseBroker(final KmsClient kms, final String keyId) {
     this.kms = kms;
     this.keyId = keyId;
   }

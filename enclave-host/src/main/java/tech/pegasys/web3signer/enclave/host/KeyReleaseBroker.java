@@ -13,13 +13,14 @@
 package tech.pegasys.web3signer.enclave.host;
 
 import tech.pegasys.web3signer.enclave.protocol.Messages.Evidence;
+import tech.pegasys.web3signer.enclave.protocol.Protocol;
 
 import java.util.Arrays;
 
 /**
  * Creates data keys and releases them to an enclave whose evidence the provider accepts. One
- * implementation per key release provider; the enclave only ever sees the release blob (format 1,
- * CMS EnvelopedData).
+ * implementation per key release provider; the enclave only ever sees the release blob, a CMS
+ * EnvelopedData in format {@link Protocol#BLOB_FORMAT_CMS}.
  */
 public interface KeyReleaseBroker extends AutoCloseable {
 
@@ -53,6 +54,19 @@ public interface KeyReleaseBroker extends AutoCloseable {
   /** The {@code platform} the enclave must report for this provider. */
   int expectedPlatform();
 
+  /** Fails when an enclave on {@code platform} cannot receive this provider's data keys. */
+  default void checkPlatform(final int platform) {
+    if (platform != expectedPlatform()) {
+      throw new IllegalArgumentException(
+          String.format(
+              "The %s broker releases data keys only to an enclave on platform %s, but the enclave"
+                  + " runs %s",
+              provider(),
+              Protocol.platformName(expectedPlatform()),
+              Protocol.platformName(platform)));
+    }
+  }
+
   /** The evidence type this provider accepts, one of {@code Protocol.EVIDENCE_*}. */
   int expectedEvidenceType();
 
@@ -72,7 +86,7 @@ public interface KeyReleaseBroker extends AutoCloseable {
   /**
    * Asks the provider to release the data key to the release key that {@code evidence} binds.
    *
-   * @return the release blob, format 1
+   * @return the release blob, in format {@link Protocol#BLOB_FORMAT_CMS}
    * @throws IllegalArgumentException when {@code dek} or {@code evidence} is for another provider
    */
   byte[] release(KeyBundle.Dek dek, Evidence evidence);
