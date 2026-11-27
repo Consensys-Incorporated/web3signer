@@ -57,7 +57,7 @@ class KeyBundleFileTest {
     final String json = KeyBundleFile.toJson(BUNDLE);
     assertThat(json)
         .contains("\"provider\" : \"aws-kms\"")
-        .contains("\"wrapped\" : \"BwcHBwcHBwcHBwcHBwcHBwcHBwc=\"")
+        .contains("\"wrapped\" : \"0x" + "07".repeat(20) + "\"")
         .contains("\"pubkey\" : \"0x" + "01".repeat(48) + "\"")
         .contains("\"nonce\" : \"0x" + "02".repeat(12) + "\"");
     final KeyBundle parsed = KeyBundleFile.fromJson(json);
@@ -80,6 +80,30 @@ class KeyBundleFileTest {
     assertThatThrownBy(() -> KeyBundleFile.write(BUNDLE, file))
         .isInstanceOf(FileAlreadyExistsException.class);
     assertThat(Files.readString(file)).isEqualTo("old");
+    assertThat(dir.toFile().list()).containsExactly("keys.bundle.json");
+  }
+
+  @Test
+  void writeToARelativePath(@TempDir final Path dir) throws Exception {
+    final Path file = Path.of("").toAbsolutePath().relativize(dir.resolve("keys.bundle.json"));
+    KeyBundleFile.write(BUNDLE, file);
+    assertThat(KeyBundleFile.read(file).keys()).hasSize(2);
+  }
+
+  @Test
+  void readNamesTheFileWhenItsContentIsInvalid(@TempDir final Path dir) throws Exception {
+    final Path file = Files.writeString(dir.resolve("keys.bundle.json"), "[]");
+    assertThatThrownBy(() -> KeyBundleFile.read(file))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(file + ": Key bundle is not a JSON object");
+  }
+
+  @Test
+  void readNamesTheFileWhenItIsNotUtf8(@TempDir final Path dir) throws Exception {
+    final Path file = Files.write(dir.resolve("keys.bundle.json"), new byte[] {'{', (byte) 0xff});
+    assertThatThrownBy(() -> KeyBundleFile.read(file))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(file + ": Key bundle is not valid UTF-8");
   }
 
   @Test
@@ -117,11 +141,35 @@ class KeyBundleFileTest {
   }
 
   @Test
-  void malformedEntriesAreRefused() {
-    final String json = KeyBundleFile.toJson(BUNDLE).replace("0x" + "02".repeat(12), "0x0202");
+  void unknownVersionIsRefusedBeforeItsFieldsAreRead() {
+    final String json = "{\"version\":2,\"dataKey\":{}}";
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Sealed key has wrong field sizes");
+        .hasMessage("Unsupported key bundle version: 2");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"[]", "\"x\"", "1"})
+  void bundleThatIsNotAnObjectIsRefused(final String json) {
+    assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Key bundle is not a JSON object");
+  }
+
+  @Test
+  void missingVersionIsRefused() {
+    final String json = KeyBundleFile.toJson(BUNDLE).replace("\"version\" : 1,", "");
+    assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Unsupported key bundle version: none");
+  }
+
+  @Test
+  void malformedEntriesAreRefused() {
+    final String json = KeyBundleFile.toJson(BUNDLE).replace("0x" + "05".repeat(12), "0x0505");
+    assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Key bundle is not valid at `keys.1`: Sealed key has wrong field sizes");
   }
 
   static Stream<String> badPubkeys() {
@@ -154,17 +202,19 @@ class KeyBundleFileTest {
     final String json = KeyBundleFile.toJson(BUNDLE).replace("\"provider\" : \"aws-kms\",", "");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageStartingWith("Key bundle is not valid: Missing creator property 'provider'");
+        .hasMessageStartingWith(
+            "Key bundle is not valid at `dek.provider`: Missing creator property 'provider'");
   }
 
   @Test
   void missingWrappedKeyIsRefused() {
     final String json =
         KeyBundleFile.toJson(BUNDLE)
-            .replace(",\n    \"wrapped\" : \"BwcHBwcHBwcHBwcHBwcHBwcHBwc=\"", "");
+            .replace(",\n    \"wrapped\" : \"0x" + "07".repeat(20) + "\"", "");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageStartingWith("Key bundle is not valid: Missing creator property 'wrapped'");
+        .hasMessageStartingWith(
+            "Key bundle is not valid at `dek.wrapped`: Missing creator property 'wrapped'");
   }
 
   @Test
@@ -177,23 +227,52 @@ class KeyBundleFileTest {
   }
 
   @Test
-  void wrappedKeyThatIsNotBase64NamesTheField() {
+  void wrappedKeyThatIsNotHexIsRefused() {
+    final String json = KeyBundleFile.toJson(BUNDLE).replace("0x" + "07".repeat(20), "0x07zz");
+    assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith("Key bundle is not valid at `dek.wrapped`: Illegal character 'z'");
+  }
+
+  @Test
+  void badHexNamesTheKeyAndField() {
     final String json =
-        KeyBundleFile.toJson(BUNDLE).replace("BwcHBwcHBwcHBwcHBwcHBwcHBwc=", "Bw!HBwc=");
+        KeyBundleFile.toJson(BUNDLE).replace("0x" + "05".repeat(12), "0x" + "zz".repeat(12));
+    assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith("Key bundle is not valid at `keys.1.nonce`: Illegal character 'z'");
+  }
+
+  @Test
+  void wrappedKeyAsAnArrayOfNumbersIsRefused() {
+    final String json =
+        KeyBundleFile.toJson(BUNDLE).replace("\"0x" + "07".repeat(20) + "\"", "[1, 2, 3]");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageStartingWith(
-            "Key bundle is not valid: Cannot deserialize value of type `byte[]`");
+            "Key bundle is not valid at `dek.wrapped`: Cannot deserialize value of type `java.lang.String` from Array value");
+  }
+
+  @Test
+  void nullKeyEntryIsRefused() {
+    final String json =
+        "{\"version\":1,\"dek\":{\"provider\":\"dev\",\"keyId\":\"dev\","
+            + "\"encryptionContext\":{},\"wrapped\":\"0x010203\"},\"keys\":[null]}";
+    assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith(
+            "Key bundle is not valid at `keys.0`: Invalid `null` value encountered");
   }
 
   @Test
   void missingKeysAreRefused() {
     final String json =
         "{\"version\":1,\"dek\":{\"provider\":\"dev\",\"keyId\":\"dev\","
-            + "\"encryptionContext\":{},\"wrapped\":\"AQID\"}}";
+            + "\"encryptionContext\":{},\"wrapped\":\"0x010203\"}}";
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageStartingWith("Key bundle is not valid: Missing creator property 'keys'");
+        .hasMessageStartingWith(
+            "Key bundle is not valid at `keys`: Missing creator property 'keys'");
   }
 
   private static final String KEY =
@@ -223,7 +302,7 @@ class KeyBundleFileTest {
   @Test
   void strictBaselineIsAccepted() {
     final KeyBundle parsed =
-        KeyBundleFile.fromJson(bundle("1", dek("\"dev\"", "{\"a\":\"b\"}", "AQID"), KEY, ""));
+        KeyBundleFile.fromJson(bundle("1", dek("\"dev\"", "{\"a\":\"b\"}", "0x010203"), KEY, ""));
     assertThat(parsed.dek().encryptionContext()).isEqualTo(Map.of("a", "b"));
     assertThat(parsed.keys()).hasSize(1);
   }
@@ -232,19 +311,25 @@ class KeyBundleFileTest {
   @CsvSource(
       delimiter = '|',
       value = {
-        "version as a string | \"1\" | \"dev\" | {} | AQID | Key bundle is not valid: Cannot coerce String",
-        "version true | true | \"dev\" | {} | AQID | Key bundle is not valid: Cannot deserialize value of type `int`",
-        "version 1.9 | 1.9 | \"dev\" | {} | AQID | Key bundle is not valid: Cannot coerce Floating-point",
-        "unknown provider | 1 | \"bogus\" | {} | AQID | Unknown key bundle provider: bogus",
+        "version as a string | \"1\" | \"dev\" | {} | 0x010203 | Unsupported key bundle version: \"1\"",
+        "version true | true | \"dev\" | {} | 0x010203 | Unsupported key bundle version: true",
+        "version 1.9 | 1.9 | \"dev\" | {} | 0x010203 | Unsupported key bundle version: 1.9",
+        "version 1.0 | 1.0 | \"dev\" | {} | 0x010203 | Unsupported key bundle version: 1.0",
+        "version null | null | \"dev\" | {} | 0x010203 | Unsupported key bundle version: null",
+        "provider null | 1 | null | {} | 0x010203"
+            + " | Key bundle is not valid at `dek.provider`: Invalid `null` value encountered",
+        "unknown provider | 1 | \"bogus\" | {} | 0x010203 | Unknown key bundle provider: bogus",
         "empty wrapped key | 1 | \"dev\" | {} | '' | The wrapped data key is empty",
-        "context as an array | 1 | \"dev\" | [\"a\"] | AQID"
-            + " | Key bundle is not valid: Cannot deserialize value of type `java.util.LinkedHashMap",
-        "context as a string | 1 | \"dev\" | \"a\" | AQID"
-            + " | Key bundle is not valid: Cannot construct instance of `java.util.LinkedHashMap`",
-        "context object value | 1 | \"dev\" | {\"a\":{}} | AQID"
-            + " | Key bundle is not valid: Cannot deserialize value of type `java.lang.String`",
-        "context number value | 1 | \"dev\" | {\"a\":12} | AQID"
-            + " | Key bundle is not valid: Cannot coerce Integer value (12) to `java.lang.String`",
+        "context as an array | 1 | \"dev\" | [\"a\"] | 0x010203"
+            + " | Key bundle is not valid at `dek.encryptionContext`: Cannot deserialize value of type `java.util.LinkedHashMap",
+        "context as a string | 1 | \"dev\" | \"a\" | 0x010203"
+            + " | Key bundle is not valid at `dek.encryptionContext`: Cannot construct instance of `java.util.LinkedHashMap`",
+        "context object value | 1 | \"dev\" | {\"a\":{}} | 0x010203"
+            + " | Key bundle is not valid at `dek.encryptionContext.a`: Cannot deserialize value of type `java.lang.String`",
+        "context number value | 1 | \"dev\" | {\"a\":12} | 0x010203"
+            + " | Key bundle is not valid at `dek.encryptionContext.a`: Cannot coerce Integer value (12) to `java.lang.String`",
+        "context null value | 1 | \"dev\" | {\"a\":null} | 0x010203"
+            + " | Key bundle is not valid at `dek.encryptionContext.a`: Invalid `null` value encountered for property \"encryptionContext\"",
       })
   void looseFieldsAreRefused(
       final String name,
@@ -266,22 +351,24 @@ class KeyBundleFileTest {
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageStartingWith(
-            "Key bundle is not valid: Missing creator property 'encryptionContext'");
+            "Key bundle is not valid at `dek.encryptionContext`: Missing creator property 'encryptionContext'");
   }
 
   @Test
   void missingDekIsRefused() {
     assertThatThrownBy(() -> KeyBundleFile.fromJson(bundle("1", "\"dev\"", KEY, "")))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageStartingWith("Key bundle is not valid: Cannot construct instance");
+        .hasMessageStartingWith("Key bundle is not valid at `dek`: Cannot construct instance");
   }
 
   @Test
   void duplicateFieldsAreRefused() {
-    final String json = bundle("1", dek("\"aws-kms\",\"provider\":\"dev\"", "{}", "AQID"), KEY, "");
+    final String json =
+        bundle("1", dek("\"aws-kms\",\"provider\":\"dev\"", "{}", "0x010203"), KEY, "");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageStartingWith("Key bundle is not valid: Duplicate field 'provider'");
+        .hasMessageStartingWith(
+            "Key bundle is not valid at line 1, column 53: Duplicate field 'provider'");
   }
 
   @ParameterizedTest
@@ -294,15 +381,15 @@ class KeyBundleFileTest {
 
   @Test
   void trailingContentIsRefused() {
-    final String json = bundle("1", dek("\"dev\"", "{}", "AQID"), KEY, " {");
+    final String json = bundle("1", dek("\"dev\"", "{}", "0x010203"), KEY, " {");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageStartingWith("Key bundle is not valid: Trailing token");
+        .hasMessageStartingWith("Key bundle is not valid at line 1, column 370: Trailing token");
   }
 
   @Test
   void duplicatePublicKeysAreRefused() {
-    final String json = bundle("1", dek("\"dev\"", "{}", "AQID"), KEY + "," + KEY, "");
+    final String json = bundle("1", dek("\"dev\"", "{}", "0x010203"), KEY + "," + KEY, "");
     assertThatThrownBy(() -> KeyBundleFile.fromJson(json))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Key bundle holds public key 0x" + "01".repeat(48) + " more than once");
