@@ -24,4 +24,19 @@ public class SignerUnavailableException extends RuntimeException {
   public SignerUnavailableException(final String message, final Throwable cause) {
     super(message, cause);
   }
+
+  /** The message carries the cause's message and its root cause's message. */
+  public SignerUnavailableException(final Throwable cause) {
+    super("Signer unavailable: " + describe(cause), cause);
+  }
+
+  private static String describe(final Throwable e) {
+    String rootCauseMessage = null;
+    for (Throwable cause = e.getCause(); cause != null; cause = cause.getCause()) {
+      if (cause.getMessage() != null) {
+        rootCauseMessage = cause.getMessage();
+      }
+    }
+    return rootCauseMessage == null ? e.getMessage() : e.getMessage() + ": " + rootCauseMessage;
+  }
 }

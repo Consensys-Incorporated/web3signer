@@ -27,11 +27,13 @@ import tech.pegasys.web3signer.enclave.transport.Listener;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.security.SecureRandom;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.IntStream;
 
 import org.apache.tuweni.bytes.Bytes;
 
@@ -49,6 +51,7 @@ public final class FakeEnclaveSigner implements AutoCloseable {
   private final Map<Bytes, BLSKeyPair> byPublicKey = new ConcurrentHashMap<>();
   private final byte[] bootId = new byte[16];
   private volatile boolean initialized;
+  private volatile int signRefusal = Protocol.OK;
 
   public FakeEnclaveSigner() {
     RANDOM.nextBytes(bootId);
@@ -61,13 +64,21 @@ public final class FakeEnclaveSigner implements AutoCloseable {
   }
 
   public static List<BLSKeyPair> randomKeys(final int count) {
-    return java.util.stream.IntStream.range(0, count)
-        .mapToObj(i -> BLSKeyPair.random(RANDOM))
-        .toList();
+    return IntStream.range(0, count).mapToObj(i -> BLSKeyPair.random(RANDOM)).toList();
   }
 
   public EnclaveAddress address() {
     return listener.address();
+  }
+
+  /** The boot id answered to {@code STATUS}, as hex. */
+  public String bootId() {
+    return HexFormat.of().formatHex(bootId);
+  }
+
+  /** Answers every later {@code SIGN} with {@code result}, or signs again for {@code OK}. */
+  public void refuseSigning(final int result) {
+    signRefusal = result;
   }
 
   /** Adds keys, as a successful {@code LOAD_KEYS} would; an empty list initializes the signer. */
@@ -127,6 +138,9 @@ public final class FakeEnclaveSigner implements AutoCloseable {
                     .toList()));
       }
       case Protocol.SIGN -> {
+        if (signRefusal != Protocol.OK) {
+          yield error(request, signRefusal, "refused by the fake");
+        }
         if (!initialized) {
           yield error(request, Protocol.NOT_INITIALIZED, "no keys loaded");
         }

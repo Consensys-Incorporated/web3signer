@@ -13,8 +13,6 @@
 package tech.pegasys.web3signer.signing.bulkloading;
 
 import tech.pegasys.web3signer.enclave.client.EnclaveClient;
-import tech.pegasys.web3signer.enclave.client.EnclaveException;
-import tech.pegasys.web3signer.enclave.client.EnclaveUnavailableException;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Status;
 import tech.pegasys.web3signer.enclave.transport.EnclaveAddress;
 import tech.pegasys.web3signer.keystorage.common.MappedResults;
@@ -102,14 +100,15 @@ public class BlsEnclaveBulkLoader implements Closeable {
    * read each, are bounded by {@value #STATUS_TIMEOUT_MILLIS} ms (or the configured request
    * timeout, if shorter); a stale connection is replaced once.
    *
-   * @throws SignerUnavailableException when the enclave signer does not answer
+   * @throws SignerUnavailableException on any failure, for example when the enclave signer does not
+   *     answer, speaks another protocol version, or this loader is closed
    */
   public EnclaveSignerStatus status() {
     try {
       final Status status = statusClient().status();
       return new EnclaveSignerStatus(status.keyCount(), status.bootId());
-    } catch (final EnclaveUnavailableException | EnclaveException e) {
-      throw EnclaveBlsArtifactSigner.unavailable(e);
+    } catch (final RuntimeException e) {
+      throw new SignerUnavailableException(e);
     }
   }
 

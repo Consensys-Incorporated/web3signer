@@ -13,6 +13,7 @@
 package tech.pegasys.web3signer.signing.bulkloading;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import tech.pegasys.teku.bls.BLS;
 import tech.pegasys.teku.bls.BLSKeyPair;
@@ -22,8 +23,13 @@ import tech.pegasys.web3signer.signing.BlsArtifactSignature;
 import tech.pegasys.web3signer.signing.EnclaveBlsArtifactSigner;
 import tech.pegasys.web3signer.signing.FakeEnclaveSigner;
 import tech.pegasys.web3signer.signing.KeyType;
+import tech.pegasys.web3signer.signing.SignerUnavailableException;
+import tech.pegasys.web3signer.signing.bulkloading.BlsEnclaveBulkLoader.EnclaveSignerStatus;
 import tech.pegasys.web3signer.signing.config.EnclaveSignerParameters;
 
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -118,6 +124,94 @@ class BlsEnclaveBulkLoaderTest {
       final MappedResults<ArtifactSigner> result = loader.load();
       assertThat(result.getErrorCount()).isEqualTo(1);
       assertThat(result.getValues()).isEmpty();
+    }
+  }
+
+  @Test
+  void loadsTheKeysOnceTheEnclaveIsProvisioned() {
+    final List<BLSKeyPair> keys = FakeEnclaveSigner.randomKeys(2);
+    try (FakeEnclaveSigner enclave = new FakeEnclaveSigner();
+        BlsEnclaveBulkLoader loader =
+            new BlsEnclaveBulkLoader(new Parameters(enclave.address().toString()))) {
+      assertThat(loader.load().getErrorCount()).isEqualTo(1);
+
+      enclave.load(keys);
+
+      final MappedResults<ArtifactSigner> result = loader.load();
+      assertThat(result.getErrorCount()).isZero();
+      assertThat(result.getValues())
+          .extracting(ArtifactSigner::getIdentifier)
+          .containsExactlyInAnyOrderElementsOf(
+              keys.stream().map(key -> key.getPublicKey().toString()).toList());
+    }
+  }
+
+  @Test
+  void signersAreUnavailableOnceTheLoaderIsClosed() {
+    try (FakeEnclaveSigner enclave = new FakeEnclaveSigner()) {
+      enclave.load(FakeEnclaveSigner.randomKeys(1));
+      final BlsEnclaveBulkLoader loader =
+          new BlsEnclaveBulkLoader(new Parameters(enclave.address().toString()));
+      final MappedResults<ArtifactSigner> loaded = loader.load();
+      final ArtifactSigner signer = loaded.getValues().iterator().next();
+
+      loader.close();
+
+      assertThatThrownBy(() -> signer.sign(Bytes.random(32)))
+          .isInstanceOf(SignerUnavailableException.class);
+      final MappedResults<ArtifactSigner> reloaded = loader.load();
+      assertThat(reloaded.getErrorCount()).isEqualTo(1);
+      assertThat(reloaded.getValues()).containsExactlyElementsOf(loaded.getValues());
+      assertThatThrownBy(loader::status)
+          .isInstanceOf(SignerUnavailableException.class)
+          .hasMessage("Signer unavailable: Enclave bulk loader is closed")
+          .hasCauseInstanceOf(IllegalStateException.class);
+    }
+  }
+
+  @Test
+  void statusReportsTheKeysAndBootId() {
+    try (FakeEnclaveSigner enclave = new FakeEnclaveSigner();
+        BlsEnclaveBulkLoader loader =
+            new BlsEnclaveBulkLoader(new Parameters(enclave.address().toString()))) {
+      assertThat(loader.status()).isEqualTo(new EnclaveSignerStatus(0, enclave.bootId()));
+
+      enclave.load(FakeEnclaveSigner.randomKeys(3));
+
+      assertThat(loader.status()).isEqualTo(new EnclaveSignerStatus(3, enclave.bootId()));
+    }
+  }
+
+  @Test
+  void statusIsUnavailableOnceTheEnclaveIsStopped() {
+    final FakeEnclaveSigner enclave = new FakeEnclaveSigner();
+    try (BlsEnclaveBulkLoader loader =
+        new BlsEnclaveBulkLoader(new Parameters(enclave.address().toString()))) {
+      loader.status();
+
+      enclave.close();
+
+      assertThatThrownBy(loader::status)
+          .isInstanceOf(SignerUnavailableException.class)
+          .hasMessageStartingWith("Signer unavailable: ");
+    } finally {
+      enclave.close();
+    }
+  }
+
+  @Test
+  void statusGivesUpWellBeforeTheRequestTimeout() throws Exception {
+    // accepts connections (backlog) but never reads or answers
+    try (ServerSocket silent = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
+        BlsEnclaveBulkLoader loader =
+            new BlsEnclaveBulkLoader(new Parameters("tcp:127.0.0.1:" + silent.getLocalPort()))) {
+      final long start = System.nanoTime();
+
+      assertThatThrownBy(loader::status)
+          .isInstanceOf(SignerUnavailableException.class)
+          .hasMessageContaining("did not answer within 500 ms");
+      // the 5 s request timeout of the parameters does not apply
+      assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(2));
     }
   }
 

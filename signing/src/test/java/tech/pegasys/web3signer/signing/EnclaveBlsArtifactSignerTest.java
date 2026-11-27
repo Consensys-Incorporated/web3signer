@@ -20,6 +20,7 @@ import tech.pegasys.teku.bls.BLSKeyPair;
 import tech.pegasys.web3signer.enclave.client.EnclaveClient;
 import tech.pegasys.web3signer.enclave.client.EnclaveException;
 import tech.pegasys.web3signer.enclave.client.EnclaveUnavailableException;
+import tech.pegasys.web3signer.enclave.protocol.Protocol;
 import tech.pegasys.web3signer.enclave.transport.EnclaveAddress;
 
 import java.net.InetAddress;
@@ -37,9 +38,9 @@ class EnclaveBlsArtifactSignerTest {
 
   @Test
   void signerIsUnavailableOnceTheEnclaveIsStopped() {
-    final FakeEnclaveSigner enclave = new FakeEnclaveSigner();
-    enclave.load(List.of(key));
-    try (EnclaveClient client = client(enclave.address(), 2000)) {
+    try (FakeEnclaveSigner enclave = new FakeEnclaveSigner();
+        EnclaveClient client = client(enclave.address(), 2000)) {
+      enclave.load(List.of(key));
       final EnclaveBlsArtifactSigner signer = new EnclaveBlsArtifactSigner(client, publicKey);
       assertThat(signer.sign(root).getSignatureData())
           .isEqualTo(BLS.sign(key.getSecretKey(), root));
@@ -95,6 +96,20 @@ class EnclaveBlsArtifactSignerTest {
           .hasMessageStartingWith(
               "Signer unavailable: Enclave signer refused SIGN: NOT_INITIALIZED")
           .hasCauseInstanceOf(EnclaveException.class);
+    }
+  }
+
+  @Test
+  void otherRefusalsAreNotReportedAsUnavailable() {
+    try (FakeEnclaveSigner enclave = new FakeEnclaveSigner();
+        EnclaveClient client = client(enclave.address(), 2000)) {
+      enclave.load(List.of(key));
+      enclave.refuseSigning(Protocol.BAD_REQUEST);
+      final EnclaveBlsArtifactSigner signer = new EnclaveBlsArtifactSigner(client, publicKey);
+
+      assertThatThrownBy(() -> signer.sign(root))
+          .isExactlyInstanceOf(EnclaveException.class)
+          .hasMessageStartingWith("Enclave signer refused SIGN: BAD_REQUEST");
     }
   }
 

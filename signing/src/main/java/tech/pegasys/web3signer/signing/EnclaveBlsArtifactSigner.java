@@ -63,28 +63,15 @@ public class EnclaveBlsArtifactSigner implements ArtifactSigner {
     try {
       signature = client.sign(publicKey, message.toArrayUnsafe());
     } catch (final EnclaveUnavailableException e) {
-      throw unavailable(e);
+      throw new SignerUnavailableException(e);
     } catch (final EnclaveException e) {
       if (e.result() == Protocol.RESOURCE_UNAVAILABLE || e.result() == Protocol.NOT_INITIALIZED) {
-        throw unavailable(e);
+        throw new SignerUnavailableException(e);
       }
       throw e;
     }
     // lazy: no point decompression
     return new BlsArtifactSignature(BLSSignature.fromBytesCompressed(Bytes.wrap(signature)));
-  }
-
-  /** Wraps an enclave failure; the message carries the failure's and its root cause's messages. */
-  public static SignerUnavailableException unavailable(final RuntimeException e) {
-    String rootCauseMessage = null;
-    for (Throwable cause = e.getCause(); cause != null; cause = cause.getCause()) {
-      if (cause.getMessage() != null) {
-        rootCauseMessage = cause.getMessage();
-      }
-    }
-    final String message =
-        rootCauseMessage == null ? e.getMessage() : e.getMessage() + ": " + rootCauseMessage;
-    return new SignerUnavailableException("Signer unavailable: " + message, e);
   }
 
   @Override
