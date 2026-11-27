@@ -13,7 +13,10 @@
 package tech.pegasys.web3signer.signing.bulkloading;
 
 import tech.pegasys.web3signer.enclave.client.EnclaveClient;
+import tech.pegasys.web3signer.enclave.client.EnclaveException;
+import tech.pegasys.web3signer.enclave.client.EnclaveUnavailableException;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Status;
+import tech.pegasys.web3signer.enclave.protocol.Protocol;
 import tech.pegasys.web3signer.enclave.transport.EnclaveAddress;
 import tech.pegasys.web3signer.keystorage.common.MappedResults;
 import tech.pegasys.web3signer.signing.ArtifactSigner;
@@ -26,14 +29,15 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.google.common.base.Throwables;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
  * Loads one signer per key held by an enclave signer. Owns the {@link EnclaveClient} that every
- * returned signer shares; it is created on the first {@link #load()} and closed by {@link
- * #close()}. Also answers {@link #status()} for the health check, through a second client with a
- * short timeout so that a hung enclave signer cannot hold the check for long.
+ * returned signer shares, closed by {@link #close()}. Also answers {@link #status()} for the health
+ * check, through a second client with a short timeout so that a hung enclave signer cannot hold the
+ * check for long.
  *
  * <p>A failed {@link #load()} returns the signers of the last successful one, with an error, so
  * that a reload during an enclave signer outage keeps its keys known: signing them fails as
@@ -52,47 +56,32 @@ public class BlsEnclaveBulkLoader implements Closeable {
   public record EnclaveSignerStatus(long keyCount, String bootId) {}
 
   private final EnclaveSignerParameters parameters;
-  private EnclaveClient client;
-  private EnclaveClient statusClient;
-  private boolean closed;
+  private final EnclaveClient client;
+  private final EnclaveClient statusClient;
   private volatile List<ArtifactSigner> lastLoaded = List.of();
 
+  /**
+   * Creates the clients without connecting; connections are opened on demand.
+   *
+   * @throws IllegalArgumentException when the enclave signer address is invalid
+   */
   public BlsEnclaveBulkLoader(final EnclaveSignerParameters parameters) {
     this.parameters = parameters;
-  }
-
-  private synchronized EnclaveClient client() {
-    requireOpen();
-    if (client == null) {
-      client =
-          EnclaveClient.create(
-              EnclaveAddress.parseConnect(parameters.getAddress()),
-              new EnclaveClient.Options(
-                  parameters.getConnections(),
-                  Duration.ofMillis(parameters.getRequestTimeoutMillis())));
-    }
-    return client;
-  }
-
-  private synchronized EnclaveClient statusClient() {
-    requireOpen();
-    if (statusClient == null) {
-      // a client of its own with a short timeout, so that status() never waits behind signing
-      statusClient =
-          EnclaveClient.create(
-              EnclaveAddress.parseConnect(parameters.getAddress()),
-              new EnclaveClient.Options(
-                  1,
-                  Duration.ofMillis(
-                      Math.min(STATUS_TIMEOUT_MILLIS, parameters.getRequestTimeoutMillis()))));
-    }
-    return statusClient;
-  }
-
-  private void requireOpen() {
-    if (closed) {
-      throw new IllegalStateException("Enclave bulk loader is closed");
-    }
+    final EnclaveAddress address = EnclaveAddress.parseConnect(parameters.getAddress());
+    client =
+        EnclaveClient.create(
+            address,
+            new EnclaveClient.Options(
+                parameters.getConnections(),
+                Duration.ofMillis(parameters.getRequestTimeoutMillis())));
+    // a client of its own with a short timeout, so that status() never waits behind signing
+    statusClient =
+        EnclaveClient.create(
+            address,
+            new EnclaveClient.Options(
+                1,
+                Duration.ofMillis(
+                    Math.min(STATUS_TIMEOUT_MILLIS, parameters.getRequestTimeoutMillis()))));
   }
 
   /**
@@ -105,7 +94,7 @@ public class BlsEnclaveBulkLoader implements Closeable {
    */
   public EnclaveSignerStatus status() {
     try {
-      final Status status = statusClient().status();
+      final Status status = statusClient.status();
       return new EnclaveSignerStatus(status.keyCount(), status.bootId());
     } catch (final RuntimeException e) {
       throw new SignerUnavailableException(e);
@@ -114,25 +103,36 @@ public class BlsEnclaveBulkLoader implements Closeable {
 
   public MappedResults<ArtifactSigner> load() {
     try {
-      final EnclaveClient enclave = client();
-      // refuses a signer of another protocol version
-      final Status status = enclave.status();
       final List<ArtifactSigner> signers = new ArrayList<>();
-      for (final byte[] publicKey : enclave.publicKeys()) {
-        signers.add(new EnclaveBlsArtifactSigner(enclave, publicKey));
+      for (final byte[] publicKey : client.publicKeys()) {
+        signers.add(new EnclaveBlsArtifactSigner(client, publicKey));
       }
-      LOG.info(
-          "Enclave signer at {}: platform {}, version {}, {} keys",
-          parameters.getAddress(),
-          status.platformName(),
-          status.version(),
-          signers.size());
+      LOG.info("Enclave signer at {}: {} keys", parameters.getAddress(), signers.size());
       lastLoaded = List.copyOf(signers);
       return MappedResults.newInstance(signers, 0);
     } catch (final RuntimeException e) {
-      LOG.error("Unable to load keys from the enclave signer", e);
+      if (isOutage(e)) {
+        LOG.warn("Unable to load keys from the enclave signer: {}", reason(e));
+      } else {
+        LOG.error("Unable to load keys from the enclave signer", e);
+      }
       return failedLoad();
     }
+  }
+
+  /** An enclave signer that is down or not yet provisioned, which needs no stack trace. */
+  private boolean isOutage(final RuntimeException e) {
+    return e instanceof EnclaveUnavailableException
+        || (e instanceof EnclaveException refused && refused.result() == Protocol.NOT_INITIALIZED);
+  }
+
+  /** The message, with the root cause's (such as "Connection refused") when there is one. */
+  private String reason(final RuntimeException e) {
+    if (e.getCause() == null) {
+      return e.getMessage();
+    }
+    final String rootMessage = Throwables.getRootCause(e).getMessage();
+    return rootMessage == null ? e.getMessage() : e.getMessage() + ": " + rootMessage;
   }
 
   private MappedResults<ArtifactSigner> failedLoad() {
@@ -144,15 +144,8 @@ public class BlsEnclaveBulkLoader implements Closeable {
   }
 
   @Override
-  public synchronized void close() {
-    closed = true;
-    if (client != null) {
-      client.close();
-      client = null;
-    }
-    if (statusClient != null) {
-      statusClient.close();
-      statusClient = null;
-    }
+  public void close() {
+    client.close();
+    statusClient.close();
   }
 }

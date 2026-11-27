@@ -117,6 +117,39 @@ class BlsEnclaveBulkLoaderTest {
   }
 
   @Test
+  void replacesTheKeptSignersOnceARestartedEnclaveIsProvisionedAgain() {
+    try (FakeEnclaveSigner enclave = new FakeEnclaveSigner();
+        BlsEnclaveBulkLoader loader =
+            new BlsEnclaveBulkLoader(new Parameters(enclave.address().toString()))) {
+      enclave.load(FakeEnclaveSigner.randomKeys(2));
+      final MappedResults<ArtifactSigner> loaded = loader.load();
+      assertThat(loaded.getErrorCount()).isZero();
+
+      enclave.restart();
+
+      final MappedResults<ArtifactSigner> unprovisioned = loader.load();
+      assertThat(unprovisioned.getErrorCount()).isEqualTo(1);
+      assertThat(unprovisioned.getValues()).containsExactlyElementsOf(loaded.getValues());
+      assertThatThrownBy(() -> loaded.getValues().iterator().next().sign(Bytes.random(32)))
+          .isInstanceOf(SignerUnavailableException.class);
+
+      final List<BLSKeyPair> newKeys = FakeEnclaveSigner.randomKeys(3);
+      enclave.load(newKeys);
+
+      final MappedResults<ArtifactSigner> reprovisioned = loader.load();
+      assertThat(reprovisioned.getErrorCount()).isZero();
+      assertThat(reprovisioned.getValues())
+          .extracting(ArtifactSigner::getIdentifier)
+          .containsExactlyInAnyOrderElementsOf(
+              newKeys.stream().map(key -> key.getPublicKey().toString()).toList());
+
+      // a later outage keeps the new signers, not the first ones
+      enclave.restart();
+      assertThat(loader.load().getValues()).containsExactlyElementsOf(reprovisioned.getValues());
+    }
+  }
+
+  @Test
   void returnsAnErrorResultWhenTheEnclaveHoldsNoKeysYet() {
     try (FakeEnclaveSigner enclave = new FakeEnclaveSigner();
         BlsEnclaveBulkLoader loader =
@@ -164,8 +197,7 @@ class BlsEnclaveBulkLoaderTest {
       assertThat(reloaded.getValues()).containsExactlyElementsOf(loaded.getValues());
       assertThatThrownBy(loader::status)
           .isInstanceOf(SignerUnavailableException.class)
-          .hasMessage("Signer unavailable: Enclave bulk loader is closed")
-          .hasCauseInstanceOf(IllegalStateException.class);
+          .hasMessage("Signer unavailable: Enclave client is closed");
     }
   }
 
@@ -226,9 +258,8 @@ class BlsEnclaveBulkLoaderTest {
   }
 
   @Test
-  void returnsAnErrorResultForAnInvalidAddress() {
-    try (BlsEnclaveBulkLoader loader = new BlsEnclaveBulkLoader(new Parameters("udp:x:1"))) {
-      assertThat(loader.load().getErrorCount()).isEqualTo(1);
-    }
+  void rejectsAnInvalidAddress() {
+    assertThatThrownBy(() -> new BlsEnclaveBulkLoader(new Parameters("udp:x:1")))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 }

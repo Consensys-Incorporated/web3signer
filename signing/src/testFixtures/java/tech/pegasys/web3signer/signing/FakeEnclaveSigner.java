@@ -52,18 +52,23 @@ public final class FakeEnclaveSigner implements AutoCloseable {
   private final Set<Thread> serveThreads = ConcurrentHashMap.newKeySet();
   private final List<BLSKeyPair> keys = new CopyOnWriteArrayList<>();
   private final Map<Bytes, BLSKeyPair> byPublicKey = new ConcurrentHashMap<>();
-  private final byte[] bootId = new byte[16];
+  private volatile byte[] bootId = newBootId();
   private volatile boolean initialized;
   private volatile int signRefusal = Protocol.OK;
 
   public FakeEnclaveSigner() {
-    RANDOM.nextBytes(bootId);
     try {
       listener = EnclaveAddress.tcp("127.0.0.1", 0).listen();
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
     acceptThread = Thread.ofPlatform().daemon(true).start(this::acceptLoop);
+  }
+
+  private static byte[] newBootId() {
+    final byte[] id = new byte[16];
+    RANDOM.nextBytes(id);
+    return id;
   }
 
   public static List<BLSKeyPair> randomKeys(final int count) {
@@ -92,6 +97,18 @@ public final class FakeEnclaveSigner implements AutoCloseable {
       }
     }
     initialized = true;
+  }
+
+  /**
+   * Forgets every key, picks a new boot id and drops open connections, like a signer that restarted
+   * on the same address and is not provisioned yet.
+   */
+  public synchronized void restart() {
+    keys.clear();
+    byPublicKey.clear();
+    initialized = false;
+    bootId = newBootId();
+    connections.forEach(Connection::close);
   }
 
   private void acceptLoop() {
