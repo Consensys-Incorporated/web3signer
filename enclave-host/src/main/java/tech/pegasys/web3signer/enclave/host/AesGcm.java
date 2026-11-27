@@ -23,6 +23,7 @@ import javax.crypto.spec.SecretKeySpec;
 /** AES-256-GCM with a fresh random nonce, as used for sealed keys and the dev data key. */
 final class AesGcm {
   static final int NONCE_SIZE = Protocol.SEALED_NONCE_SIZE;
+  private static final int KEY_SIZE = 32;
   private static final int TAG_BITS = 128;
   private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -51,6 +52,14 @@ final class AesGcm {
   private static Cipher cipher(
       final int mode, final byte[] key, final byte[] aad, final byte[] nonce)
       throws GeneralSecurityException {
+    // the JCE would quietly use AES-128 or AES-192 for a shorter key
+    if (key.length != KEY_SIZE) {
+      throw new IllegalArgumentException("AES-256 needs a 32-byte key, not " + key.length);
+    }
+    // GCM accepts any nonce length, and would decrypt a malformed one differently
+    if (nonce.length != NONCE_SIZE) {
+      throw new IllegalArgumentException("AES-GCM nonce must be 12 bytes, not " + nonce.length);
+    }
     final Cipher gcm = Cipher.getInstance("AES/GCM/NoPadding");
     gcm.init(mode, new SecretKeySpec(key, "AES"), new GCMParameterSpec(TAG_BITS, nonce));
     gcm.updateAAD(aad);

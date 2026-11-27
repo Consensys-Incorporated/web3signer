@@ -22,9 +22,11 @@ import tech.pegasys.web3signer.enclave.protocol.Protocol;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Arrays;
+import java.util.Map;
 
 import org.bouncycastle.cms.CMSEnvelopedData;
 import org.bouncycastle.cms.RecipientInformation;
@@ -83,8 +85,18 @@ class DevKeyReleaseBrokerTest {
         DevKeyReleaseBroker second = new DevKeyReleaseBroker(masterKey(2));
         DataKey dataKey = first.newDataKey()) {
       assertThatThrownBy(() -> second.release(dataKey.dek(), devEvidence()))
-          .isInstanceOf(IllegalStateException.class)
+          .isInstanceOf(IllegalArgumentException.class)
           .hasMessage("The dev master key does not open this bundle's data key");
+    }
+  }
+
+  @Test
+  void policyCheckFailsBecauseDevNeedsNoEvidence() {
+    try (DevKeyReleaseBroker broker = new DevKeyReleaseBroker(masterKey(1));
+        DataKey dataKey = broker.newDataKey()) {
+      assertThatThrownBy(() -> broker.assertEvidenceRequired(dataKey.dek()))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("without evidence");
     }
   }
 
@@ -112,9 +124,78 @@ class DevKeyReleaseBrokerTest {
 
   @Test
   void masterKeyFileRefusesCharactersThatAreNotHex() throws IOException {
-    final Path file = Files.writeString(dir.resolve("master.hex"), "zz".repeat(32));
+    final Path file = Files.writeString(dir.resolve("master.hex"), "ab".repeat(31) + "aZ");
     assertThatThrownBy(() -> DevKeyReleaseBroker.fromFile(file))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("The dev master key file must hold 64 hex characters")
+        .hasNoCause();
+  }
+
+  @Test
+  void refusesADataKeyFromAnotherProvider() {
+    final KeyBundle.Dek kmsDek =
+        new KeyBundle.Dek(
+            KeyBundle.Dek.PROVIDER_AWS_KMS,
+            "arn:aws:kms:us-east-1:111122223333:key/x",
+            Map.of(),
+            new byte[64]);
+    try (DevKeyReleaseBroker broker = new DevKeyReleaseBroker(masterKey(1))) {
+      assertThatThrownBy(() -> broker.release(kmsDek, devEvidence()))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("The bundle was sealed with provider aws-kms, but the dev broker was given");
+      assertThatThrownBy(() -> broker.assertEvidenceRequired(kmsDek))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("provider aws-kms");
+    }
+  }
+
+  @Test
+  void refusesEvidenceOfAnotherType() {
+    final byte[] spki = releaseKey.getPublic().getEncoded();
+    try (DevKeyReleaseBroker broker = new DevKeyReleaseBroker(masterKey(1));
+        DataKey dataKey = broker.newDataKey()) {
+      assertThatThrownBy(
+              () ->
+                  broker.release(
+                      dataKey.dek(), new Evidence(Protocol.EVIDENCE_AWS_NITRO, spki, spki)))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("The dev broker accepts evidence type 0, but the enclave produced type 1");
+    }
+  }
+
+  @Test
+  void refusesAReleaseKeyThatIsNotRsa() throws Exception {
+    final KeyPairGenerator ec = KeyPairGenerator.getInstance("EC");
+    ec.initialize(256);
+    final byte[] spki = ec.generateKeyPair().getPublic().getEncoded();
+    try (DevKeyReleaseBroker broker = new DevKeyReleaseBroker(masterKey(1));
+        DataKey dataKey = broker.newDataKey()) {
+      assertThatThrownBy(
+              () -> broker.release(dataKey.dek(), new Evidence(Protocol.EVIDENCE_DEV, spki, spki)))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessage("Cannot build the release envelope")
+          .hasCauseInstanceOf(GeneralSecurityException.class);
+    }
+  }
+
+  @Test
+  void closedBrokerRefusesToCreateADataKey() {
+    final DevKeyReleaseBroker broker = new DevKeyReleaseBroker(masterKey(1));
+    broker.close();
+    assertThatThrownBy(broker::newDataKey)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("The dev key release broker is closed");
+  }
+
+  @Test
+  void closedBrokerRefusesToRelease() {
+    final DevKeyReleaseBroker broker = new DevKeyReleaseBroker(masterKey(1));
+    try (DataKey dataKey = broker.newDataKey()) {
+      broker.close();
+      assertThatThrownBy(() -> broker.release(dataKey.dek(), devEvidence()))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessage("The dev key release broker is closed");
+    }
   }
 
   @Test

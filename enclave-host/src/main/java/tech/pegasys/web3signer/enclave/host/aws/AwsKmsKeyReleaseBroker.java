@@ -17,28 +17,32 @@ import tech.pegasys.web3signer.enclave.host.KeyReleaseBroker;
 import tech.pegasys.web3signer.enclave.protocol.Messages.Evidence;
 import tech.pegasys.web3signer.enclave.protocol.Protocol;
 
+import java.util.Arrays;
 import java.util.Map;
 
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.kms.KmsClient;
+import software.amazon.awssdk.services.kms.model.CreateGrantRequest;
 import software.amazon.awssdk.services.kms.model.DataKeySpec;
 import software.amazon.awssdk.services.kms.model.DecryptRequest;
 import software.amazon.awssdk.services.kms.model.DecryptResponse;
 import software.amazon.awssdk.services.kms.model.DryRunOperationException;
 import software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest;
 import software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse;
+import software.amazon.awssdk.services.kms.model.GrantOperation;
 import software.amazon.awssdk.services.kms.model.KeyEncryptionMechanism;
 import software.amazon.awssdk.services.kms.model.KmsException;
+import software.amazon.awssdk.services.kms.model.ReEncryptRequest;
 import software.amazon.awssdk.services.kms.model.RecipientInfo;
 
 /**
  * AWS KMS: {@code GenerateDataKey} for sealing, {@code Decrypt} with a Nitro Enclaves attestation
- * document as {@code Recipient} for the release. KMS answers with the data key encrypted to the RSA
- * key in the document, so the caller never sees it.
+ * document as {@code Recipient} for the release. KMS answers the release with the data key
+ * encrypted to the RSA key in the document, so the host never sees it.
  */
 public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
-  public static final Map<String, String> ENCRYPTION_CONTEXT =
+  private static final Map<String, String> ENCRYPTION_CONTEXT =
       Map.of("purpose", "web3signer-enclave-bls-keys");
 
   private final KmsClient kms;
@@ -53,7 +57,10 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
     this.keyId = keyId;
   }
 
-  /** A broker with a KMS client for {@code region} and the default credentials chain. */
+  /**
+   * A broker with a KMS client for {@code region} and the default credentials chain, for sealing.
+   * To release, use {@link #forRelease}, which takes the region from the bundle's key ARN.
+   */
   public static AwsKmsKeyReleaseBroker create(final String region, final String keyId) {
     return new AwsKmsKeyReleaseBroker(KmsClient.builder().region(Region.of(region)).build(), keyId);
   }
@@ -68,14 +75,25 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
 
   /** The region of a KMS key ARN, {@code arn:<partition>:kms:<region>:<account>:key/<id>}. */
   static String regionOf(final String keyArn) {
+    return arnParts(keyArn)[3];
+  }
+
+  /** The root principal of the account that owns a KMS key ARN. */
+  static String accountRootOf(final String keyArn) {
+    final String[] parts = arnParts(keyArn);
+    return "arn:" + parts[1] + ":iam::" + parts[4] + ":root";
+  }
+
+  private static String[] arnParts(final String keyArn) {
     final String[] parts = keyArn.split(":", 6);
     if (parts.length != 6
         || !parts[0].equals("arn")
         || !parts[2].equals("kms")
-        || parts[3].isEmpty()) {
+        || parts[3].isEmpty()
+        || parts[4].isEmpty()) {
       throw new IllegalArgumentException("Not a KMS key ARN: " + keyArn);
     }
-    return parts[3];
+    return parts;
   }
 
   @Override
@@ -107,16 +125,22 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
                 .build());
     // the SDK's own array, so that closing the data key also wipes it
     final byte[] plaintext = response.plaintext().asByteArrayUnsafe();
-    if (plaintext.length != Protocol.DEK_SIZE) {
-      throw new IllegalStateException("KMS returned a data key of " + plaintext.length + " bytes");
+    try {
+      if (plaintext.length != Protocol.DEK_SIZE) {
+        throw new IllegalStateException(
+            "KMS returned a data key of " + plaintext.length + " bytes");
+      }
+      return new DataKey(
+          plaintext,
+          new KeyBundle.Dek(
+              KeyBundle.Dek.PROVIDER_AWS_KMS,
+              response.keyId(),
+              ENCRYPTION_CONTEXT,
+              response.ciphertextBlob().asByteArray()));
+    } catch (final RuntimeException e) {
+      Arrays.fill(plaintext, (byte) 0);
+      throw e;
     }
-    return new DataKey(
-        plaintext,
-        new KeyBundle.Dek(
-            KeyBundle.Dek.PROVIDER_AWS_KMS,
-            response.keyId(),
-            ENCRYPTION_CONTEXT,
-            response.ciphertextBlob().asByteArray()));
   }
 
   /**
@@ -125,6 +149,8 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
    */
   @Override
   public byte[] release(final KeyBundle.Dek dek, final Evidence evidence) {
+    checkProvider(dek);
+    checkEvidenceType(evidence);
     final DecryptResponse response;
     try {
       response =
@@ -149,31 +175,81 @@ public final class AwsKmsKeyReleaseBroker implements KeyReleaseBroker {
       throw e;
     }
     // with a recipient, KMS documents Plaintext as null or empty
-    if (response.plaintext() != null && response.plaintext().asByteArrayUnsafe().length > 0) {
+    if (!isEmpty(response.plaintext())) {
+      Arrays.fill(response.plaintext().asByteArrayUnsafe(), (byte) 0);
       throw new IllegalStateException(
           "KMS returned the data key in plaintext although a recipient was given; aborting");
     }
-    if (response.ciphertextForRecipient() == null) {
+    if (isEmpty(response.ciphertextForRecipient())) {
       throw new IllegalStateException("KMS returned no CiphertextForRecipient");
     }
     return response.ciphertextForRecipient().asByteArray();
   }
 
+  private static boolean isEmpty(final SdkBytes bytes) {
+    return bytes == null || bytes.asByteArrayUnsafe().length == 0;
+  }
+
+  /**
+   * Dry runs {@code Decrypt}, {@code ReEncrypt} and {@code CreateGrant} as this principal, without
+   * attestation, and fails unless KMS refuses each one. Other principals, and a principal that can
+   * change the key policy, are not checked.
+   */
   @Override
   public void assertEvidenceRequired(final KeyBundle.Dek dek) {
+    checkProvider(dek);
+    // before any KMS call, so a key id that is not an ARN fails first
+    final String grantee = accountRootOf(dek.keyId());
+    assertDenied("Decrypt", () -> kms.decrypt(decryptRequest(dek).dryRun(true).build()));
+    assertDenied("ReEncrypt", () -> kms.reEncrypt(reEncryptDryRun(dek)));
+    assertDenied("CreateGrant", () -> kms.createGrant(createGrantDryRun(dek, grantee)));
+  }
+
+  /** Only an access denied passes: a dry run that would succeed, or any other error, fails. */
+  private static void assertDenied(final String operation, final Runnable dryRun) {
     try {
-      kms.decrypt(decryptRequest(dek).dryRun(true).build());
+      dryRun.run();
     } catch (final DryRunOperationException e) {
-      throw new IllegalStateException(
-          "This principal can decrypt the data key without attestation; fix the KMS key policy");
+      // how KMS says the call would succeed
     } catch (final KmsException e) {
       if (isAccessDenied(e)) {
         return;
       }
-      throw new IllegalStateException("KMS key policy check failed: " + e.getMessage(), e);
+      throw new IllegalStateException(
+          "KMS key policy check of " + operation + " failed: " + e.getMessage(), e);
     }
     throw new IllegalStateException(
-        "KMS accepted a dry-run Decrypt without attestation; fix the KMS key policy");
+        "This principal can obtain the data key with "
+            + operation
+            + " without attestation; fix the KMS key policy");
+  }
+
+  /**
+   * Re-encrypts to the same key, which catches {@code kms:ReEncrypt*}. A {@code kms:ReEncryptFrom}
+   * granted on its own, used towards another key, is not caught.
+   */
+  private static ReEncryptRequest reEncryptDryRun(final KeyBundle.Dek dek) {
+    return ReEncryptRequest.builder()
+        .ciphertextBlob(SdkBytes.fromByteArray(dek.wrapped()))
+        .sourceKeyId(dek.keyId())
+        .sourceEncryptionContext(dek.encryptionContext())
+        .destinationKeyId(dek.keyId())
+        .dryRun(true)
+        .build();
+  }
+
+  /**
+   * A grant of {@code Decrypt} to the key's account, since grants carry no attestation condition. A
+   * policy that only allows grants to some other grantee is not caught.
+   */
+  private static CreateGrantRequest createGrantDryRun(
+      final KeyBundle.Dek dek, final String grantee) {
+    return CreateGrantRequest.builder()
+        .keyId(dek.keyId())
+        .granteePrincipal(grantee)
+        .operations(GrantOperation.DECRYPT)
+        .dryRun(true)
+        .build();
   }
 
   /** The part of the release request the dry run must share, so it checks the same thing. */

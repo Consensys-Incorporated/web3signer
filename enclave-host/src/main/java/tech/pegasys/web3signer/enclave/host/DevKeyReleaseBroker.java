@@ -55,6 +55,7 @@ public final class DevKeyReleaseBroker implements KeyReleaseBroker {
 
   private final byte[] masterKey;
   private final SecureRandom random = new SecureRandom();
+  private volatile boolean closed;
 
   public DevKeyReleaseBroker(final byte[] masterKey) {
     if (masterKey.length != 32) {
@@ -66,10 +67,16 @@ public final class DevKeyReleaseBroker implements KeyReleaseBroker {
   /** Reads a master key file: 64 hex characters, surrounding whitespace ignored. */
   public static DevKeyReleaseBroker fromFile(final Path file) throws IOException {
     final String hex = Files.readString(file).trim();
-    if (hex.length() != 64) {
+    // checked here because the parser's error quotes the offending character of the key
+    if (hex.length() != 64 || !hex.chars().allMatch(HexFormat::isHexDigit)) {
       throw new IllegalArgumentException("The dev master key file must hold 64 hex characters");
     }
-    return new DevKeyReleaseBroker(HexFormat.of().parseHex(hex));
+    final byte[] key = HexFormat.of().parseHex(hex);
+    try {
+      return new DevKeyReleaseBroker(key);
+    } finally {
+      Arrays.fill(key, (byte) 0);
+    }
   }
 
   @Override
@@ -89,6 +96,7 @@ public final class DevKeyReleaseBroker implements KeyReleaseBroker {
 
   @Override
   public DataKey newDataKey() {
+    checkOpen();
     final byte[] dek = new byte[Protocol.DEK_SIZE];
     random.nextBytes(dek);
     final AesGcm.Sealed sealed = AesGcm.seal(masterKey, WRAP_AAD, dek);
@@ -99,6 +107,7 @@ public final class DevKeyReleaseBroker implements KeyReleaseBroker {
   }
 
   private byte[] unwrap(final KeyBundle.Dek dek) {
+    checkOpen();
     final byte[] wrapped = dek.wrapped();
     if (wrapped.length <= AesGcm.NONCE_SIZE) {
       throw new IllegalArgumentException("The wrapped data key is too short");
@@ -110,12 +119,14 @@ public final class DevKeyReleaseBroker implements KeyReleaseBroker {
     try {
       return AesGcm.open(masterKey, WRAP_AAD, sealed);
     } catch (final GeneralSecurityException e) {
-      throw new IllegalStateException("The dev master key does not open this bundle's data key");
+      throw new IllegalArgumentException("The dev master key does not open this bundle's data key");
     }
   }
 
   @Override
   public byte[] release(final KeyBundle.Dek dek, final Evidence evidence) {
+    checkProvider(dek);
+    checkEvidenceType(evidence);
     final byte[] plaintext = unwrap(dek);
     try {
       final byte[] releaseKey = evidence.releaseKey();
@@ -146,12 +157,24 @@ public final class DevKeyReleaseBroker implements KeyReleaseBroker {
     }
   }
 
-  /** The dev provider has no policy: anyone with the master key can open the data key. */
+  /** Always fails: anyone with the master key can open the data key, with no evidence. */
   @Override
-  public void assertEvidenceRequired(final KeyBundle.Dek dek) {}
+  public void assertEvidenceRequired(final KeyBundle.Dek dek) {
+    checkProvider(dek);
+    throw new IllegalStateException(
+        "The dev provider releases the data key without evidence; it has no key policy to check");
+  }
+
+  /** The master key is zeroed on close; using it after that would wrap under an all-zero key. */
+  private void checkOpen() {
+    if (closed) {
+      throw new IllegalStateException("The dev key release broker is closed");
+    }
+  }
 
   @Override
   public void close() {
+    closed = true;
     Arrays.fill(masterKey, (byte) 0);
   }
 }

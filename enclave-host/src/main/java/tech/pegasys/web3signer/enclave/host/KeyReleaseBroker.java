@@ -40,11 +40,31 @@ public interface KeyReleaseBroker extends AutoCloseable {
   /** The bundle {@code provider} this broker wraps and releases data keys for. */
   String provider();
 
+  /** Fails when {@code dek} was wrapped by another provider. */
+  default void checkProvider(final KeyBundle.Dek dek) {
+    if (!provider().equals(dek.provider())) {
+      throw new IllegalArgumentException(
+          String.format(
+              "The bundle was sealed with provider %s, but the %s broker was given",
+              dek.provider(), provider()));
+    }
+  }
+
   /** The {@code platform} the enclave must report for this provider. */
   int expectedPlatform();
 
   /** The evidence type this provider accepts, one of {@code Protocol.EVIDENCE_*}. */
   int expectedEvidenceType();
+
+  /** Fails when {@code evidence} is not of the type this provider accepts. */
+  default void checkEvidenceType(final Evidence evidence) {
+    if (evidence.evidenceType() != expectedEvidenceType()) {
+      throw new IllegalArgumentException(
+          String.format(
+              "The %s broker accepts evidence type %d, but the enclave produced type %d",
+              provider(), expectedEvidenceType(), evidence.evidenceType()));
+    }
+  }
 
   DataKey newDataKey();
 
@@ -52,10 +72,14 @@ public interface KeyReleaseBroker extends AutoCloseable {
    * Asks the provider to release the data key to the release key that {@code evidence} binds.
    *
    * @return the release blob, format 1
+   * @throws IllegalArgumentException when {@code dek} or {@code evidence} is for another provider
    */
   byte[] release(KeyBundle.Dek dek, Evidence evidence);
 
-  /** Fails when the caller could obtain the data key without presenting evidence. */
+  /**
+   * Fails when the caller could obtain the data key without presenting evidence. A pass is only as
+   * strong as the checks the provider can make; see each implementation.
+   */
   void assertEvidenceRequired(KeyBundle.Dek dek);
 
   @Override
