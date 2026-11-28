@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# syntax=docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 
 # Distribution source selection.
 # - TAR_FILE set (preferred, used by CI): copy the pre-built distribution from the build context.
@@ -13,7 +13,7 @@ ARG DIST_SOURCE=${DIST_FROM_TAR:-gradle}
 # The source tree is bind-mounted (not copied) so it never lands in a layer; .git
 # must be in the build context for correct version information, and the version
 # calculation runs the git CLI, which the JDK image does not ship.
-FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk@sha256:884a2f8692cc1e2c7e21f95914adf0ae0eafee9a7eb663a12169cc44468256ec AS dist-gradle
+FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk@sha256:ce2ef9d2d67a68de5e196d4de9d743327c44a10b57fe02ec39f572c652cacfd3 AS dist-gradle
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git && \
     rm -rf /var/lib/apt/lists/*
@@ -76,7 +76,7 @@ RUN apt-get update && \
     useradd --system --no-create-home --shell /bin/false web3signer
 
 # Copy full JRE from Eclipse Temurin (no module complexity, all features available)
-COPY --from=eclipse-temurin:25-jre@sha256:945247f9d092703e0c6be92243ef3c51640229e23ab34d353c8dcdc73e6cd4e6 /opt/java/openjdk /opt/java/openjdk
+COPY --from=eclipse-temurin:25-jre@sha256:4ed132f6832e9804b123e89a849a7b4502756ae64a4ee08ebab939d9d5d0a9fa /opt/java/openjdk /opt/java/openjdk
 COPY --from=app-extract --chown=web3signer:web3signer /opt/web3signer /opt/web3signer
 
 USER web3signer
