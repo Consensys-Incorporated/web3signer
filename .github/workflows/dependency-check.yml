@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup Java and Gradle
-        uses: Consensys-Incorporated/github-actions/java-setup-gradle@89c262a30cae735be99dc776f9556b796fb456ca  # main
+        uses: Consensys-Incorporated/github-actions/java-setup-gradle@26202fdd0e1fe7677f9f0a92686d33c5b0ab7c6f  # main
         with:
           VERSION: '25'
 
@@ -87,7 +87,7 @@ jobs:
 
       - name: Upload results to GitHub code scanning
         if: ${{ !cancelled() && hashFiles('build/reports/dependency-check/dependency-check-report.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           sarif_file: build/reports/dependency-check/dependency-check-report.sarif
           category: owasp-dependency-check

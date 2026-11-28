@@ -29,7 +29,7 @@ jobs:
       # Serves the AWS Secrets Manager and KMS tests without AWS credentials. The image's own
       # healthcheck gates the job until the gateway answers.
       ministack:
-        image: ministackorg/ministack:1.5.33@sha256:b58186186515a372798ccf0ca9975c295db219b5a811975337d6967b968e07b4
+        image: ministackorg/ministack:1.5.43@sha256:4cc0701953855c59e1a18fa289888f0b7f2d99afe1417c3cc3b7fe43c373c771
         ports:
           - 4566:4566
     steps:
@@ -42,13 +42,13 @@ jobs:
 
       - name: Setup Java and Gradle
         id: setup-java-gradle
-        uses: Consensys-Incorporated/github-actions/java-setup-gradle@89c262a30cae735be99dc776f9556b796fb456ca  # main
+        uses: Consensys-Incorporated/github-actions/java-setup-gradle@26202fdd0e1fe7677f9f0a92686d33c5b0ab7c6f  # main
         with:
           VERSION: '25'
 
       - name: Determine Web3Signer version
         id: project-version
-        uses: Consensys-Incorporated/github-actions/java-get-project-version@89c262a30cae735be99dc776f9556b796fb456ca  # main
+        uses: Consensys-Incorporated/github-actions/java-get-project-version@26202fdd0e1fe7677f9f0a92686d33c5b0ab7c6f  # main
 
       - name: Validate release tag
         if: startsWith(github.ref, 'refs/tags/')
@@ -356,7 +356,7 @@ jobs:
       # 409 (entry already logged, e.g. a POST retried after a slow response). cosign v3.1.4
       # (sigstore-go v1.3.0) fetches the existing entry instead.
       - name: Install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
           cosign-release: v3.1.4
 
